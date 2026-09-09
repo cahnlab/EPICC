@@ -12,6 +12,8 @@ Test samples (from test_samples_sRNA.tsv):
   mutant2_sRNA_rep1   sRNA  SE  genotype:mutant2
 """
 
+import os
+import re
 import pytest
 from pathlib import Path
 
@@ -30,16 +32,21 @@ _OUTPUT_DIR = load_output_dir("test_options_sRNA.yaml")
 # Target path constants
 # ---------------------------------------------------------------------------
 
+# Per-replicate targets are genome-qualified (mapped_name), as the pipeline
+# builds them. A bare path is still constructible from the wildcards but is
+# not what any generator requests.
+_G = "test_genome"
+
 # Per-replicate sized bigwig targets
-WT_REP1_21NT_PLUS = f"{_OUTPUT_DIR}/sRNA/tracks/WT_sRNA_rep1__21nt__plus.bw"
-WT_REP1_24NT_PLUS = f"{_OUTPUT_DIR}/sRNA/tracks/WT_sRNA_rep1__24nt__plus.bw"
-WT_REP1_21NT_MINUS = f"{_OUTPUT_DIR}/sRNA/tracks/WT_sRNA_rep1__21nt__minus.bw"
+WT_REP1_21NT_PLUS = f"{_OUTPUT_DIR}/sRNA/tracks/WT_sRNA_rep1__{_G}__21nt__plus.bw"
+WT_REP1_24NT_PLUS = f"{_OUTPUT_DIR}/sRNA/tracks/WT_sRNA_rep1__{_G}__24nt__plus.bw"
+WT_REP1_21NT_MINUS = f"{_OUTPUT_DIR}/sRNA/tracks/WT_sRNA_rep1__{_G}__21nt__minus.bw"
 
 # Size stats target
-WT_REP1_SIZE_STATS = f"{_OUTPUT_DIR}/sRNA/reports/sizes_stats__WT_sRNA_rep1.txt"
+WT_REP1_SIZE_STATS = f"{_OUTPUT_DIR}/sRNA/reports/sizes_stats__WT_sRNA_rep1__{_G}.txt"
 
 # Cluster BED file target
-WT_REP1_CLUSTERS = f"{_OUTPUT_DIR}/sRNA/mapped/WT_sRNA_rep1/clusters.bed"
+WT_REP1_CLUSTERS = f"{_OUTPUT_DIR}/sRNA/mapped/WT_sRNA_rep1__{_G}/clusters.bed"
 
 # Analysis-level names (Assay__levels_label__Genome)
 SRNA_WT_ANALYSIS = "sRNA__WT__test_genome"
@@ -321,3 +328,58 @@ class TestErrorHandling:
         target = f"{_OUTPUT_DIR}/sRNA/tracks/WT_sRNA_rep1__21nt__invalid_strand.bw"
         result = run_snakemake_dryrun(repo_root, test_options, target)
         assert result.returncode != 0, "Should fail for invalid strand"
+
+
+class TestShortStackOutputNamesMatchAligner:
+    """ShortStack names its outputs from the genome-free input FASTQ.
+
+    The rule declares them genome-qualified, so the shell must rename across
+    that gap; a dry-run cannot run ShortStack, so check the commands (#71).
+    """
+
+    MV_RE = re.compile(r'mv "([^"]+)" "([^"]+)"')
+
+    @pytest.fixture(scope="class")
+    def shell_text(self, snakemake_available, repo_root, test_options):
+        if not snakemake_available:
+            pytest.skip("Snakemake not installed")
+        result = run_snakemake_dryrun(
+            repo_root, test_options, WT_REP1_CLUSTERS, ["--printshellcmds"])
+        assert result.returncode == 0, f"Dry-run failed: {result.stderr}"
+        return result.stdout + result.stderr
+
+    def _condensed_moves(self, text):
+        return [(a, b) for a, b in self.MV_RE.findall(text)
+                if a.endswith("_condensed.bam") or a.endswith("_condensed.bam.csi")]
+
+    def test_condensed_bam_is_renamed(self, shell_text):
+        moves = self._condensed_moves(shell_text)
+        assert moves, "no rename of the ShortStack condensed BAM found"
+        for src, dst in moves:
+            assert src != dst, f"pointless rename: {src}"
+
+    def test_rename_source_carries_no_genome(self, shell_text):
+        moves = self._condensed_moves(shell_text)
+        assert moves, "no rename of the ShortStack condensed BAM found"
+        for src, _ in moves:
+            assert "__test_genome" not in os.path.basename(src), (
+                f"rename source {src} is genome-qualified; ShortStack will not "
+                "write that name")
+
+    def test_rename_target_is_genome_qualified(self, shell_text):
+        moves = self._condensed_moves(shell_text)
+        assert moves, "no rename of the ShortStack condensed BAM found"
+        for _, dst in moves:
+            assert "__test_genome" in os.path.basename(dst), (
+                f"rename target {dst} is not genome-qualified")
+
+    def test_rename_source_matches_the_input_fastq_stem(self, shell_text):
+        moves = self._condensed_moves(shell_text)
+        assert moves, "no rename of the ShortStack condensed BAM found"
+        fastqs = re.findall(r"(\S+/sRNA/fastq/clean__\S+?\.fastq\.gz)", shell_text)
+        assert fastqs, "no clean FASTQ found in the shell commands"
+        stems = {os.path.basename(f)[: -len(".fastq.gz")] for f in fastqs}
+        for src, _ in moves:
+            base = os.path.basename(src)
+            assert any(base.startswith(stem) for stem in stems), (
+                f"{base} does not start with any input FASTQ stem {sorted(stems)}")

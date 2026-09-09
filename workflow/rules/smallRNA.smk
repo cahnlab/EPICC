@@ -280,6 +280,7 @@ rule shortstack_map:
     params:
         sample_name = lambda wildcards: wildcards.sample_name,
         ref_genome = lambda wildcards: parse_sample_name(wildcards.sample_name)['ref_genome'],
+        base = lambda wildcards: base_sample(wildcards.sample_name),
         srna_params = config['srna_mapping_params'],
         dn_mirna = "--dn_mirna" if config.get('shortstack_dn_mirna', True) else ""
     log:
@@ -292,6 +293,12 @@ rule shortstack_map:
         printf "\nMapping {params.sample_name} to {params.ref_genome} with Shortstack version:\n"
         ShortStack --version
         ShortStack --readfile {input.fastq} --genomefile {input.fasta} --threads {threads} {params.srna_params} {params.dn_mirna} --outdir {config[output_dir]}/sRNA/mapped/{params.sample_name}
+        # ShortStack names its outputs after the input FASTQ, which is
+        # genome-free (one clean read set serves every reference), while our
+        # paths carry the genome.
+        outdir="{config[output_dir]}/sRNA/mapped/{params.sample_name}"
+        mv "${{outdir}}/clean__{params.base}_condensed.bam" "{output.bam_file}"
+        mv "${{outdir}}/clean__{params.base}_condensed.bam.csi" "{output.bai_file}"
         touch {output.touch_file}
         }} 2>&1 | tee -a "{log}"
         """
