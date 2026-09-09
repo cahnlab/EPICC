@@ -77,7 +77,7 @@ For new users, it is recommended to use the local HTML builder at `tools/epicc-b
    - `Read_layout`: [`PE` | `SE`]
    - `IP_target`: Required for pulldown assays (`ChIP`/`CUT_RUN`/`CUT_TAG`) — the IP target (e.g. `H3K9me2`) or control type (e.g. `Input`, `WCE`, `IgG`). Leave blank for other assays.
    - `Control`: Sample_ID of the control sample for this IP (e.g. the Input sample's Sample_ID). Required for pulldown and RAMPAGE IP samples. Leave blank for plain controls and non-pulldown assays.
-   - `Peak_type`: [`broad` | `narrow`] — the peak-calling type, kept separate from the assay. Required for `ChIP`/`CUT_RUN`/`CUT_TAG`; leave blank for everything else.
+   - `Peak_type`: [`broad` | `narrow`] — the peak-calling type, kept separate from the assay. Required on `ChIP`/`CUT_RUN`/`CUT_TAG` rows that call peaks (those with a `Control`); leave blank on a control-only row and on every other assay.
    - `Comments`: Optional free text for your own notes. Never read by the pipeline. The column may be omitted entirely.
 
 2. Update `config/epicc-options.yaml` with your paths and parameters:

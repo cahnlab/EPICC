@@ -75,7 +75,8 @@ These values are defined in `workflow/scripts/sample_sheet.py:VALID_ASSAYS`.
 
 **Pulldown family.** `ChIP`/`CUT_RUN`/`CUT_TAG` are collected in
 `IP_PEAK_ASSAYS` and share the same semantics: `IP_target` is required (for both
-IPs and their controls), `Peak_type` is required, and `Control` may reference
+IPs and their controls), `Peak_type` is required on rows that call peaks (those
+with a `Control`) and optional on control-only rows, and `Control` may reference
 another sample. Default peak caller by peak shape: ChIP → MACS2, CUT&* broad →
 epic2, CUT&* narrow → SEACR. Override via `cut_callpeaks.broad_caller` /
 `narrow_caller` in the options file (`epic2`, `seacr`, or `macs2`).

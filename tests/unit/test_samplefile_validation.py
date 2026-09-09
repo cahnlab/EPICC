@@ -438,3 +438,74 @@ class TestControlChainDepth:
         with pytest.raises(ValueError) as excinfo:
             check_table(df, check_paths=False)
         assert "refers to the sample itself" in str(excinfo.value)
+
+
+# ---------------------------------------------------------------------------
+# Peak_type: required only where peaks are actually called (issue #66)
+# ---------------------------------------------------------------------------
+
+class TestPeakTypeRequiredOnlyForPeakCallers:
+    """A control-only row calls no peaks, so it needs no Peak_type.
+
+    Requiring one forced users to invent a meaningless value on every
+    Input/WCE/IgG row. The value never reached an output path either: control
+    artefacts are named from the bare Sample_ID.
+    """
+
+    def _sheet(self, tmp_path, ip_peak_type, ctrl_peak_type):
+        # Distinct files per row: a shared Read_files entry trips the
+        # cross-row duplicate check, which is a different rule.
+        ip_fq = tmp_path / "ip.fq.gz"
+        ip_fq.write_bytes(b"")
+        ctrl_fq = tmp_path / "ctrl.fq.gz"
+        ctrl_fq.write_bytes(b"")
+        return pd.DataFrame([
+            _row("ip1", "ChIP", str(ip_fq), IP_target="H3K9me2",
+                 Control="ctrl1", Peak_type=ip_peak_type),
+            _row("ctrl1", "ChIP", str(ctrl_fq), IP_target="Input",
+                 Control="", Peak_type=ctrl_peak_type),
+        ])
+
+    def test_control_only_row_may_omit_peak_type(self, tmp_path):
+        check_table(self._sheet(tmp_path, "broad", ""))  # no raise
+
+    def test_control_only_row_may_still_carry_one(self, tmp_path):
+        # Existing sheets put an arbitrary value here; they must keep working.
+        check_table(self._sheet(tmp_path, "broad", "narrow"))  # no raise
+
+    def test_peak_caller_still_requires_peak_type(self, tmp_path):
+        with pytest.raises(ValueError) as e:
+            check_table(self._sheet(tmp_path, "", "broad"))
+        assert "Peak_type is required" in str(e.value)
+        assert "ip1" in str(e.value)
+
+    def test_invalid_value_still_rejected_on_peak_caller(self, tmp_path):
+        with pytest.raises(ValueError) as e:
+            check_table(self._sheet(tmp_path, "wide", "broad"))
+        assert "not in ['broad', 'narrow']" in str(e.value)
+
+    def test_invalid_value_still_rejected_on_control_only_row(self, tmp_path):
+        # Blank is allowed there, but a typo must not slip through.
+        with pytest.raises(ValueError) as e:
+            check_table(self._sheet(tmp_path, "broad", "wide"))
+        assert "not in ['broad', 'narrow']" in str(e.value)
+        assert "ctrl1" in str(e.value)
+
+    def test_ip_without_control_may_omit_peak_type(self, tmp_path):
+        # Not peak-callable either (is_peak_call_target drops it), so the same
+        # relaxation applies.
+        f = tmp_path / "reads.fq.gz"
+        f.write_bytes(b"")
+        df = pd.DataFrame([
+            _row("orphan", "ChIP", str(f), IP_target="H3K9me2",
+                 Control="", Peak_type=""),
+        ])
+        check_table(df)  # no raise
+
+    def test_non_pulldown_assay_still_must_be_blank(self, tmp_path):
+        f = tmp_path / "reads.fq.gz"
+        f.write_bytes(b"")
+        df = pd.DataFrame([_row("r1", "RNAseq", str(f), Peak_type="broad")])
+        with pytest.raises(ValueError) as e:
+            check_table(df)
+        assert "must be blank" in str(e.value)
