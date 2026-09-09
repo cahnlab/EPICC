@@ -531,20 +531,22 @@ def get_replicate_sample_ids(analysis_name, df):
     if result:
         return result
 
-    # If no match, check if analysis_name is a control Sample_ID
-    # and find all controls in the same analysis group. Control merging
-    # uses build_control_merge_key (Assay-agnostic) so a single biological
-    # Input/IgG/WCE merges across all reps whose Levels/IP_target/Genome
-    # match, even if individual rep rows are labeled with different Assay
-    # values (e.g. one rep ChIP_broad, another ChIP_narrow).
-    if analysis_name in set(controls):
-        control_df = df[df["Sample_ID"].isin(controls)]
-        match = control_df[control_df["Sample_ID"] == analysis_name]
-        if not match.empty:
-            ctrl_key = build_control_merge_key(match.iloc[0])
-            for _, row in control_df.iterrows():
-                if build_control_merge_key(row) == ctrl_key:
-                    result.append(row.get("mapped_name", row["Sample_ID"]))
+    # If no match, check whether the key names a control sample and collect
+    # every control in the same merge group. build_control_merge_key is
+    # Assay-agnostic, so one biological Input/IgG/WCE merges across reps whose
+    # Levels/IP_target/Genome match regardless of each row's Assay label.
+    #
+    # match_sample_rows, not a bare ==: the key arrives genome-qualified here
+    # (merging is post-alignment) while identify_control_samples yields bare
+    # Sample_IDs. It also pins one (Sample_ID, Genome) row, and the merge key
+    # includes Genome, so multi-genome sheets never mix references.
+    control_df = df[df["Sample_ID"].isin(controls)]
+    match = match_sample_rows(control_df, analysis_name)
+    if not match.empty:
+        ctrl_key = build_control_merge_key(match.iloc[0])
+        for _, row in control_df.iterrows():
+            if build_control_merge_key(row) == ctrl_key:
+                result.append(row.get("mapped_name", row["Sample_ID"]))
 
     return result
 

@@ -22,6 +22,7 @@ Test samples (from test_samples_mC.tsv):
     WT_root_bedMethyl_rep1  dmC      SE   genotype:WT,tissue:root     (bedMethyl)
 """
 
+import os
 import re
 
 import pytest
@@ -53,18 +54,24 @@ _OUTPUT_DIR = load_output_dir("test_options_mC.yaml")
 # Target path constants
 # ---------------------------------------------------------------------------
 
+# Per-replicate targets are genome-qualified (mapped_name), as the pipeline
+# builds them. Bare names are still constructible from the wildcards but are
+# not what any generator requests, so testing them exercises a path the run
+# never takes -- that is how #71 slipped past this suite.
+_G = "test_genome"
+
 # Bismark per-replicate bigwig targets
-WGBS_PE_TARGET = f"{_OUTPUT_DIR}/mC/tracks/WT_leaf_WGBS_rep1__CG.bw"
-WGBS_PE_REP2_TARGET = f"{_OUTPUT_DIR}/mC/tracks/WT_leaf_WGBS_rep2__CG.bw"
-WGBS_ND_SE_TARGET = f"{_OUTPUT_DIR}/mC/tracks/WT_leaf_WGBSnd_rep1__CG.bw"
-PBAT_PE_TARGET = f"{_OUTPUT_DIR}/mC/tracks/WT_leaf_PBAT_rep1__CG.bw"
-EMSEQ_PE_TARGET = f"{_OUTPUT_DIR}/mC/tracks/WT_leaf_EMseq_rep1__CG.bw"
+WGBS_PE_TARGET = f"{_OUTPUT_DIR}/mC/tracks/WT_leaf_WGBS_rep1__{_G}__CG.bw"
+WGBS_PE_REP2_TARGET = f"{_OUTPUT_DIR}/mC/tracks/WT_leaf_WGBS_rep2__{_G}__CG.bw"
+WGBS_ND_SE_TARGET = f"{_OUTPUT_DIR}/mC/tracks/WT_leaf_WGBSnd_rep1__{_G}__CG.bw"
+PBAT_PE_TARGET = f"{_OUTPUT_DIR}/mC/tracks/WT_leaf_PBAT_rep1__{_G}__CG.bw"
+EMSEQ_PE_TARGET = f"{_OUTPUT_DIR}/mC/tracks/WT_leaf_EMseq_rep1__{_G}__CG.bw"
 
 # dmC per-replicate bigwig targets
-DMC_MODBAM_TARGET = f"{_OUTPUT_DIR}/mC/tracks/WT_leaf_dmC_rep1__CG.bw"
-DMC_MODBAM_REP2_TARGET = f"{_OUTPUT_DIR}/mC/tracks/WT_leaf_dmC_rep2__CG.bw"
-BEDMETHYL_TARGET = f"{_OUTPUT_DIR}/mC/tracks/WT_root_bedMethyl_rep1__CG.bw"
-MUTANT_DMC_TARGET = f"{_OUTPUT_DIR}/mC/tracks/mutant_leaf_dmC_rep1__CG.bw"
+DMC_MODBAM_TARGET = f"{_OUTPUT_DIR}/mC/tracks/WT_leaf_dmC_rep1__{_G}__CG.bw"
+DMC_MODBAM_REP2_TARGET = f"{_OUTPUT_DIR}/mC/tracks/WT_leaf_dmC_rep2__{_G}__CG.bw"
+BEDMETHYL_TARGET = f"{_OUTPUT_DIR}/mC/tracks/WT_root_bedMethyl_rep1__{_G}__CG.bw"
+MUTANT_DMC_TARGET = f"{_OUTPUT_DIR}/mC/tracks/mutant_leaf_dmC_rep1__{_G}__CG.bw"
 
 # Analysis-level names (Assay__levels_label__Genome, empty parts omitted)
 WGBS_WT_ANALYSIS = "WGBS__WT_leaf__test_genome"
@@ -677,3 +684,82 @@ class TestCxReportConversion:
         # Bismark generates CX_reports directly via bismark_methylation_extractor
         assert "cytosine_report" in output or "CX_report" in output, \
             "Bismark samples should produce CX_report files"
+
+
+class TestBismarkOutputNamesMatchAligner:
+    """bismark names its outputs from the input FASTQ, which is genome-free.
+
+    The rule's declared paths are genome-qualified, so the shell has to rename
+    across that gap. #61 switched the FASTQ inputs to base_sample() but left the
+    aligner-derived output names on {sample_name}, and deduplicate_bismark then
+    failed at runtime on a path that was never written (#71). A dry-run cannot
+    run bismark, so these check that every mv bridges the two names.
+    """
+
+    MV_RE = re.compile(r'mv "([^"]+)" "([^"]+)"')
+
+    @pytest.fixture(scope="class")
+    def se_shell(self, snakemake_available, repo_root, test_options):
+        if not snakemake_available:
+            pytest.skip("Snakemake not installed")
+        result = run_snakemake_dryrun(
+            repo_root, test_options, WGBS_ND_SE_TARGET, ["--printshellcmds"])
+        assert result.returncode == 0, f"Dry-run failed: {result.stderr}"
+        return result.stdout + result.stderr
+
+    @pytest.fixture(scope="class")
+    def pe_shell(self, snakemake_available, repo_root, test_options):
+        if not snakemake_available:
+            pytest.skip("Snakemake not installed")
+        result = run_snakemake_dryrun(
+            repo_root, test_options, WGBS_PE_TARGET, ["--printshellcmds"])
+        assert result.returncode == 0, f"Dry-run failed: {result.stderr}"
+        return result.stdout + result.stderr
+
+    def _bam_moves(self, text):
+        return [(a, b) for a, b in self.MV_RE.findall(text)
+                if a.endswith(".bam") and "_bismark_" in a]
+
+    @pytest.mark.parametrize("which", ["se", "pe"])
+    def test_aligner_bam_is_renamed(self, which, se_shell, pe_shell):
+        moves = self._bam_moves(se_shell if which == "se" else pe_shell)
+        assert moves, f"{which}: no rename of the bismark BAM found"
+        for src, dst in moves:
+            assert src != dst, f"{which}: pointless rename {src}"
+
+    @pytest.mark.parametrize("which", ["se", "pe"])
+    def test_rename_source_carries_no_genome(self, which, se_shell, pe_shell):
+        # The source is what bismark actually writes: named from the
+        # genome-free FASTQ, so its basename must not contain the genome.
+        text = se_shell if which == "se" else pe_shell
+        moves = self._bam_moves(text)
+        assert moves, f"{which}: no rename of the bismark BAM found"
+        for src, _ in moves:
+            stem = os.path.basename(src)
+            assert "__test_genome__" not in stem, (
+                f"{which}: rename source {stem} is genome-qualified; bismark "
+                "will not write that name")
+
+    @pytest.mark.parametrize("which", ["se", "pe"])
+    def test_rename_target_is_genome_qualified(self, which, se_shell, pe_shell):
+        text = se_shell if which == "se" else pe_shell
+        moves = self._bam_moves(text)
+        assert moves, f"{which}: no rename of the bismark BAM found"
+        for _, dst in moves:
+            assert "__test_genome__" in os.path.basename(dst), (
+                f"{which}: rename target {dst} is not genome-qualified")
+
+    @pytest.mark.parametrize("which", ["se", "pe"])
+    def test_rename_source_matches_the_input_fastq_stem(self, which, se_shell, pe_shell):
+        """The tie that broke: source name must derive from the FASTQ given to bismark."""
+        text = se_shell if which == "se" else pe_shell
+        fastqs = re.findall(r"(\S+/mC/fastq/trim__\S+?\.fastq\.gz)", text)
+        assert fastqs, f"{which}: no trimmed FASTQ found in the shell commands"
+        stems = {os.path.basename(f)[: -len(".fastq.gz")] for f in fastqs}
+        moves = self._bam_moves(text)
+        assert moves, f"{which}: no rename of the bismark BAM found"
+        for src, _ in moves:
+            base = os.path.basename(src)
+            assert any(base.startswith(stem) for stem in stems), (
+                f"{which}: {base} does not start with any input FASTQ stem "
+                f"{sorted(stems)} -- bismark names its output from the FASTQ")

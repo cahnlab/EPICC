@@ -18,6 +18,8 @@ sys.path.insert(0, os.path.join(_REPO_ROOT, "workflow"))
 from sample_sheet import (  # noqa: E402
     add_compat_columns,
     explode_genomes,
+    get_replicate_sample_ids,
+    identify_control_samples,
     parse_genomes,
     read_sample_sheet,
 )
@@ -114,3 +116,73 @@ class TestValidation:
         ])
         with pytest.raises(ValueError, match="is also used by"):
             check_table(read_sample_sheet(f), check_paths=False)
+
+
+class TestControlMergeAcceptsQualifiedNames:
+    """A control merge group is keyed on a mapped_name, not a bare Sample_ID.
+
+    An empty input list is legal in Snakemake, so a failed lookup only shows up
+    as `samtools merge` with no inputs at runtime (#71) — dry-runs pass.
+    """
+
+    ROWS = [
+        "ip1\tChIP\tB73,W22\tgenotype:WT\trep1\tSRR0000001\tSE\tH3K9me2\tin1",
+        "ip2\tChIP\tB73,W22\tgenotype:WT\trep2\tSRR0000002\tSE\tH3K9me2\tin2",
+        "in1\tChIP\tB73,W22\tgenotype:WT\trep1\tSRR0000003\tSE\tInput\t",
+        "in2\tChIP\tB73,W22\tgenotype:WT\trep2\tSRR0000004\tSE\tInput\t",
+    ]
+
+    def _df(self, tmp_path):
+        return add_compat_columns(read_sample_sheet(_sheet(tmp_path, self.ROWS)))
+
+    def test_qualified_control_name_resolves(self, tmp_path):
+        df = self._df(tmp_path)
+        assert get_replicate_sample_ids("in1__B73", df) == ["in1__B73", "in2__B73"]
+
+    def test_bare_control_name_still_resolves(self, tmp_path):
+        df = self._df(tmp_path)
+        assert get_replicate_sample_ids("in1", df) != []
+
+    def test_replicates_never_mix_genomes(self, tmp_path):
+        df = self._df(tmp_path)
+        for genome in ("B73", "W22"):
+            got = get_replicate_sample_ids("in1__" + genome, df)
+            assert got, f"no replicates for in1__{genome}"
+            assert {g.rsplit("__", 1)[1] for g in got} == {genome}
+
+    def test_either_replicate_names_the_same_group(self, tmp_path):
+        df = self._df(tmp_path)
+        assert (get_replicate_sample_ids("in1__B73", df)
+                == get_replicate_sample_ids("in2__B73", df))
+
+    def test_unknown_name_still_returns_empty(self, tmp_path):
+        df = self._df(tmp_path)
+        assert get_replicate_sample_ids("nope__B73", df) == []
+
+
+class TestEveryControlInEveryFixtureResolves:
+    """No control may resolve to an empty replicate list, in any fixture."""
+
+    SHEETS = [
+        "test_samples_pombe.tsv",
+        "test_samples_colcen.tsv",
+        "test_samples_hg38_chr21.tsv",
+    ]
+
+    @pytest.mark.parametrize("sheet", SHEETS)
+    def test_controls_resolve_to_their_replicates(self, sheet):
+        path = os.path.join(_REPO_ROOT, "tests", "integration", "data", sheet)
+        if not os.path.exists(path):
+            pytest.skip(f"{sheet} not present")
+        df = add_compat_columns(read_sample_sheet(path))
+        controls = set(identify_control_samples(df))
+        if not controls:
+            pytest.skip(f"{sheet} declares no controls")
+        checked = 0
+        for _, row in df[df["Sample_ID"].isin(controls)].iterrows():
+            name = row["mapped_name"]
+            got = get_replicate_sample_ids(name, df)
+            assert got, f"{sheet}: control {name} resolved to no replicates"
+            assert name in got, f"{sheet}: {name} missing from its own group {got}"
+            checked += 1
+        assert checked > 0
