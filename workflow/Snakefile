@@ -243,9 +243,6 @@ if not analysis_samples.empty:
     # without appending the genome twice.
     analysis_samples["mapped_name"] = analysis_samples["sample_name"]
 
-pathtoanalysisfile = os.path.join(REPO_FOLDER,"config",f"analysis_samplefile_{analysis_name}.tsv")
-analysis_samples[["Assay", "Genome", "Levels", "IP_target", "env", "sample_name"]].to_csv(pathtoanalysisfile, sep="\t", index=False)
-
 # ---------------------------------------------------------------------------
 # Backward-compat helper functions (used by rule files during migration)
 # ---------------------------------------------------------------------------

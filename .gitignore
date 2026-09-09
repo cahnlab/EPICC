@@ -71,6 +71,7 @@ profiles/elzar/
 NOTES.local.md
 
 # Auto-generated config files
+# no longer generated; kept to ignore files left behind by older runs
 config/analysis_samplefile_*.tsv
 config/config_test_local.yaml
 dev/plans/

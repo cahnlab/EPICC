@@ -235,6 +235,7 @@ N.B. we'll work on plotting improvements in a separate branch after the Big Refa
 ##### Harmonize analysis_samplefiles
 
 * [x] Analysis samplefiles need to be updated to follow the conventions of the new input samplefile format. **Done**: `analysis_samplefile_*.tsv` now uses new-format columns (Assay, Genome, Levels, IP_target, env, sample_name).
+  - **Obsolete** (2026-09-09): the file is no longer written. Nothing ever read it back — it was a MaizeCode remnant from when an analysis could be started *from* an analysis_samplefile, and re-adding that entry point is not planned. The write also targeted `REPO_FOLDER/config/`, which is wrong for conda installs where the repo sits under `$PREFIX/share/epicc/`.
 
 ##### Remove old format detection in samplefile_validation.py
 
