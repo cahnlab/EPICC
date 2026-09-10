@@ -989,7 +989,7 @@ const COLUMN_DESCRIPTIONS = {
   Read_layout: "Sequencing layout: SE (single-end) or PE (paired-end).",
   IP_target: "What was immunoprecipitated. Required for ChIP and CUT&RUN/CUT&Tag assays (e.g. H3K9me2, Input, WCE, IgG). Must be blank for non-IP assays.",
   Control: "Sample_ID of the control sample (e.g. Input/WCE for ChIP, IgG for CUT&RUN/CUT&Tag, RNAseq for RAMPAGE). The referenced control **may** declare its own Control (*dual-role* case), but that one must not.",
-  Peak_type: "Peak-calling type for pulldown assays (ChIP / CUT_RUN / CUT_TAG): 'broad' for histone-domain marks (H3K9me2, H3K27me3, ...), 'narrow' for TFs and sharp marks (H3K4me3, H3K27ac, ...). Required for those assays; leave blank for all others (ATAC's type is fixed; the rest have no peaks).",
+  Peak_type: "Peak-calling type for pulldown assays (ChIP / CUT_RUN / CUT_TAG): 'broad' for histone-domain marks (H3K9me2, H3K27me3, ...), 'narrow' for TFs and sharp marks (H3K4me3, H3K27ac, ...). Required only on rows that call peaks, i.e. those with a Control set; leave it blank on a control-only row (an Input/WCE/IgG nothing points at), and on all non-pulldown assays (ATAC's type is fixed; the rest have no peaks).",
   Comments: "Free-text notes for your own use — batch, library prep, sequencing run, anything. Optional, unconstrained, and completely ignored by the pipeline: it never affects analysis names or outputs. Tabs and newlines are stripped on export so the TSV stays intact."
 };
 
@@ -1632,7 +1632,7 @@ function buildColumnDefs() {
           cssClass: groupClass,
           editorParams: { elementAttributes: { placeholder: "e.g. WT, mutant" } },
         }, {
-          headerClick: (function(fn) { return function() { showFactorDescription(fn); }; })(fname),
+          // No headerClick here either -- see descHooks().
           headerMouseEnter: (function(fn) { return function() { showFactorDescription(fn); }; })(fname),
           cellClick: (function(fn) { return function(e, cell) { showFactorDescription(fn); }; })(fname),
         }));
@@ -1771,9 +1771,12 @@ function clearSuggestion(el) {
   el.title = "";
 }
 
+// Deliberately no headerClick: Tabulator runs it *alongside* its built-in
+// header sort, so clicking a header to read the docs also re-sorted the table,
+// and that order flowed into the exported sheet. Hover and cell-click cover
+// discovery, so a header click now means only "sort".
 function descHooks(field) {
   return {
-    headerClick: function() { showDescription(field); },
     headerMouseEnter: function() { showDescription(field); },
     cellClick: function(e, cell) { showDescription(field); },
   };
@@ -2073,12 +2076,14 @@ function runValidation() {
         addIssue(cellIssues, errors, rowKey, "IP_target", "[X] Row #" + rowNum + " '" + sid + "': IP_target must be blank for " + assay);
     }
 
-    // Peak_type: required (broad/narrow) for pulldown assays, blank otherwise
+    // Peak_type: required only where peaks are actually called — a pulldown row
+    // with a Control. A control-only row (Input/WCE/IgG) calls none, so blank is
+    // valid there; a value is still accepted. Mirrors samplefile_validation.py.
     if (PEAK_TYPE_ASSAYS.has(assay)) {
-      if (!peakType)
-        addIssue(cellIssues, errors, rowKey, "Peak_type", "[X] Row #" + rowNum + " '" + sid + "': Peak_type is required for " + assay + " (broad or narrow)");
-      else if (VALID_PEAK_TYPES.indexOf(peakType) === -1)
+      if (peakType && VALID_PEAK_TYPES.indexOf(peakType) === -1)
         addIssue(cellIssues, errors, rowKey, "Peak_type", "[X] Row #" + rowNum + " '" + sid + "': Peak_type must be 'broad' or 'narrow', got '" + peakType + "'");
+      else if (!peakType && control)
+        addIssue(cellIssues, errors, rowKey, "Peak_type", "[X] Row #" + rowNum + " '" + sid + "': Peak_type is required for " + assay + " rows that call peaks (broad or narrow); leave it blank only for a control-only row");
     } else if (peakType && assay) {
       addIssue(cellIssues, errors, rowKey, "Peak_type", "[X] Row #" + rowNum + " '" + sid + "': Peak_type must be blank for " + assay);
     }
@@ -2414,6 +2419,10 @@ function importTSV(text) {
   rebuildTableColumns();
   renderFactorTiles();
 
+  // An active header sort survives setData and would be re-applied to the
+  // imported rows, so the sheet would not load in the order it was written in.
+  // The file's order is the user's order; clear the sort and keep it.
+  if (typeof table.clearSort === "function") table.clearSort();
   table.setData(rows);
   setTimeout(function() { refreshUI(); }, 100);
 }
@@ -2590,8 +2599,8 @@ function controlListValues(cell) {
 // Example rows — valid data shown dimmed per-row until that row is edited.
 // The _example flag marks rows as examples; removed when the row is first edited.
 var EXAMPLE_DATA = [
-  { _example: true, Sample_ID: "WT_leaf_Input_rep1", Assay: "ChIP", Peak_type: "broad", Genome: "ColCEN", Levels: "genotype:WT,tissue:leaf", Replicate_ID: "rep1", Read_files: "/path/to/fastqs/WT_Input_Rep1_R1.fq.gz,/path/to/fastqs/WT_Input_Rep1_R2.fq.gz", Read_layout: "PE", IP_target: "Input", Control: "" },
-  { _example: true, Sample_ID: "WT_leaf_Input_rep2", Assay: "ChIP", Peak_type: "broad", Genome: "ColCEN", Levels: "genotype:WT,tissue:leaf", Replicate_ID: "rep2", Read_files: "/path/to/fastqs/WT_Input_Rep2_R1.fq.gz,/path/to/fastqs/WT_Input_Rep2_R2.fq.gz", Read_layout: "PE", IP_target: "Input", Control: "" },
+  { _example: true, Sample_ID: "WT_leaf_Input_rep1", Assay: "ChIP", Peak_type: "", Genome: "ColCEN", Levels: "genotype:WT,tissue:leaf", Replicate_ID: "rep1", Read_files: "/path/to/fastqs/WT_Input_Rep1_R1.fq.gz,/path/to/fastqs/WT_Input_Rep1_R2.fq.gz", Read_layout: "PE", IP_target: "Input", Control: "" },
+  { _example: true, Sample_ID: "WT_leaf_Input_rep2", Assay: "ChIP", Peak_type: "", Genome: "ColCEN", Levels: "genotype:WT,tissue:leaf", Replicate_ID: "rep2", Read_files: "/path/to/fastqs/WT_Input_Rep2_R1.fq.gz,/path/to/fastqs/WT_Input_Rep2_R2.fq.gz", Read_layout: "PE", IP_target: "Input", Control: "" },
   { _example: true, Sample_ID: "rdr126ddm1_leaf_CenH3_rep1", Assay: "ChIP", Peak_type: "broad", Genome: "ColCEN", Levels: "genotype:rdr126ddm1,tissue:leaf", Replicate_ID: "rep1", Read_files: "/path/to/fastqs/ddm1rdr126_CenH3_IP_Rep1_R1.fq.gz,/path/to/fastqs/ddm1rdr126_CenH3_IP_Rep1_R2.fq.gz", Read_layout: "PE", IP_target: "CenH3", Control: "WT_leaf_Input_rep1" },
   { _example: true, Sample_ID: "ddm1_leaf_ATAC_Rep1", Assay: "ATAC", Genome: "ColCEN", Levels: "genotype:ddm1,tissue:leaf", Replicate_ID: "Rep1", Read_files: "SRR12362026", Read_layout: "PE", IP_target: "", Control: "" },
   { _example: true, Sample_ID: "ddm1_leaf_ATAC_Rep2", Assay: "ATAC", Genome: "ColCEN", Levels: "genotype:ddm1,tissue:leaf", Replicate_ID: "Rep2", Read_files: "SRR12362027", Read_layout: "PE", IP_target: "", Control: "" },

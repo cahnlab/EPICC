@@ -414,24 +414,32 @@ def check_table(tab, check_paths=True):
                             )
 
     # --- Peak_type: analytical parameter (broad/narrow) ---
-    # Required for the pulldown assays (ChIP/CUT_RUN/CUT_TAG); must be blank for
-    # everything else, since non-peak and ATAC assays have no user-set peak type.
+    # Required only where peaks are actually called: a pulldown row with a
+    # Control (the same test as is_peak_call_target). A control-only row calls
+    # no peaks and its Peak_type reaches no output path, so blank is valid
+    # there — though a valid value is still accepted, keeping existing sheets
+    # working. Blank stays mandatory for non-pulldown assays.
     for i, (_, row) in enumerate(tab.iterrows(), start=1):
         assay = str(row.get("Assay", "")).strip()
         peak_type = str(row.get("Peak_type", "")).strip()
         if peak_type == "nan":
             peak_type = ""
+        control = str(row.get("Control", "")).strip()
+        if control == "nan":
+            control = ""
         sid = str(row.get("Sample_ID", "")).strip()
         if assay in PEAK_TYPE_ASSAYS:
-            if not peak_type:
-                errors.append(
-                    f"[X] Row #{i} '{sid}': Peak_type is required for {assay} "
-                    f"(one of {sorted(VALID_PEAK_TYPES)})"
-                )
-            elif peak_type not in VALID_PEAK_TYPES:
+            if peak_type and peak_type not in VALID_PEAK_TYPES:
                 errors.append(
                     f"[X] Row #{i} '{sid}': Peak_type '{peak_type}' not in "
                     f"{sorted(VALID_PEAK_TYPES)}"
+                )
+            elif not peak_type and control:
+                errors.append(
+                    f"[X] Row #{i} '{sid}': Peak_type is required for {assay} "
+                    f"rows that call peaks (one of {sorted(VALID_PEAK_TYPES)}). "
+                    f"Leave it blank only for a control-only row, which declares "
+                    f"no Control of its own."
                 )
         elif peak_type:
             errors.append(

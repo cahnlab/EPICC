@@ -41,7 +41,7 @@
 Sample_ID	Assay	Genome	Levels	Replicate_ID	Read_files	Read_layout	IP_target	Control	Peak_type	Comments
 Col0_WT_H3K27ac_rep1	ChIP	ColCEN	genotype:Col0,tissue:WT	rep1	SRR27821885	PE	H3K27ac	Col0_WT_Input_rep1	narrow	resequenced 2026-03; higher duplication than rep2
 Col0_WT_H3K4me1_rep1	ChIP	ColCEN	genotype:Col0,tissue:WT	rep1	SRR27821852	PE	H3K4me1	Col0_WT_Input_rep1	broad
-Col0_WT_Input_rep1	ChIP	ColCEN	genotype:Col0,tissue:WT	rep1	SRR27821932	PE	Input		narrow
+Col0_WT_Input_rep1	ChIP	ColCEN	genotype:Col0,tissue:WT	rep1	SRR27821932	PE	Input		
 Col0_suvh1_WGBS_rep1	WGBS	ColCEN	genotype:Col0,tissue:suvh1	rep1	SRR27821959	SE
 Col0_WT_WGBS_rep1	WGBS	ColCEN	genotype:Col0,tissue:WT	rep1	SRR27821907	SE
 Col0_WT_WGBS_rep2	WGBS	ColCEN	genotype:Col0,tissue:WT	rep2	SRR35564203	PE
@@ -54,9 +54,9 @@ Col0_WT_RNA_rep3	RNAseq	ColCEN	genotype:Col0,tissue:WT	rep3	SRR27821918	PE
 Col0_VLP_ddm1_sRNA_rep1	sRNA	ColCEN	genotype:Col0,tissue:VLP_ddm1	rep1	SRR8792540	SE
 Col0_VLP_ddm1_sRNA_rep2	sRNA	ColCEN	genotype:Col0,tissue:VLP_ddm1	rep2	SRR8792538	SE
 Col0_VLP_WT_inflo_sRNA_rep1	sRNA	ColCEN	genotype:Col0,tissue:VLP_WT_inflo	rep1	SRR8792539	SE
-Col0_suvh1.1_Input_rep1	ChIP	ColCEN	genotype:Col0,tissue:suvh1.1	rep1	SRR27821931	SE	Input		narrow
-Col0_suvh1.1_Input_rep2	ChIP	ColCEN	genotype:Col0,tissue:suvh1.1	rep2	SRR27821934	SE	Input		narrow
+Col0_suvh1.1_Input_rep1	ChIP	ColCEN	genotype:Col0,tissue:suvh1.1	rep1	SRR27821931	SE	Input		
+Col0_suvh1.1_Input_rep2	ChIP	ColCEN	genotype:Col0,tissue:suvh1.1	rep2	SRR27821934	SE	Input		
 Col0_suvh1.1_SUVH1_rep1	ChIP	ColCEN	genotype:Col0,tissue:suvh1.1	rep1	SRR27821933	SE	SUVH1	Col0_suvh1.1_Input_rep1	narrow
 Col0_suvh1.1_SUVH1_rep2	ChIP	ColCEN	genotype:Col0,tissue:suvh1.1	rep2	SRR27821935	SE	SUVH1	Col0_suvh1.1_Input_rep2	narrow
-Col0_suvh3_Input_repA	ChIP	ColCEN	genotype:Col0,tissue:suvh3	repA	SRR27821929	SE	Input		narrow
+Col0_suvh3_Input_repA	ChIP	ColCEN	genotype:Col0,tissue:suvh3	repA	SRR27821929	SE	Input		
 Col0_suvh3_SUVH3_repA	ChIP	ColCEN	genotype:Col0,tissue:suvh3	repA	SRR27821930	SE	SUVH3	Col0_suvh3_Input_repA	narrow
