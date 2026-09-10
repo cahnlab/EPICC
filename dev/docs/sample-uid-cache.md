@@ -1,10 +1,10 @@
 # Per-sample caching via derived sample UIDs
 
-**Status:** proposal — not implemented. Three open choices in §11 need a decision
-before implementation starts.
+**Status:** proposal — not implemented. All design choices are settled (reviewed in
+#69); §11 records the three that were open and how they were decided.
 **Depends on:** the Genome/name split (#61, merged; closed #39)
 
-**Decisions already taken:**
+**Decisions taken:**
 
 - The UID tree is scoped to `output_dir`; no shared cache this round (§2).
 - SRA is keyed on the accession, not on ENA's free MD5 (§4.2).
@@ -12,6 +12,9 @@ before implementation starts.
 - Per-sample paths carry parameter digests alongside the UID (§5).
 - Registration is implicit at Snakefile parse time (§7).
 - The transition layer is a relative-symlink farm (§8).
+- Tier-2 content hashing runs by default, with a documented opt-out (§11.1).
+- A short-prefix UID collision is a hard error (§11.2).
+- Nothing is evicted automatically; deletion is manual and documented (§11.3).
 
 ## 1. Problem
 
@@ -37,8 +40,23 @@ is a chromosome subset; on real libraries the per-sample share grows.
 
 ## 2. Goal and non-goals
 
-**Goal.** Per-sample outputs — download, trim, QC, alignment — survive any change
-to Factors, Levels, analysis grouping, or genome selection.
+**Goal.** Per-sample outputs survive any change to Factors, Levels, or analysis
+grouping — none of those describe the sample or how it was processed.
+
+Genome selection is deliberately not in that list, because the two halves of the
+per-sample phase answer to it differently, along the same seam #61 established:
+
+- **Download, trim and QC are genome-independent** and survive a genome change
+  completely. One download and one trim serve every reference the sample is
+  mapped to.
+- **Alignment is per-genome by definition** and must *not* survive one. Changing
+  the reference has to produce a new alignment — that is why `<genome>` is a path
+  component and the reference identity is inside `align-digest` (§5.2).
+
+What the cache buys for genomes is therefore additive rather than invariant:
+adding a reference to a sample costs exactly one new alignment, with no
+re-download and no re-trim, and leaves the alignments to every other reference
+untouched.
 
 **Non-goals this round:**
 
@@ -133,7 +151,7 @@ survives. The same rule applies to `Last-Modified` on HTTP sources.
 record it. The data was just written, so the page cache is warm and the cost is
 negligible against download plus alignment. This buys a real fingerprint for
 provenance, an integrity check for cached artefacts, and the ability to detect two
-UIDs holding identical data. Whether this runs by default is **open — see §11.1**.
+UIDs holding identical data. This runs by default; see §11.1 for the opt-out.
 
 ### 4.3 Canonicalisation
 
@@ -152,7 +170,7 @@ UIDs holding identical data. Whether this runs by default is **open — see §11
 
 URL-safe base64 of the digest, truncated to 8 characters = 48 bits. At 10 000
 samples the collision probability is ~2 × 10⁻⁷. The full digest is always stored in
-the manifest. What happens *on* a short-prefix collision is **open — see §11.2**.
+the manifest. A short-prefix collision is a hard error; see §11.2 for the remedy.
 
 ## 5. Identity is not the cache key
 
@@ -235,10 +253,9 @@ the tier-2 content hash once known.
 Written atomically (temp file + `os.replace`), since parse-time registration runs
 before Snakemake takes its directory lock. Schema-versioned.
 
-> **Adjacent wart worth fixing in the same pass:** `workflow/Snakefile:246` writes
-> `analysis_samplefile_<name>.tsv` into `REPO_FOLDER/config/` — same class of bug,
-> wrong for conda installs. It is a live bug independent of this refactor and could
-> land ahead of it.
+> The one prior parse-time write into `REPO_FOLDER/config/` —
+> `analysis_samplefile_<name>.tsv` — has been removed rather than relocated: nothing
+> ever read it back. So the manifest will be the only state registration writes.
 
 ## 7. Registration
 
@@ -330,14 +347,16 @@ retains its output permanently regardless of `temp()`.
    shippable and independently revertible.
 3. **Move per-sample processing into the UID tree**, add the transition layer.
 
-Step 2 is where §11.1 and §11.2 must be settled. Step 3 is where §11.3 must be.
+§11.1 and §11.2 govern step 2; §11.3 governs step 3.
 
-## 11. Open choices
+## 11. Decided choices
 
-Three decisions remain. Each is stated with its options and the trade-off, so they
-can be settled without re-deriving the context.
+These three were the open questions at review. Each is recorded with the options and
+the trade-off that produced the decision, so the reasoning survives the decision.
 
 ### 11.1 Is tier-2 content hashing on by default, or opt-in?
+
+**Decided: on by default, with a documented opt-out flag.**
 
 After a file lands, we can compute a BLAKE3 digest once and record it (§4.2). The
 question is whether that happens automatically.
@@ -354,12 +373,15 @@ question is whether that happens automatically.
   force a new UID (spurious invalidation returns) — reintroducing exactly the
   failure modes §4.2 was designed to eliminate.
 
-**Recommendation: on by default**, with an opt-out for sites where the filesystem is
-the bottleneck. The mtime rule is load-bearing and does not work without it. Worth
-noting the interaction with our current GPFS metadata-contention experience: this is
-bulk sequential read, not metadata churn, so it is the cheaper of the two costs.
+The mtime rule is load-bearing and does not work without a recorded hash to compare
+against, so opt-in would quietly reintroduce the failure modes §4.2 exists to
+eliminate. The opt-out is for sites where the filesystem is the bottleneck. Note the
+cost is bulk sequential read, not metadata churn — the cheaper of the two on a shared
+parallel filesystem.
 
 ### 11.2 What happens on a short-prefix collision?
+
+**Decided: hard error only.** No automatic migration.
 
 8 characters is 48 bits (§4.4). Collisions are vanishingly unlikely at lab scale but
 must not corrupt data if they happen.
@@ -374,11 +396,27 @@ must not corrupt data if they happen.
   samples can have different paths, and the migration has to be implemented and
   tested for something that may never fire.
 
-**Recommendation: hard error only**, matching git's short-SHA behaviour. Automatic
-migration is real complexity guarding a ~2 × 10⁻⁷ event, and the failure is loud
-rather than silent either way.
+This matches git's short-SHA behaviour. Automatic migration is real complexity
+guarding a ~2 × 10⁻⁷ event, and the failure is loud rather than silent either way.
+
+**What the user does about it.** A hard error is only acceptable if the way out is
+obvious, so the error must carry the whole remedy: both `Sample_ID`s, both source
+strings, and both *full* digests — which also demonstrates the data really does
+differ, rather than this being a duplicate row. Two genuinely identical inputs listed
+twice are a different problem, already caught by the existing cross-row duplicate
+`Read_files` check.
+
+Recovery is a mechanical rename, not a re-run. Raise `uid_prefix_length` (default 8)
+in the options file; because the manifest stores full digests, registration can
+compute both the old and new prefix for every entry and rename the existing UID
+directories in place. No re-download, no re-alignment, no recomputed hashes. That is
+what makes the strict choice cheap: the loud failure costs a config edit and a
+directory rename, and the implementation is a rename loop rather than a migration
+framework.
 
 ### 11.3 How does the UID tree get evicted?
+
+**Decided: nothing is evicted automatically.** Manual deletion, documented.
 
 The tree grows monotonically. Nothing in this design removes anything, and the whole
 point is that artefacts outlive the analysis that produced them.
@@ -397,11 +435,16 @@ point is that artefacts outlive the analysis that produced them.
   references. Predictable, but silently deletes the artefacts of a long-running
   project between analysis rounds — again the case the design targets.
 
-**Recommendation: no eviction in the first implementation**, plus an
-`epicc cache status` that reports size and per-UID breakdown so users can act with
-full information. Revisit once there is real usage data on how large the tree
-actually gets. Deleting cached work is far worse than keeping too much of it, and an
-`--dry-run`-only reporting mode costs almost nothing to ship.
+Every automatic rule considered deletes exactly the work this design exists to
+preserve, so the tree keeps all records. What ships alongside it is reporting only:
+an `epicc cache status` giving total size and a per-UID breakdown, so a user deleting
+by hand can see what they are removing and what it cost to produce. The docs must
+also carry the §8 warning that the UID tree is the real data and `results/` is
+symlinks into it.
+
+Revisit once there is real usage data on how large the tree gets. Deleting cached
+work is far worse than keeping too much of it, and a reporting-only mode costs almost
+nothing to ship.
 
 ## 12. Risks
 
@@ -409,7 +452,7 @@ actually gets. Deleting cached work is far worse than keeping too much of it, an
   genuine change in failure character.
 - **Silent staleness on weak probes.** Generic HTTP and local files are keyed on a
   size proxy. The mtime re-verification rule (§4.2) covers the realistic cases, and
-  depends on §11.1; a same-size in-place edit with a preserved mtime would not be
+  relies on the tier-2 hash of §11.1; a same-size in-place edit with a preserved mtime would not be
   caught.
 - **ENA/`fasterq-dump` route divergence** (§4.2) — recorded, not prevented.
 - **Scope creep into a shared cache.** Explicitly out of scope; the permission and
