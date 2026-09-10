@@ -208,3 +208,26 @@ it before merging the entry; otherwise the file will rot.
   — prints `True` once the function grows an exclusion.
 - **Remove when:** the plugin preserves `SLURM_CONF` (or offers an opt-out), at
   which point the `precommand` note in the SLURM profile can go.
+
+## `--exclude=None assigned` in `snakemake-executor-plugin-slurm`
+
+- **Constraint:** On a `NODE_FAIL`, the plugin runs
+  `sacct -j <id> -n -X -o nodelist` and adds the result to the set of nodes it
+  excludes from later submissions. When the job never reached a node, SLURM
+  returns the placeholder `None assigned`, which the plugin stores verbatim and
+  then interpolates unquoted into every subsequent `sbatch` as
+  `--exclude=None assigned`. The space makes `assigned` a positional argument,
+  so sbatch reports `Unable to open file assigned` and no further job is ever
+  submitted. One flaky node ends the run.
+- **Workaround:** none available — the tracking is unconditional and
+  `--slurm-exclude-failed-nodes` only *seeds* the same set. The poisoned list is
+  per-process, so re-running resumes the workflow.
+- **Upstream:** introduced in
+  snakemake/snakemake-executor-plugin-slurm#411; present through 2.8.0. The
+  value needs the placeholder filtered out and `safe_quote()` applied, as
+  `--qos` and `--reservation` already do.
+- **Check:** `grep -A6 'NODE_FAIL' $(python -c 'import
+  snakemake_executor_plugin_slurm as m; print(m.__file__)') | grep -q
+  'None assigned'` — starts succeeding once upstream filters the placeholder.
+- **Remove when:** a release filters it; then drop README known-issue 6.
+

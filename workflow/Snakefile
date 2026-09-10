@@ -10,6 +10,10 @@ from collections import defaultdict
 import time
 import atexit
 import traceback
+from scripts.config_validation import (
+    find_quoted_params,
+    format_quoted_params_error,
+)
 from scripts.samplefile_validation import (
     check_table, check_genome_config, check_extra_output_files, resolve_data_path,
 )
@@ -137,6 +141,13 @@ if "genomes" not in config:
         "ERROR: no 'genomes:' section in the options file. Define reference "
         "genomes under the 'genomes:' namespace (see config/epicc-options.yaml)."
     )
+
+# ---------------------------------------------------------------------------
+# Tool-parameter strings
+# ---------------------------------------------------------------------------
+_quoted_params = find_quoted_params(config)
+if _quoted_params:
+    sys.exit(format_quoted_params_error(_quoted_params))
 
 # ---------------------------------------------------------------------------
 # Intermediate file retention

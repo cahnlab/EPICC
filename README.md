@@ -575,6 +575,9 @@ The shipped `profiles/slurm/config.yaml` sets a default runtime of 60 minutes pe
 5. Help for local fastq files naming convention\
 If using local fastq files for paired-end data, provide comma-separated R1 and R2 paths in the `Read_files` column (e.g. `/path/sample_R1.fq.gz,/path/sample_R2.fq.gz`). Files can use extensions `.fq` or `.fastq` and may be gzipped (`.gz`).
 
+6. `sbatch: error: Unable to open file assigned`\
+A run that hits a SLURM node failure can start failing *every* remaining job at submission time, with `sbatch: error: Unable to open file assigned` and no SLURM log (the jobs were never submitted). This is a bug in `snakemake-executor-plugin-slurm`: on `NODE_FAIL` it reads the job's node list back from `sacct`, gets SLURM's `None assigned` placeholder when the job never reached a node, and appends it unquoted to later submissions as `--exclude=None assigned` — so `assigned` is parsed as a batch script. The poisoned list lives only in that snakemake process, so simply re-running resumes the workflow. See `dev/docs/upstream_blockers.md`.
+
 ## FAQ
 
 ## Contributing

@@ -295,7 +295,7 @@ rule filter_rna_pe:
             to_sort="{input.bamfile}"
         fi
         printf "\nSorting bam file\n"
-        samtools sort -@ {threads} -T "{output.sorted_file}.sort" "${{to_sort}}" -o "{output.sorted_file}"
+        samtools sort -@ {threads} -T "$TMPDIR/star_pe.sort" "${{to_sort}}" -o "{output.sorted_file}"
         [[ "{params.deduplicate}" == "True" ]] && rm -f "{params.mrkdup}"
         printf "\nIndexing bam file\n"
         samtools index -@ {threads} "{output.sorted_file}"
@@ -335,7 +335,7 @@ rule filter_rna_se:
         fi
         #### Sorting bam file
         printf "\nSorting bam file\n"
-        samtools sort -@ {threads} -T "{output.sorted_file}.sort" "${{to_sort}}" -o "{output.sorted_file}"
+        samtools sort -@ {threads} -T "$TMPDIR/star_se.sort" "${{to_sort}}" -o "{output.sorted_file}"
         [[ "{params.deduplicate}" == "True" ]] && rm -f "{params.mrkdup}"
         #### Indexing bam file
         printf "\nIndexing bam file\n"
@@ -446,7 +446,7 @@ rule merging_rna_replicates:
         """
         {{
         printf "\nMerging replicates of {params.sname}\n"
-        samtools merge -u -@ {threads} - {input.bamfiles} | samtools sort -@ {threads} -T {output.mergefile}.sort -o {output.mergefile}
+        samtools merge -u -@ {threads} - {input.bamfiles} | samtools sort -@ {threads} -T "$TMPDIR/merge.sort" -o {output.mergefile}
         samtools index -@ {threads} {output.mergefile}
         }} 2>&1 | tee -a "{log}"
         """
