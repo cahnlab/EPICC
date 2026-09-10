@@ -552,9 +552,11 @@ rule prep_files_for_DEGs:
         RNA_samples.to_csv(output.rna_samples, sep="\t", index=False)
 
         RNA_counts = None
-        replicates = filtered_samples[['sample_name', 'Replicate']].drop_duplicates()
-        for sname, rep in replicates.values:
-            file_path = f"{RESULTS_DIR}/RNA/DEG/counts__{sname}.tab"
+        # mapped_name, not sample_name: the per-replicate counts are a
+        # post-alignment product, so they carry the genome.
+        replicates = filtered_samples[['mapped_name', 'Replicate']].drop_duplicates()
+        for mname, rep in replicates.values:
+            file_path = f"{RESULTS_DIR}/RNA/DEG/counts__{mname}.tab"
             if params.strand == "reverse":
                 temp = pd.read_csv(file_path, sep="\t", header=None, usecols=[0, 3])
             elif params.strand == "forward":
