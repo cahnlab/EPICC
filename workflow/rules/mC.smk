@@ -264,6 +264,7 @@ rule bismark_map_pe:
     params:
         sample_name = lambda wildcards: wildcards.sample_name,
         ref_genome_path = lambda wildcards: os.path.join(REPO_FOLDER, GENOMES_DIR,parse_sample_name(wildcards.sample_name)['ref_genome']),
+        base = lambda wildcards: base_sample(wildcards.sample_name),
         mapping = lambda wildcards: config["mC_mapping"][parameters_for_mc(wildcards.sample_name)]['map_pe'],
         process = lambda wildcards: config["mC_mapping"][parameters_for_mc(wildcards.sample_name)]['process_pe'],
         prefix = lambda wildcards: f"{RESULTS_DIR}/mC/mapped/{wildcards.sample_name}",
@@ -283,6 +284,10 @@ rule bismark_map_pe:
         # and the flag only affects intermediate temp files (not the final
         # BAM), so the disk cost is small and consistent across all mC types.
         bismark --genome {params.ref_genome_path} {params.mapping} --local --multicore {params.limthreads} -o {params.prefix} --temp_dir {params.prefix} -1 {input.fastq1} -2 {input.fastq2}
+        # bismark names its outputs after the input FASTQ, which is genome-free
+        # (one trim serves every reference), while our paths carry the genome.
+        mv "{params.prefix}/trim__{params.base}__R1_bismark_bt2_pe.bam" "{output.temp_bamfile}"
+        mv "{params.prefix}/trim__{params.base}__R1_bismark_bt2_PE_report.txt" "{output.metrics_alignement}"
         printf "\nDeduplicating with bismark\n"
         deduplicate_bismark -p --output_dir {params.prefix}/ -o "PE__{params.sample_name}" --bam {output.temp_bamfile}
         printf "\nComputing nucleotide-coverage stats (bam2nuc)\n"
@@ -317,6 +322,7 @@ rule bismark_map_se:
     params:
         sample_name = lambda wildcards: wildcards.sample_name,
         ref_genome_path = lambda wildcards: os.path.join(REPO_FOLDER, GENOMES_DIR,parse_sample_name(wildcards.sample_name)['ref_genome']),
+        base = lambda wildcards: base_sample(wildcards.sample_name),
         mapping = lambda wildcards: config["mC_mapping"][parameters_for_mc(wildcards.sample_name)]['map_se'],
         process = lambda wildcards: config["mC_mapping"][parameters_for_mc(wildcards.sample_name)]['process_se'],
         prefix = lambda wildcards: f"{RESULTS_DIR}/mC/mapped/{wildcards.sample_name}",
@@ -334,6 +340,10 @@ rule bismark_map_se:
         printf "\nAligning {params.sample_name} with bismark/bowtie2\n"
         # --gzip omitted for symmetry with bismark_map_pe (see that rule).
         bismark --genome {params.ref_genome_path} {params.mapping} --local --multicore {params.limthreads} -o {params.prefix} --temp_dir {params.prefix} {input.fastq0}
+        # bismark names its outputs after the input FASTQ, which is genome-free
+        # (one trim serves every reference), while our paths carry the genome.
+        mv "{params.prefix}/trim__{params.base}__R0_bismark_bt2.bam" "{output.temp_bamfile}"
+        mv "{params.prefix}/trim__{params.base}__R0_bismark_bt2_SE_report.txt" "{output.metrics_map}"
         printf "\nDeduplicating with bismark\n"
         deduplicate_bismark -s --output_dir {params.prefix} -o "SE__{params.sample_name}" --bam {output.temp_bamfile}
         printf "\nComputing nucleotide-coverage stats (bam2nuc)\n"
