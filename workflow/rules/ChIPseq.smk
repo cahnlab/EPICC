@@ -609,6 +609,10 @@ rule filter_bam_pe:
         printf "\nMapping {params.sample_name} to {params.ref_genome} with $aligner ({params.map_option}) and filtering with samtools\n"
         printf "samtools sort memory: {params.sort_mem} per thread\n"
         samtools --version | head -1
+        # Sort spills and the pre-markdup BAM stay in the per-job $TMPDIR.
+        # samtools sort will not overwrite an existing temp chunk, yet exits 0
+        # and silently drops those reads, so a retry must never find one.
+        sorted_bam="$TMPDIR/sorted.bam"
 
         # NOTE: samtools view -q (MAPQ filter) must run *after* fixmate, not
         # before. fixmate requires name-collated input where mates are
@@ -628,7 +632,7 @@ rule filter_bam_pe:
             | samtools view -@ 2 -bh -F 256 \
             | samtools fixmate -@ 2 -m - - \
             | samtools view -@ 2 -bh -q {params.mapq_filter} \
-            | samtools sort -@ {threads} -m {params.sort_mem} -T "{config[output_dir]}/{params.env}/mapped/sorted_{params.sample_name}.sort" -o "{config[output_dir]}/{params.env}/mapped/sorted_{params.sample_name}.bam"
+            | samtools sort -@ {threads} -m {params.sort_mem} -T "$TMPDIR/sorted.sort" -o "$sorted_bam"
         else
             bowtie2 --version
             bowtie2 -p {threads} {params.mapping_params} \
@@ -638,14 +642,14 @@ rule filter_bam_pe:
             | samtools view -@ 2 -bh -F 256 \
             | samtools fixmate -@ 2 -m - - \
             | samtools view -@ 2 -bh -q {params.mapq_filter} \
-            | samtools sort -@ 2 -m {params.sort_mem} -T "{config[output_dir]}/{params.env}/mapped/sorted_{params.sample_name}.sort" -o "{config[output_dir]}/{params.env}/mapped/sorted_{params.sample_name}.bam"
+            | samtools sort -@ 2 -m {params.sort_mem} -T "$TMPDIR/sorted.sort" -o "$sorted_bam"
         fi
 
         samtools markdup -r -s -f "{output.metrics_dup}" -@ {threads} \
-            "{config[output_dir]}/{params.env}/mapped/sorted_{params.sample_name}.bam" "{output.bamfile}"
+            "$sorted_bam" "{output.bamfile}"
         printf "\nGetting some stats\n"
         samtools flagstat -@ {threads} "{output.bamfile}" > "{output.metrics_flag}"
-        rm -f "{config[output_dir]}/{params.env}/mapped/sorted_{params.sample_name}.bam"
+        rm -f "$sorted_bam"
         }} 2>&1 | tee -a "{log}"
         """
 
@@ -682,6 +686,10 @@ rule filter_bam_se:
         printf "\nMapping {params.sample_name} to {params.ref_genome} with $aligner ({params.map_option}) and filtering with samtools\n"
         printf "samtools sort memory: {params.sort_mem} per thread\n"
         samtools --version | head -1
+        # Sort spills and the pre-markdup BAM stay in the per-job $TMPDIR.
+        # samtools sort will not overwrite an existing temp chunk, yet exits 0
+        # and silently drops those reads, so a retry must never find one.
+        sorted_bam="$TMPDIR/sorted.bam"
 
         if [[ "$aligner" == "chromap" ]]; then
             chromap --version
@@ -694,7 +702,7 @@ rule filter_bam_se:
                 -1 "{input.fastq}" \
                 -o /dev/stdout 2> "{output.metrics_map}" \
             | samtools view -@ 2 -bh -q {params.mapq_filter} -F 256 \
-            | samtools sort -@ {threads} -m {params.sort_mem} -T "{config[output_dir]}/{params.env}/mapped/sorted_{params.sample_name}.sort" -o "{config[output_dir]}/{params.env}/mapped/sorted_{params.sample_name}.bam"
+            | samtools sort -@ {threads} -m {params.sort_mem} -T "$TMPDIR/sorted.sort" -o "$sorted_bam"
         else
             bowtie2 --version
             bowtie2 -p {threads} {params.mapping_params} \
@@ -702,14 +710,14 @@ rule filter_bam_se:
                 -U "{input.fastq}" \
                 2> "{output.metrics_map}" \
             | samtools view -@ 2 -bh -q {params.mapq_filter} -F 256 \
-            | samtools sort -@ 2 -m {params.sort_mem} -T "{config[output_dir]}/{params.env}/mapped/sorted_{params.sample_name}.sort" -o "{config[output_dir]}/{params.env}/mapped/sorted_{params.sample_name}.bam"
+            | samtools sort -@ 2 -m {params.sort_mem} -T "$TMPDIR/sorted.sort" -o "$sorted_bam"
         fi
 
         samtools markdup -r -s -f "{output.metrics_dup}" -@ {threads} \
-            "{config[output_dir]}/{params.env}/mapped/sorted_{params.sample_name}.bam" "{output.bamfile}"
+            "$sorted_bam" "{output.bamfile}"
         printf "\nGetting some stats\n"
         samtools flagstat -@ {threads} "{output.bamfile}" > "{output.metrics_flag}"
-        rm -f "{config[output_dir]}/{params.env}/mapped/sorted_{params.sample_name}.bam"
+        rm -f "$sorted_bam"
         }} 2>&1 | tee -a "{log}"
         """
 
@@ -1217,7 +1225,7 @@ rule merging_bam_replicates:
         """
         {{
         printf "\nMerging replicates of {params.sname}\n"
-        samtools merge -u -@ {threads} - {input.bamfiles} | samtools sort -@ {threads} -T {output.mergefile}.sort -o {output.mergefile}
+        samtools merge -u -@ {threads} - {input.bamfiles} | samtools sort -@ {threads} -T "$TMPDIR/merge.sort" -o {output.mergefile}
         samtools index -@ {threads} {output.mergefile}
         }} 2>&1 | tee -a "{log}"
         """
@@ -1245,8 +1253,8 @@ rule making_pseudo_replicates:
         {{
         printf "\nSplitting {params.sname} in two pseudo-replicates\n"
         samtools view -b -h -s 1.5 -@ {threads} -U {output.temp_pseudo2} -o {output.temp_pseudo1} {input.bamfile}
-		samtools sort -@ {threads} -T {output.pseudo1}.sort -o {output.pseudo1} {output.temp_pseudo1}
-		samtools sort -@ {threads} -T {output.pseudo2}.sort -o {output.pseudo2} {output.temp_pseudo2}
+		samtools sort -@ {threads} -T "$TMPDIR/pseudo1.sort" -o {output.pseudo1} {output.temp_pseudo1}
+		samtools sort -@ {threads} -T "$TMPDIR/pseudo2.sort" -o {output.pseudo2} {output.temp_pseudo2}
         # Index alongside the BAM so downstream rules (e.g. atac_shift_bam,
         # which calls alignmentSieve) can require a fresh .bai as input.
         samtools index -@ {threads} {output.pseudo1}

@@ -3037,7 +3037,7 @@ var configState = {
   chip_mapping_strategy: "default",
   chip_tracks_binsize: 1,
   chip_tracks_params: "--scaleFactorsMethod None --normalizeUsing CPM --extendReads 300",
-  chip_callpeaks_params: "--keep-dup 'all' --nomodel",
+  chip_callpeaks_params: "--keep-dup all --nomodel",
   // CUT&RUN / CUT&Tag peak callers (defaults differ from ChIP):
   // broad → epic2, narrow → SEACR; macs2 available as a fallback.
   cut_callpeaks_broad_caller: "epic2",
@@ -3399,7 +3399,7 @@ function buildConfigForm() {
   chipBody.appendChild(buildTextRow("Bigwig parameters:", "chip_tracks_params",
     "--scaleFactorsMethod None --normalizeUsing CPM --extendReads 300"));
   chipBody.appendChild(buildTextRow("Peak calling parameters:", "chip_callpeaks_params",
-    "--keep-dup 'all' --nomodel"));
+    "--keep-dup all --nomodel"));
   chipBody.appendChild(buildSelectRow("CUT&RUN/CUT&Tag broad caller:", "cut_callpeaks_broad_caller",
     ["epic2", "seacr", "macs2"],
     "Peak caller for CUT&RUN/CUT&Tag broad-mark assays (histone domains). \"epic2\" (default) calls broad enriched domains; \"seacr\" suits sparse, low-background CUT& data; \"macs2\" is the general fallback. ChIP assays always use MACS2."));

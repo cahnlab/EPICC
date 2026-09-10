@@ -116,7 +116,7 @@ rule atac_shift_bam:
         # multithreaded mode emits records out of position order anyway. If
         # this becomes a wall-time bottleneck on very large BAMs, revisit.
         alignmentSieve --ATACshift -b {input.bamfile} -p 1 -o /dev/stdout \
-            | samtools sort -@ {threads} -T {output.shifted_bam}.sort -o {output.shifted_bam} -
+            | samtools sort -@ {threads} -T "$TMPDIR/shift.sort" -o {output.shifted_bam} -
         samtools index -@ {threads} {output.shifted_bam}
         }} 2>&1 | tee -a "{log}"
         """

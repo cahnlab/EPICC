@@ -1091,7 +1091,7 @@ rule prepare_modbam_for_pileup:
             printf "Aligning modBAM to $ref_genome with mm2plus\n"
             samtools fastq -T MM,ML {input.validated} | \
                 mm2plus -ax {params.preset} -t {threads} -y {input.fasta} - | \
-                samtools sort -@ {threads} -T {output.aligned_bam}.sort -o {output.aligned_bam} -
+                samtools sort -@ {threads} -T "$TMPDIR/align.sort" -o {output.aligned_bam} -
             samtools index -@ {threads} {output.aligned_bam}
         else
             printf "BAM is already aligned to compatible reference, claiming\n"

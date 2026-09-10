@@ -75,3 +75,7 @@ NOTES.local.md
 config/analysis_samplefile_*.tsv
 config/config_test_local.yaml
 dev/plans/
+
+# Local agent scratch (worktrees, drafts) — never part of the repo
+.claude/worktrees/
+.claude/drafts/
