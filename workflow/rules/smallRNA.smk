@@ -419,7 +419,8 @@ rule make_srna_stranded_bigwigs:
     params:
         sample_name = lambda wildcards: wildcards.sample_name,
         size = lambda wildcards: wildcards.size,
-        ref_genome = lambda wildcards: parse_sample_name(wildcards.sample_name)['ref_genome']
+        ref_genome = lambda wildcards: parse_sample_name(wildcards.sample_name)['ref_genome'],
+        bg2bw = os.path.join(REPO_FOLDER, "workflow", "scripts", "bedgraph_to_bigwig.sh")
     log:
         temp(return_log_smallrna("{sample_name}", "making_bigiwig", "{size}"))
     conda: CONDA_ENV_SRNA
@@ -437,19 +438,23 @@ rule make_srna_stranded_bigwigs:
             touch {output.temp_minus}
             touch {output.temp_minus_rev}
             touch {output.temp_minus_sort}
-            # Minimal bedGraph with a single zero-value entry to produce a valid bigwig
-            chrom=$(head -1 {input.chrom_sizes} | cut -f1)
-            printf "%s\t0\t1\t0\n" "$chrom" > "${{basename}}_empty.bg"
-            bedGraphToBigWig "${{basename}}_empty.bg" {input.chrom_sizes} {output.bw_plus}
+            # An empty bedGraph converts to an all-zero track spanning every
+            # chromosome, which computeMatrix can still query.
+            bash "{params.bg2bw}" {output.temp_minus_sort} {input.chrom_sizes} {output.bw_plus}
             cp {output.bw_plus} {output.bw_minus}
-            rm -f "${{basename}}_empty.bg"
         else
-            mv ${{basename}}_p.bw {output.bw_plus}
+            # ShortTracks writes the plus-strand bigwig itself, so re-derive it
+            # through the padding converter: chromosomes with no reads at this
+            # size are otherwise missing from the header and make deeptools 4
+            # abort on any region that lands there.
+            bigWigToBedGraph ${{basename}}_p.bw "${{basename}}_p.bg"
+            bash "{params.bg2bw}" "${{basename}}_p.bg" {input.chrom_sizes} {output.bw_plus}
+            rm -f "${{basename}}_p.bg"
             printf "Inverting minus strand (back to positive values)\n"
             bigWigToBedGraph ${{basename}}_m.bw {output.temp_minus}
             awk -v OFS="\t" '{{print $1,$2,$3,-$4}}' {output.temp_minus} > {output.temp_minus_rev}
             bedSort {output.temp_minus_rev} {output.temp_minus_sort}
-            bedGraphToBigWig {output.temp_minus_sort} {input.chrom_sizes} {output.bw_minus}
+            bash "{params.bg2bw}" {output.temp_minus_sort} {input.chrom_sizes} {output.bw_minus}
         fi
         rm -f ${{basename}}_m*
         rm -f ${{basename}}_p*

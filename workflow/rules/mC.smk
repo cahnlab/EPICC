@@ -530,7 +530,8 @@ rule make_mc_bigwig_files:
         # Space-separated list of contexts to actually generate bigwig
         # data for. Contexts NOT in the list still get an empty placeholder
         # bigwig (downstream rules require all three .bw outputs to exist).
-        contexts = " ".join(get_methylation_contexts())
+        contexts = " ".join(get_methylation_contexts()),
+        bg2bw = os.path.join(REPO_FOLDER, "workflow", "scripts", "bedgraph_to_bigwig.sh")
     log:
         temp(return_log_mc("{sample_name}", "bigwig", ""))
     conda: CONDA_ENV_MC
@@ -565,47 +566,44 @@ rule make_mc_bigwig_files:
             zcat {input.cx_report} | awk -v n="$sign" '$3==n' | awk -v OFS="\t" -v s=$sname -v d=$strand '($4+$5)>0 {{a=$4+$5; if ($6=="CHH") print $1,$2-1,$2,$4/a*100 >> "'"$outdir"'/"s"__CHH__"d".bedGraph"; else if ($6=="CHG") print $1,$2-1,$2,$4/a*100 >> "'"$outdir"'/"s"__CHG__"d".bedGraph"; else if ($6=="CG") print $1,$2-1,$2,$4/a*100 >> "'"$outdir"'/"s"__CG__"d".bedGraph"}}'
         done
 
+        # A sample with no covered cytosine anywhere is a failed sample, not a
+        # biological result: its bigwigs are flat, it contributes nothing but
+        # missing values to the DMR input, and metilene segfaults on a group
+        # whose every position is missing. Fail here, where the cause is
+        # obvious, rather than several rules downstream.
+        if ! [[ -s "$outdir/${{sname}}__CG.bedGraph" \
+             || -s "$outdir/${{sname}}__CHG.bedGraph" \
+             || -s "$outdir/${{sname}}__CHH.bedGraph" ]]; then
+            printf "\nERROR: %s has no covered cytosine in any context.\n" "$sname"
+            printf "The CX report is all-zero coverage, so mapping produced no usable reads.\n"
+            printf "Check results/mC/reports for this sample: an empty input FASTQ (a run\n"
+            printf "whose real layout does not match Read_layout is the usual cause) or a\n"
+            printf "failed alignment both end up here.\n"
+            exit 1
+        fi
+
         for context in CG CHG CHH; do
-            # Skip contexts the user didn't ask for: emit a 1-bp placeholder
-            # bigwig so snakemake's declared outputs all exist (downstream
-            # heatmaps/PCA rules gate on the presence of these files).
+            # Contexts the user didn't ask for still need their declared .bw
+            # outputs (downstream heatmap/PCA rules gate on the files being
+            # present), so truncate the demuxed bedGraph and let the converter
+            # emit an all-zero track.
             if ! [[ " $active_contexts " == *" $context "* ]]; then
                 printf "\nContext $context not in methylation_contexts; emitting empty placeholder bigwig\n"
-                chrom=$(head -1 {input.chrom_sizes} | cut -f1)
-                printf "%s\t0\t1\t0\n" "$chrom" > "$outdir/empty__${{sname}}__${{context}}.bg"
-                bedGraphToBigWig "$outdir/empty__${{sname}}__${{context}}.bg" {input.chrom_sizes} "$outdir/${{sname}}__${{context}}.bw"
-                rm -f "$outdir/empty__${{sname}}__${{context}}.bg"
+                > "$outdir/${{sname}}__${{context}}.bedGraph"
                 for strand in plus minus; do
-                    printf "%s\t0\t1\t0\n" "$chrom" > "$outdir/empty__${{sname}}__${{context}}__${{strand}}.bg"
-                    bedGraphToBigWig "$outdir/empty__${{sname}}__${{context}}__${{strand}}.bg" {input.chrom_sizes} "$outdir/${{sname}}__${{context}}__${{strand}}.bw"
-                    rm -f "$outdir/empty__${{sname}}__${{context}}__${{strand}}.bg"
+                    > "$outdir/${{sname}}__${{context}}__${{strand}}.bedGraph"
                 done
-                continue
-            fi
-
-            printf "\nMaking bigwig files of $context context for $sname\n"
-            if [[ -s "$outdir/${{sname}}__${{context}}.bedGraph" ]]; then
-                LC_COLLATE=C sort -k1,1 -k2,2n "$outdir/${{sname}}__${{context}}.bedGraph" > "$outdir/sorted__${{sname}}__${{context}}.bedGraph"
-                bedGraphToBigWig "$outdir/sorted__${{sname}}__${{context}}.bedGraph" {input.chrom_sizes} "$outdir/${{sname}}__${{context}}.bw"
             else
-                printf "No data for $context context — creating empty bigwig\n"
-                chrom=$(head -1 {input.chrom_sizes} | cut -f1)
-                printf "%s\t0\t1\t0\n" "$chrom" > "$outdir/empty__${{sname}}__${{context}}.bg"
-                bedGraphToBigWig "$outdir/empty__${{sname}}__${{context}}.bg" {input.chrom_sizes} "$outdir/${{sname}}__${{context}}.bw"
-                rm -f "$outdir/empty__${{sname}}__${{context}}.bg"
+                printf "\nMaking bigwig files of $context context for $sname\n"
             fi
+            # bedgraph_to_bigwig.sh sorts, pads every chromosome absent from
+            # the data with a zero-value base, and converts. The padding is
+            # what keeps deeptools 4 from aborting computeMatrix with "The
+            # passed chromosome (Chr2) was incorrect" on a track that happens
+            # to have no calls on some chromosome.
+            bash "{params.bg2bw}" "$outdir/${{sname}}__${{context}}.bedGraph" {input.chrom_sizes} "$outdir/${{sname}}__${{context}}.bw"
             for strand in plus minus; do
-                printf "\nMaking $strand strand bigwig files of $context context for $sname\n"
-                if [[ -s "$outdir/${{sname}}__${{context}}__${{strand}}.bedGraph" ]]; then
-                    LC_COLLATE=C sort -k1,1 -k2,2n "$outdir/${{sname}}__${{context}}__${{strand}}.bedGraph" > "$outdir/sorted__${{sname}}__${{context}}__${{strand}}.bedGraph"
-                    bedGraphToBigWig "$outdir/sorted__${{sname}}__${{context}}__${{strand}}.bedGraph" {input.chrom_sizes} "$outdir/${{sname}}__${{context}}__${{strand}}.bw"
-                else
-                    printf "No data for $context $strand strand — creating empty bigwig\n"
-                    chrom=$(head -1 {input.chrom_sizes} | cut -f1)
-                    printf "%s\t0\t1\t0\n" "$chrom" > "$outdir/empty__${{sname}}__${{context}}__${{strand}}.bg"
-                    bedGraphToBigWig "$outdir/empty__${{sname}}__${{context}}__${{strand}}.bg" {input.chrom_sizes} "$outdir/${{sname}}__${{context}}__${{strand}}.bw"
-                    rm -f "$outdir/empty__${{sname}}__${{context}}__${{strand}}.bg"
-                fi
+                bash "{params.bg2bw}" "$outdir/${{sname}}__${{context}}__${{strand}}.bedGraph" {input.chrom_sizes} "$outdir/${{sname}}__${{context}}__${{strand}}.bw"
             done
         done
 
