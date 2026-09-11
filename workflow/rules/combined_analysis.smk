@@ -1022,6 +1022,16 @@ rule making_stranded_matrix_on_targetfile:
             esac
             awk -v s=${{sign}} '$6==s' {input.target_file} > {output.temp}
         fi
+        # computeMatrix accepts only '+', '-' and '.' in the strand column and
+        # panics on anything else ("Strand should either be + or - or . \"?\" is
+        # not supported"). GFF3-derived annotations legitimately carry '?' for
+        # unknown strand, which is what '.' means here, so normalise rather
+        # than drop the regions.
+        awk -v OFS="\t" '
+            {{ if (NF >= 6 && $6 != "+" && $6 != "-" && $6 != ".") {{ n++; $6 = "." }} print }}
+            END {{ if (n > 0) print "WARNING: " n " region(s) had an unaccepted strand character in column 6; replaced with a dot" > "/dev/stderr" }}
+        ' {output.temp} > "$TMPDIR/target_strand_fixed.bed"
+        mv "$TMPDIR/target_strand_fixed.bed" {output.temp}
         echo "{params.labels}" | xargs -n1 > "{config[output_dir]}/combined/matrix/labels_{params.matrix}__{params.env}__{params.analysis_name}__{params.ref_genome}__{params.target_name}.txt"
         echo "{params.marks}" | xargs -n1 > "{config[output_dir]}/combined/matrix/marks_{params.matrix}__{params.env}__{params.analysis_name}__{params.ref_genome}__{params.target_name}.txt"
         printf "Making {params.strand} strand {params.matrix} matrix for {params.env} {params.target_name} on {params.ref_genome}\n"
