@@ -521,15 +521,24 @@ rule prep_files_for_differential_srna_clusters:
 
         sRNA_samples.to_csv(output.srna_samples, sep="\t", index=False)
         
+        # ShortStack names its count columns after the input BAM basenames,
+        # which define_input_for_grouped_analysis builds from mapped_name
+        # ('{Sample_ID}__{Genome}') — not the bare Sample_ID. Using
+        # sample_name here asked for columns that never exist.
         column_order = ['Name']
         for _, row in sRNA_samples.iterrows():
             ROW = filtered_samples.loc[filtered_samples["Replicate"] == row["Replicate"]].iloc[0]
-            sname = ROW['sample_name']
-            column_order.append(sname)
-            
+            column_order.append(ROW['mapped_name'])
+
         temp = pd.read_csv(input.count_file, sep="\t", header=0)
         temp = temp.rename(columns=lambda x: x[7:] if x.startswith("clean__") else x)
         temp = temp.rename(columns=lambda x: x[:-10] if x.endswith("_condensed") else x)
+        missing = [c for c in column_order if c not in temp.columns]
+        if missing:
+            raise ValueError(
+                f"{input.count_file} has no column for: {', '.join(missing)}.\n"
+                f"Columns present: {', '.join(temp.columns)}"
+            )
         sRNA_counts = temp[column_order]
         sRNA_counts.to_csv(output.srna_counts, sep="\t", index=False)
 
