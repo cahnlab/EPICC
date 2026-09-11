@@ -125,7 +125,16 @@ if not config.get("use_node_tmpdir", False):
     # → "{SLURM_JOB_ID:-local}" in the final bash command. The trailing ".$$"
     # has no braces, so it survives both passes untouched and bash expands it
     # to the rule shell's PID.
+    # `set -euo pipefail` is Snakemake's own default for bash shell commands,
+    # but it only applies while no shell.prefix has been registered
+    # (snakemake.shell._get_process_prefix gates it on _process_prefix being
+    # None). Registering one therefore silently drops strict mode for every
+    # rule in the workflow, and a command that fails anywhere but last in a
+    # rule body -- the `cat missing | pigz > out` head of a pipe, say -- lets
+    # the rule exit 0 with a truncated or empty output. Re-assert it here so
+    # the TMPDIR routing costs nothing.
     shell.prefix(
+        'set -euo pipefail; '
         f'TMPDIR_JOB="{_tmpdir_base}/.tmp/${{{{SLURM_JOB_ID:-local}}}}.$$" && '
         'mkdir -p "$TMPDIR_JOB" && '
         'trap \'rm -rf "$TMPDIR_JOB"\' EXIT && '
