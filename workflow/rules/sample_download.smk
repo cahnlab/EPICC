@@ -61,6 +61,19 @@ rule get_fastq_pe:
                 fastq_files_r2=()
                 for nb in ${{numbers}}; do
                     fasterq-dump -e {threads} --temp "${{TMPDIR:-/tmp}}" --outdir "${{outdir}}" "${{nb}}"
+                    # A single-end run dumps to <acc>.fastq with no _1/_2, so a
+                    # Read_layout of PE on an SE accession would otherwise
+                    # concatenate missing files into empty outputs.
+                    if [[ ! -s "${{outdir}}/${{nb}}_1.fastq" || ! -s "${{outdir}}/${{nb}}_2.fastq" ]]; then
+                        if [[ -s "${{outdir}}/${{nb}}.fastq" ]]; then
+                            printf "ERROR: %s is a single-end run but {params.sample_name} is declared PE.\n" "${{nb}}"
+                            printf "Set Read_layout to SE for this sample, or use a PE accession.\n"
+                            rm -f "${{outdir}}/${{nb}}.fastq"
+                        else
+                            printf "ERROR: fasterq-dump produced no paired reads for %s.\n" "${{nb}}"
+                        fi
+                        exit 1
+                    fi
                     fastq_files_r1+=("${{outdir}}/${{nb}}_1.fastq")
                     fastq_files_r2+=("${{outdir}}/${{nb}}_2.fastq")
                 done
@@ -138,6 +151,16 @@ rule get_fastq_pe:
             printf "Error: No PE fastqs found for {params.sample_name} ({params.seq_id} in {params.fastq_path})\n"
             exit 1
         fi
+        # Every branch above must leave reads behind. An empty FASTQ is not a
+        # result -- downstream it becomes a zero-read BAM and, for mC, a
+        # zero-coverage CX report that only fails much later and far less
+        # legibly.
+        for fq in "{output.fastq1}" "{output.fastq2}"; do
+            if [[ $(pigz -dc "${{fq}}" 2>/dev/null | head -c 1 | wc -c) -eq 0 ]]; then
+                printf "ERROR: %s is empty after download for {params.sample_name}.\n" "${{fq}}"
+                exit 1
+            fi
+        done
         }} 2>&1 | tee -a "{log}"
         """
 
@@ -194,6 +217,21 @@ rule get_fastq_se:
                 fastq_files=()
                 for nb in ${{numbers}}; do
                     fasterq-dump -e {threads} --temp "${{TMPDIR:-/tmp}}" --outdir "${{outdir}}" "${{nb}}"
+                    # fasterq-dump splits a paired run into _1/_2 and writes no
+                    # <acc>.fastq at all, so a run whose real layout is PE
+                    # leaves nothing here. Catch it now: the old code fed the
+                    # missing path to `cat` and the empty FASTQ propagated all
+                    # the way to zero-coverage methylation calls.
+                    if [[ ! -s "${{outdir}}/${{nb}}.fastq" ]]; then
+                        if [[ -s "${{outdir}}/${{nb}}_1.fastq" ]]; then
+                            printf "ERROR: %s is a paired-end run but {params.sample_name} is declared SE.\n" "${{nb}}"
+                            printf "Set Read_layout to PE for this sample, or use an SE accession.\n"
+                            rm -f "${{outdir}}/${{nb}}_1.fastq" "${{outdir}}/${{nb}}_2.fastq"
+                        else
+                            printf "ERROR: fasterq-dump produced no reads for %s.\n" "${{nb}}"
+                        fi
+                        exit 1
+                    fi
                     fastq_files+=("${{outdir}}/${{nb}}.fastq")
                 done
                 printf "\n{params.sample_name} ({params.seq_id}) downloaded via fasterq-dump\nCompressing files\n"
@@ -238,6 +276,10 @@ rule get_fastq_se:
             pigz -p {threads} "{params.fastq_path}"/*"{params.seq_id}"*q -c > "{output.fastq0}"
         else
             printf "Error: No SE fastq found for {params.sample_name} ({params.seq_id} in {params.fastq_path})\n"
+            exit 1
+        fi
+        if [[ $(pigz -dc "{output.fastq0}" 2>/dev/null | head -c 1 | wc -c) -eq 0 ]]; then
+            printf "ERROR: {output.fastq0} is empty after download for {params.sample_name}.\n"
             exit 1
         fi
         }} 2>&1 | tee -a "{log}"
