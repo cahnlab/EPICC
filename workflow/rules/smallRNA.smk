@@ -419,7 +419,8 @@ rule make_srna_stranded_bigwigs:
     params:
         sample_name = lambda wildcards: wildcards.sample_name,
         size = lambda wildcards: wildcards.size,
-        ref_genome = lambda wildcards: parse_sample_name(wildcards.sample_name)['ref_genome']
+        ref_genome = lambda wildcards: parse_sample_name(wildcards.sample_name)['ref_genome'],
+        bg2bw = os.path.join(REPO_FOLDER, "workflow", "scripts", "bedgraph_to_bigwig.sh")
     log:
         temp(return_log_smallrna("{sample_name}", "making_bigiwig", "{size}"))
     conda: CONDA_ENV_SRNA
@@ -437,19 +438,23 @@ rule make_srna_stranded_bigwigs:
             touch {output.temp_minus}
             touch {output.temp_minus_rev}
             touch {output.temp_minus_sort}
-            # Minimal bedGraph with a single zero-value entry to produce a valid bigwig
-            chrom=$(head -1 {input.chrom_sizes} | cut -f1)
-            printf "%s\t0\t1\t0\n" "$chrom" > "${{basename}}_empty.bg"
-            bedGraphToBigWig "${{basename}}_empty.bg" {input.chrom_sizes} {output.bw_plus}
+            # An empty bedGraph converts to an all-zero track spanning every
+            # chromosome, which computeMatrix can still query.
+            bash "{params.bg2bw}" {output.temp_minus_sort} {input.chrom_sizes} {output.bw_plus}
             cp {output.bw_plus} {output.bw_minus}
-            rm -f "${{basename}}_empty.bg"
         else
-            mv ${{basename}}_p.bw {output.bw_plus}
+            # ShortTracks writes the plus-strand bigwig itself, so re-derive it
+            # through the padding converter: chromosomes with no reads at this
+            # size are otherwise missing from the header and make deeptools 4
+            # abort on any region that lands there.
+            bigWigToBedGraph ${{basename}}_p.bw "${{basename}}_p.bg"
+            bash "{params.bg2bw}" "${{basename}}_p.bg" {input.chrom_sizes} {output.bw_plus}
+            rm -f "${{basename}}_p.bg"
             printf "Inverting minus strand (back to positive values)\n"
             bigWigToBedGraph ${{basename}}_m.bw {output.temp_minus}
             awk -v OFS="\t" '{{print $1,$2,$3,-$4}}' {output.temp_minus} > {output.temp_minus_rev}
             bedSort {output.temp_minus_rev} {output.temp_minus_sort}
-            bedGraphToBigWig {output.temp_minus_sort} {input.chrom_sizes} {output.bw_minus}
+            bash "{params.bg2bw}" {output.temp_minus_sort} {input.chrom_sizes} {output.bw_minus}
         fi
         rm -f ${{basename}}_m*
         rm -f ${{basename}}_p*
@@ -516,15 +521,24 @@ rule prep_files_for_differential_srna_clusters:
 
         sRNA_samples.to_csv(output.srna_samples, sep="\t", index=False)
         
+        # ShortStack names its count columns after the input BAM basenames,
+        # which define_input_for_grouped_analysis builds from mapped_name
+        # ('{Sample_ID}__{Genome}') — not the bare Sample_ID. Using
+        # sample_name here asked for columns that never exist.
         column_order = ['Name']
         for _, row in sRNA_samples.iterrows():
             ROW = filtered_samples.loc[filtered_samples["Replicate"] == row["Replicate"]].iloc[0]
-            sname = ROW['sample_name']
-            column_order.append(sname)
-            
+            column_order.append(ROW['mapped_name'])
+
         temp = pd.read_csv(input.count_file, sep="\t", header=0)
         temp = temp.rename(columns=lambda x: x[7:] if x.startswith("clean__") else x)
         temp = temp.rename(columns=lambda x: x[:-10] if x.endswith("_condensed") else x)
+        missing = [c for c in column_order if c not in temp.columns]
+        if missing:
+            raise ValueError(
+                f"{input.count_file} has no column for: {', '.join(missing)}.\n"
+                f"Columns present: {', '.join(temp.columns)}"
+            )
         sRNA_counts = temp[column_order]
         sRNA_counts.to_csv(output.srna_counts, sep="\t", index=False)
 

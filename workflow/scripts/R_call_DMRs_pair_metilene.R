@@ -129,10 +129,30 @@ rates <- lapply(all_reps, function(gr) {
   rep_rate[match(union_keys_num, rep_keys_num)]
 })
 
+# Metilene segfaults (SIGSEGV, exit 139) when a group has no usable value at
+# any position -- it still allocates and walks the per-group value arrays it
+# never filled. That happens whenever a replicate's CX report is all-zero
+# coverage, e.g. a sample whose FASTQ came back empty. Refuse the run here so
+# the failure names the sample instead of surfacing as a core dump.
+all_names <- c(paste0("g1_v", seq_len(n1)), paste0("g2_v", seq_len(n2)))
+all_paths <- c(reps1_paths, reps2_paths)
+usable <- vapply(rates, function(r) sum(!is.na(r)), numeric(1))
+if (any(usable == 0)) {
+  dead <- which(usable == 0)
+  stop(sprintf(
+    paste0("no covered %s position in %d of %d replicate(s): %s\n",
+           "  Cached from: %s\n",
+           "  These samples have zero coverage in this context, so metilene has ",
+           "nothing to test. Check the mapping reports for them."),
+    context, length(dead), length(rates),
+    paste(all_names[dead], collapse = ", "),
+    paste(all_paths[dead], collapse = ", ")))
+}
+
 # ---------------------------------------------------------------------------
 # Write the metilene input TSV
 # ---------------------------------------------------------------------------
-sample_names <- c(paste0("g1_v", seq_len(n1)), paste0("g2_v", seq_len(n2)))
+sample_names <- all_names
 
 tmpdir <- Sys.getenv("TMPDIR", "/tmp")
 pid <- Sys.getpid()

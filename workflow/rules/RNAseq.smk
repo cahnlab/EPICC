@@ -463,7 +463,8 @@ rule make_rna_stranded_bigwigs:
         ref_genome = lambda wildcards: parse_sample_name(wildcards.sample_name)['ref_genome'],
         param_bg = lambda wildcards: config['rna_tracks'][parse_sample_name(wildcards.sample_name)['sample_type']]['param_bg'],
         strandedness = lambda wildcards: config['rna_tracks'][parse_sample_name(wildcards.sample_name)['sample_type']]['strandedness'],
-        multimap = lambda wildcards: config['rna_tracks'][parse_sample_name(wildcards.sample_name)['sample_type']]['multimap']
+        multimap = lambda wildcards: config['rna_tracks'][parse_sample_name(wildcards.sample_name)['sample_type']]['multimap'],
+        bg2bw = os.path.join(REPO_FOLDER, "workflow", "scripts", "bedgraph_to_bigwig.sh")
     log:
         temp(return_log_rna("{sample_name}", "making_bigiwig", ""))
     conda: CONDA_ENV_RNA
@@ -485,11 +486,11 @@ rule make_rna_stranded_bigwigs:
         bedSort ${{bed1}} "{config[output_dir]}/RNA/tracks/{params.sample_name}_Signal.sorted.str1.out.bg"
         bedSort ${{bed2}} "{config[output_dir]}/RNA/tracks/{params.sample_name}_Signal.sorted.str2.out.bg"
         if [[ "{params.strandedness}" == "forward" ]]; then
-            bedGraphToBigWig "{config[output_dir]}/RNA/tracks/{params.sample_name}_Signal.sorted.str1.out.bg" "{input.chrom_sizes}" "{output.bw_plus}"
-            bedGraphToBigWig "{config[output_dir]}/RNA/tracks/{params.sample_name}_Signal.sorted.str2.out.bg" "{input.chrom_sizes}" "{output.bw_minus}"
+            bash "{params.bg2bw}" "{config[output_dir]}/RNA/tracks/{params.sample_name}_Signal.sorted.str1.out.bg" "{input.chrom_sizes}" "{output.bw_plus}"
+            bash "{params.bg2bw}" "{config[output_dir]}/RNA/tracks/{params.sample_name}_Signal.sorted.str2.out.bg" "{input.chrom_sizes}" "{output.bw_minus}"
         elif [[ "{params.strandedness}" == "reverse" ]]; then
-            bedGraphToBigWig "{config[output_dir]}/RNA/tracks/{params.sample_name}_Signal.sorted.str1.out.bg" "{input.chrom_sizes}" "{output.bw_minus}"
-            bedGraphToBigWig "{config[output_dir]}/RNA/tracks/{params.sample_name}_Signal.sorted.str2.out.bg" "{input.chrom_sizes}" "{output.bw_plus}"
+            bash "{params.bg2bw}" "{config[output_dir]}/RNA/tracks/{params.sample_name}_Signal.sorted.str1.out.bg" "{input.chrom_sizes}" "{output.bw_minus}"
+            bash "{params.bg2bw}" "{config[output_dir]}/RNA/tracks/{params.sample_name}_Signal.sorted.str2.out.bg" "{input.chrom_sizes}" "{output.bw_plus}"
         fi
         rm -f {config[output_dir]}/RNA/tracks/bg_{params.sample_name}_* {config[output_dir]}/RNA/tracks/{params.sample_name}_Signal*
         }} 2>&1 | tee -a "{log}"
@@ -506,7 +507,8 @@ rule make_rna_unstranded_bigwigs:
         ref_genome = lambda wildcards: parse_sample_name(wildcards.sample_name)['ref_genome'],
         param_bg = lambda wildcards: config['rna_tracks'][parse_sample_name(wildcards.sample_name)['sample_type']]['param_bg'],
         strandedness = lambda wildcards: config['rna_tracks'][parse_sample_name(wildcards.sample_name)['sample_type']]['strandedness'],
-        multimap = lambda wildcards: config['rna_tracks'][parse_sample_name(wildcards.sample_name)['sample_type']]['multimap']
+        multimap = lambda wildcards: config['rna_tracks'][parse_sample_name(wildcards.sample_name)['sample_type']]['multimap'],
+        bg2bw = os.path.join(REPO_FOLDER, "workflow", "scripts", "bedgraph_to_bigwig.sh")
     log:
         temp(return_log_rna("{sample_name}", "making_bigiwig", ""))
     conda: CONDA_ENV_RNA
@@ -523,7 +525,7 @@ rule make_rna_unstranded_bigwigs:
             bed1="{config[output_dir]}/RNA/tracks/bg_{params.sample_name}_Signal.Unique.str1.out.bg"
         fi
         bedSort ${{bed1}} "{config[output_dir]}/RNA/tracks/{params.sample_name}_Signal.sorted.str1.out.bg"
-        bedGraphToBigWig "{config[output_dir]}/RNA/tracks/{params.sample_name}_Signal.sorted.str1.out.bg" "{input.chrom_sizes}" "{output.bw_unstranded}"
+        bash "{params.bg2bw}" "{config[output_dir]}/RNA/tracks/{params.sample_name}_Signal.sorted.str1.out.bg" "{input.chrom_sizes}" "{output.bw_unstranded}"
         rm -f {config[output_dir]}/RNA/tracks/bg_{params.sample_name}_* {config[output_dir]}/RNA/tracks/{params.sample_name}_Signal*
         }} 2>&1 | tee -a "{log}"
         """
