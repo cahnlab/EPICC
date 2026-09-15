@@ -8,7 +8,7 @@ dependencies:
   - chromap>=0.2.7  # <0.2.7 crashes when piping to /dev/stdout (haowenz/chromap#150)
   - samtools
   - bedtools
-  - deeptools
+  - deeptools>=4.0.0,<5
   - macs2
   - seacr
   - epic2
