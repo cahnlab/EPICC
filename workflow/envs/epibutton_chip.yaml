@@ -8,7 +8,7 @@ dependencies:
   - chromap>=0.2.7  # <0.2.7 crashes when piping to /dev/stdout (haowenz/chromap#150)
   - samtools
   - bedtools
-  - deeptools>=4.0.0,<5
+  - deeptools<5  # capped, not floored: macs2's newest build is py311 and deeptools 4 needs python >=3.12, so this env cannot have 4.x while macs2 is in it. Only alignmentSieve, bamCoverage, bamCompare and plotFingerprint run here, none of which changed across the 3->4 boundary -- computeMatrix and the plotting rules live in epibutton.yaml, which does floor at 4.
   - macs2
   - seacr
   - epic2
