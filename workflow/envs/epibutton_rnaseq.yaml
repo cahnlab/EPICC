@@ -9,7 +9,7 @@ dependencies:
   - bowtie2
   - samtools
   - pigz
-  - deeptools
+  - deeptools>=4.0.0,<5
   - ucsc-bedgraphtobigwig
   - ucsc-bigwigtobedgraph
   - ucsc-bedsort

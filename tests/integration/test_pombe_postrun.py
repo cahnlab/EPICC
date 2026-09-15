@@ -8,7 +8,10 @@ results/ and are skipped automatically if no results are found.
 Run with: pytest tests/integration/test_pombe_postrun.py -v -m slow
 """
 
+import gzip
+import json
 import struct
+
 import pytest
 from pathlib import Path
 
@@ -357,10 +360,33 @@ class TestCombinedOutputs:
             gz = RESULTS / "combined" / "matrix" / f"final_matrix_{region_type}__most__test_pombe__Spombe__all_genes.gz"
             assert _file_exists_nonempty(gz), f"Missing or empty: {gz}"
 
+    def test_heatmap_matrices_have_one_region_group(self, results_exist):
+        """A merged matrix carries exactly one region group.
+
+        all_genes is a stranded target, so making_stranded_matrix_on_targetfile
+        builds it in two halves and merging_matrix rbinds them. Everything
+        downstream passes a single --regionsLabel, so the halves have to come
+        back as one group; two groups means the plots below cannot be drawn.
+        """
+        for region_type in ["tss", "tes", "regions"]:
+            gz = RESULTS / "combined" / "matrix" / f"final_matrix_{region_type}__most__test_pombe__Spombe__all_genes.gz"
+            with gzip.open(gz, "rt") as fh:
+                header = json.loads(fh.readline().lstrip("@"))
+            assert len(header["group_labels"]) == 1, (
+                f"{gz.name} has {len(header['group_labels'])} region groups "
+                f"({header['group_labels']}), expected 1"
+            )
+
     def test_heatmap_pdfs(self, results_exist):
         """Heatmap PDFs for tss/tes/regions exist."""
         for region_type in ["tss", "tes", "regions"]:
             pdf = RESULTS / "combined" / "plots" / f"Heatmap__{region_type}__most__test_pombe__Spombe__all_genes.pdf"
+            assert _file_exists_nonempty(pdf), f"Missing or empty: {pdf}"
+
+    def test_profile_pdfs(self, results_exist):
+        """Profile PDFs for tss/tes/regions exist."""
+        for region_type in ["tss", "tes", "regions"]:
+            pdf = RESULTS / "combined" / "plots" / f"Profile__{region_type}__most__test_pombe__Spombe__all_genes.pdf"
             assert _file_exists_nonempty(pdf), f"Missing or empty: {pdf}"
 
     def test_browser_track_pdf(self, results_exist):

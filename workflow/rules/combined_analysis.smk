@@ -1063,7 +1063,25 @@ rule merging_matrix:
         nfile=$(echo {input} | wc -w)
         if [[ ${{nfile}} -eq 2 ]]; then
             printf "\nMerging stranded matrices aligned by {params.matrix} for {params.env} {params.target_name} on {params.ref_genome}\n"
-            computeMatrixOperations rbind -m {input} -o {output}
+            # rbind merges region groups that share a label and keeps apart any
+            # that differ. computeMatrix names each group after its input BED, so
+            # the plus and minus halves arrive labelled '..._plus' and '..._minus'
+            # and survive the merge as two groups -- while every rule downstream
+            # (plotHeatmap, plotProfile, sort_heatmap's relabel) passes a single
+            # --regionsLabel and dies on the count mismatch. Give both halves one
+            # label so they fold into one group, which is what these plots showed
+            # under deeptools 3: there computeMatrix labelled every single-BED
+            # group 'genes' regardless of filename, so the halves merged by
+            # accident. Don't rely on that default again.
+            i=0
+            relabelled=()
+            for matrix in {input}; do
+                i=$((i+1))
+                computeMatrixOperations relabel -m "${{matrix}}" \
+                    --groupLabels "{params.target_name}" -o "$TMPDIR/relabelled_${{i}}.gz"
+                relabelled+=("$TMPDIR/relabelled_${{i}}.gz")
+            done
+            computeMatrixOperations rbind -m "${{relabelled[@]}}" -o {output}
         else
             cp {input} {output}
         fi
