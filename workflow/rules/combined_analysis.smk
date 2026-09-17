@@ -455,6 +455,12 @@ def define_key_for_plots(wildcards, string):
         return labels
     elif string == "marks":
         return marks
+    elif string == "colors":
+        # The same tab20-keyed-on-levels_label assignment the browser uses for
+        # its backgrounds, so a genotype keeps one colour everywhere it appears.
+        # deeptools 4 samples a sequential colormap ('gnuplot') for its default
+        # line colours, which makes consecutive samples near-indistinguishable.
+        return backcolors
     elif string == "table":
         table_name = f"{RESULTS_DIR}/combined/matrix/sample_table__{wildcards.target_name}__{wildcards.regionID}__{wildcards.env}__{wildcards.analysis_name}__{wildcards.ref_genome}.tab"
         os.makedirs(os.path.dirname(table_name), exist_ok=True)
@@ -1012,6 +1018,7 @@ rule making_stranded_matrix_on_targetfile:
         target_name = lambda wildcards: wildcards.target_name,
         labels = lambda wildcards: define_key_for_plots(wildcards, "labels"),
         marks = lambda wildcards: define_key_for_plots(wildcards, "marks"),
+        colors = lambda wildcards: define_key_for_plots(wildcards, "colors"),
         matrix = lambda wildcards: wildcards.matrix_param,
         strand = lambda wildcards: wildcards.strand,
         base = lambda wildcards: get_heatmap_param(wildcards.matrix_param, 'base'),
@@ -1055,6 +1062,9 @@ rule making_stranded_matrix_on_targetfile:
         mv "$TMPDIR/target_strand_fixed.bed" {output.temp}
         echo "{params.labels}" | xargs -n1 > "{config[output_dir]}/combined/matrix/labels_{params.matrix}__{params.env}__{params.analysis_name}__{params.ref_genome}__{params.target_name}.txt"
         echo "{params.marks}" | xargs -n1 > "{config[output_dir]}/combined/matrix/marks_{params.matrix}__{params.env}__{params.analysis_name}__{params.ref_genome}__{params.target_name}.txt"
+        # Written in the same order as --samplesLabel, so it lines up with the
+        # matrix columns without needing a lookup at plot time.
+        echo "{params.colors}" | xargs -n1 > "{config[output_dir]}/combined/matrix/colors_{params.matrix}__{params.env}__{params.analysis_name}__{params.ref_genome}__{params.target_name}.txt"
         printf "Making {params.strand} strand {params.matrix} matrix for {params.env} {params.target_name} on {params.ref_genome}\n"
         if [[ "{params.env}" == "mC" ]]; then
             computeMatrix {params.base_mc} -R {output.temp} -S {input.bigwigs} --samplesLabel {params.labels} -bs {params.bs_mc} -b {params.before} -a {params.after} {params.middle} -p {threads} -o {output.matrix}
@@ -1188,8 +1198,15 @@ rule computing_matrix_scales:
                     zmini="0"
                     zmaxi="0.005"
                 fi
-                ymini=$(grep "${{mark}}" {output.temp_profile_values} | awk '{{m=$3; for (i=3;i<=NF;i++) if ($i<m) m=$i; print m}}' | awk 'BEGIN {{m=99999}} {{if ($1<m) m=$1}} END {{if (m<0) a=m*1.2; else a=m*0.8; print a}}')
-                ymaxi=$(grep "${{mark}}" {output.temp_profile_values} | awk '{{m=$3; for (i=3;i<=NF;i++) if ($i>m) m=$i; print m}}' | awk 'BEGIN {{m=-99999}} {{if ($1>m) m=$1}} END {{if (m<0) a=m*0.8; else a=m*1.2; print a}}')
+                # Pad the axis by a tenth of the data's RANGE, not of its value.
+                # Multiplying the endpoints (min*0.8, max*1.2) scales the padding
+                # with the baseline, so data sitting high above zero in a narrow
+                # band gets a huge axis: ColCEN TE mCG spans 41.6-50.1 and was
+                # drawn on 33.3-60.1, filling a third of the plot. Genes were
+                # unaffected only because their mCG dips near zero.
+                ybounds=$(grep "${{mark}}" {output.temp_profile_values} | awk '{{ for (i=3;i<=NF;i++) if ($i+0==$i) {{ if (n==0 || $i+0<lo) lo=$i+0; if (n==0 || $i+0>hi) hi=$i+0; n++ }} }} END {{ if (n==0) {{ print 0, 0; exit }} pad=(hi-lo)*0.1; if (pad<=0) pad=(hi<0?-hi:hi)*0.1; if (pad<=0) pad=0.01; print lo-pad, hi+pad }}')
+                ymini=$(echo "${{ybounds}}" | cut -d" " -f1)
+                ymaxi=$(echo "${{ybounds}}" | cut -d" " -f2)
                 test=$(awk -v a=${{ymini}} -v b=${{ymaxi}} 'BEGIN {{if (a==0 && b==0) c="yes"; else c="no"; print c}}')
                 if [[ ${{test}} == "yes" ]]; then
                     ymini=("0")
@@ -1239,8 +1256,15 @@ rule computing_matrix_scales:
                     zmaxs+=("$zmaxi")
                 fi
                 
-                ymini=$(grep "${{sample}}" {output.temp_profile_values} | awk '{{m=$3; for(i=3;i<=NF;i++) if ($i<m) m=$i; print m}}' | awk 'BEGIN {{m=99999}} {{if ($1<m) m=$1}} END {{if (m<0) a=m*1.2; else a=m*0.8; print a}}')
-                ymaxi=$(grep "${{sample}}" {output.temp_profile_values} | awk '{{m=$3; for(i=3;i<=NF;i++) if ($i>m) m=$i; print m}}' | awk 'BEGIN {{m=-99999}} {{if ($1>m) m=$1}} END {{if (m<0) a=m*0.8; else a=m*1.2; print a}}')
+                # Pad the axis by a tenth of the data's RANGE, not of its value.
+                # Multiplying the endpoints (min*0.8, max*1.2) scales the padding
+                # with the baseline, so data sitting high above zero in a narrow
+                # band gets a huge axis: ColCEN TE mCG spans 41.6-50.1 and was
+                # drawn on 33.3-60.1, filling a third of the plot. Genes were
+                # unaffected only because their mCG dips near zero.
+                ybounds=$(grep "${{sample}}" {output.temp_profile_values} | awk '{{ for (i=3;i<=NF;i++) if ($i+0==$i) {{ if (n==0 || $i+0<lo) lo=$i+0; if (n==0 || $i+0>hi) hi=$i+0; n++ }} }} END {{ if (n==0) {{ print 0, 0; exit }} pad=(hi-lo)*0.1; if (pad<=0) pad=(hi<0?-hi:hi)*0.1; if (pad<=0) pad=0.01; print lo-pad, hi+pad }}')
+                ymini=$(echo "${{ybounds}}" | cut -d" " -f1)
+                ymaxi=$(echo "${{ybounds}}" | cut -d" " -f2)
                 test=$(awk -v a=${{ymini}} -v b=${{ymaxi}} 'BEGIN {{if (a==0 && b==0) c="yes"; else c="no"; print c}}')
                 if [[ "${{test}}" == "yes" ]]; then
                     ymins+=("0")
@@ -1386,12 +1410,24 @@ rule plotting_profile_on_targetfile:
         printf "Plotting profile {params.matrix} for {params.env} {params.target_name} on {params.ref_genome}\n"
         reg="$(cat {input.params_regions})"
         prof="$(cat {input.params_profile})"
-        plotProfile -m {input.matrix} -out {output.plot1} {params.plot_params} ${{reg}} ${{prof}} ${{add}}
+        # deeptools 4 picks line colours by sampling a sequential colormap, which
+        # leaves consecutive samples nearly identical. Use the pipeline's own
+        # categorical palette instead (tab20 keyed on levels_label), written in
+        # matrix column order by making_stranded_matrix_on_targetfile.
+        colorfile="{config[output_dir]}/combined/matrix/colors_{params.matrix}__{params.env}__{params.analysis_name}__{params.ref_genome}__{params.target_name}.txt"
+        col="--colors $(tr '\n' ' ' < "${{colorfile}}")"
+        plotProfile -m {input.matrix} -out {output.plot1} {params.plot_params} ${{reg}} ${{prof}} ${{col}} ${{add}}
         
         printf "Plotting per group profile {params.matrix} for {params.env} {params.target_name} on {params.ref_genome}\n"
         ymin=$(cat {input.params_profile} | awk 'BEGIN {{y=99999}} {{for (i=1; i<=NF; i++) {{if ($i == "--yMin") {{for (j=i+1; j<=NF && $j !~ /^--/; j++) {{if ($j<y) y=$j}} break}} }} }} END {{print y}}' )
         ymax=$(cat {input.params_profile} | awk 'BEGIN {{y=-99999}} {{for (i=1; i<=NF; i++) {{if ($i == "--yMax") {{for (j=i+1; j<=NF && $j !~ /^--/; j++) {{if ($j>y) y=$j}} break}} }} }} END {{print y}}' )
-        plotProfile -m {input.matrix} -out {output.plot2} {params.plot_params} ${{reg}} --yMin ${{ymin}} --yMax ${{ymax}} ${{add}} --perGroup
+        # --perGroup draws one legend entry per sample, and deeptools 4 anchors
+        # that legend below the axes in a single column without growing the
+        # figure -- so past ~8 samples the axes collapse to a sliver and the plot
+        # comes out blank. Grow the panel to cover the legend it will carry.
+        nsample=$(wc -l < "${{colorfile}}")
+        height=$(awk -v n="${{nsample}}" 'BEGIN {{h=7+0.55*n; if (h>50) h=50; printf "%.1f", h}}')
+        plotProfile -m {input.matrix} -out {output.plot2} {params.plot_params} ${{reg}} --yMin ${{ymin}} --yMax ${{ymax}} ${{col}} --plotHeight ${{height}} ${{add}} --perGroup
         }} 2>&1 | tee -a "{log}"
         """
 
