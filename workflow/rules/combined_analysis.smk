@@ -44,10 +44,13 @@ def get_matrix_inputs(wildcards):
     bedfile = define_combined_target_file(wildcards)
     prefix = f"{RESULTS_DIR}/combined/matrix/matrix_{wildcards.matrix_param}__{wildcards.env}__{wildcards.analysis_name}__{wildcards.ref_genome}__{wildcards.target_name}"
     with checkpoints.is_stranded.get(bedfile=bedfile).output[0].open() as f:
-        if f.read().strip() == "stranded" and stranded_heatmaps:
-            return [ f"{prefix}__plus.gz", f"{prefix}__minus.gz" ]
-        else:
-            return [ f"{prefix}__unstranded.gz" ]
+        verdict = f.read().strip()
+    if not stranded_heatmaps or verdict == "unstranded":
+        return [ f"{prefix}__unstranded.gz" ]
+    if verdict == "stranded_mixed":
+        # The '.'/'?' rows become their own region group -- see is_stranded.
+        return [ f"{prefix}__plus.gz", f"{prefix}__minus.gz", f"{prefix}__nostrand.gz" ]
+    return [ f"{prefix}__plus.gz", f"{prefix}__minus.gz" ]
 
 def define_sort_options(wildcards):
     sort_options = config['heatmaps_sort_options']
@@ -202,6 +205,13 @@ def define_key_for_plots(wildcards, string):
     ref_genome = wildcards.ref_genome
     globenv = wildcards.env
     strand = getattr(wildcards, "strand", "unstranded")
+    # The 'nostrand' pass covers regions whose strand is '.' or '?', so sense is
+    # undefined for them. rbind requires every matrix it merges to carry the same
+    # samples in the same order, so this pass cannot emit both strands the way
+    # 'unstranded' does -- it takes the plus track, the coordinate-forward one,
+    # which is also the orientation computeMatrix gives an unstranded region.
+    if strand == "nostrand":
+        strand = "plus"
     
     if globenv == "all":
         filtered_analysis_samples = analysis_samples[ analysis_samples['ref_genome'] == ref_genome ].copy()
@@ -712,11 +722,20 @@ checkpoint is_stranded:
                     has_strand = True
                     strand_values.add(cols[5])
 
+        # A file with any '+'/'-' at all is stranded: annotations routinely carry
+        # a few '.' or '?' rows (GFF3 uses '?' for "stranded but unknown"), and
+        # demoting the whole file on account of them costs every stranded track
+        # its sense-strand orientation. 631 of ColCEN's 42,927 TEs were enough to
+        # do that. Those rows go to their own 'nostrand' pass and stay a separate
+        # region group downstream, since sense is undefined for them.
+        oriented = strand_values & {"+", "-"}
         with open(output.file, "w") as out:
-            if has_strand and strand_values.issubset({"+", "-"}):
-                out.write("stranded\n")
-            else:
+            if not has_strand or not oriented:
                 out.write("unstranded\n")
+            elif strand_values - {"+", "-"}:
+                out.write("stranded_mixed\n")
+            else:
+                out.write("stranded\n")
 
 ###
 # Rules to prep and then plot the mapping stats:
@@ -985,7 +1004,7 @@ rule making_stranded_matrix_on_targetfile:
         temp = temp(f"{RESULTS_DIR}/combined/matrix/temp_file_{{matrix_param}}__{{env}}__{{analysis_name}}__{{ref_genome}}__{{target_name}}_{{strand}}.bed"),
         matrix = temp(f"{RESULTS_DIR}/combined/matrix/matrix_{{matrix_param}}__{{env}}__{{analysis_name}}__{{ref_genome}}__{{target_name}}__{{strand}}.gz")
     wildcard_constraints:
-        strand = "plus|minus|unstranded"
+        strand = "plus|minus|nostrand|unstranded"
     params:
         analysis_name = config['analysis_name'],
         ref_genome = lambda wildcards: wildcards.ref_genome,
@@ -1017,10 +1036,12 @@ rule making_stranded_matrix_on_targetfile:
             fi
         else
             case "{params.strand}" in
-                plus)   sign="+";;
-                minus)  sign="-";;
+                plus)     awk '$6=="+"' {input.target_file} > {output.temp};;
+                minus)    awk '$6=="-"' {input.target_file} > {output.temp};;
+                # Unlike the two above, this predicate matches a header line
+                # (its column 6 is neither '+' nor '-'), so drop it explicitly.
+                nostrand) awk -v h="${{header}}" 'h=="yes" && NR==1 {{next}} $6!="+" && $6!="-"' {input.target_file} > {output.temp};;
             esac
-            awk -v s=${{sign}} '$6==s' {input.target_file} > {output.temp}
         fi
         # computeMatrix accepts only '+', '-' and '.' in the strand column and
         # panics on anything else ("Strand should either be + or - or . \"?\" is
@@ -1061,38 +1082,48 @@ rule merging_matrix:
         """
         {{
         nfile=$(echo {input} | wc -w)
-        if [[ ${{nfile}} -eq 2 ]]; then
+        if [[ ${{nfile}} -eq 1 ]]; then
+            # Relabel rather than copy: computeMatrix names the group after its
+            # input BED, which here is an internal temp file, and that name is
+            # what ends up printed on the plot as the region label.
+            computeMatrixOperations relabel -m {input} \
+                --groupLabels "{params.target_name}" -o {output}
+        else
             printf "\nMerging stranded matrices aligned by {params.matrix} for {params.env} {params.target_name} on {params.ref_genome}\n"
             # rbind merges region groups that share a label and keeps apart any
             # that differ. computeMatrix names each group after its input BED, so
             # the plus and minus halves arrive labelled '..._plus' and '..._minus'
             # and survive the merge as two groups -- while every rule downstream
-            # (plotHeatmap, plotProfile, sort_heatmap's relabel) passes a single
-            # --regionsLabel and dies on the count mismatch. Give both halves one
-            # label so they fold into one group, which is what these plots showed
-            # under deeptools 3: there computeMatrix labelled every single-BED
-            # group 'genes' regardless of filename, so the halves merged by
-            # accident. Don't rely on that default again.
-            i=0
+            # (plotHeatmap, plotProfile, sort_heatmap's relabel) passes one
+            # --regionsLabel per group and dies on a count mismatch. Relabelling
+            # decides the grouping outright: plus and minus take the target name
+            # and fold into one group, and the 'nostrand' pass -- regions whose
+            # strand is '.' or '?', for which sense is undefined -- takes its own
+            # label and stays a group of its own.
+            #
+            # deeptools 3 labelled every single-BED group 'genes' regardless of
+            # filename, so plus and minus merged by accident there. Don't rely on
+            # that default again.
             relabelled=()
+            i=0
             for matrix in {input}; do
                 i=$((i+1))
+                case "${{matrix}}" in
+                    *__nostrand.gz) label="{params.target_name}_nostrand";;
+                    *)              label="{params.target_name}";;
+                esac
                 computeMatrixOperations relabel -m "${{matrix}}" \
-                    --groupLabels "{params.target_name}" -o "$TMPDIR/relabelled_${{i}}.gz"
+                    --groupLabels "${{label}}" -o "$TMPDIR/relabelled_${{i}}.gz"
                 relabelled+=("$TMPDIR/relabelled_${{i}}.gz")
             done
             computeMatrixOperations rbind -m "${{relabelled[@]}}" -o {output}
-        else
-            cp {input} {output}
         fi
         }} 2>&1 | tee -a "{log}"
         """
 
 rule computing_matrix_scales:
     input:
-        matrix = f"{RESULTS_DIR}/combined/matrix/final_matrix_{{matrix_param}}__{{env}}__{{analysis_name}}__{{ref_genome}}__{{target_name}}.gz",
-        target_file = lambda wildcards: define_combined_target_file(wildcards),
-        header = lambda wildcards: f"{define_combined_target_file(wildcards)}.header"
+        matrix = f"{RESULTS_DIR}/combined/matrix/final_matrix_{{matrix_param}}__{{env}}__{{analysis_name}}__{{ref_genome}}__{{target_name}}.gz"
     output:
         params_heatmap = temp(f"{RESULTS_DIR}/combined/matrix/params_heatmap_final_matrix_{{matrix_param}}__{{env}}__{{analysis_name}}__{{ref_genome}}__{{target_name}}.txt"),
         params_profile = temp(f"{RESULTS_DIR}/combined/matrix/params_profile_final_matrix_{{matrix_param}}__{{env}}__{{analysis_name}}__{{ref_genome}}__{{target_name}}.txt"),
@@ -1108,6 +1139,7 @@ rule computing_matrix_scales:
         matrix = lambda wildcards: wildcards.matrix_param,
         scales = config['heatmaps_scales'],
         profile = config['profiles_scale'],
+        labeller = os.path.join(REPO_FOLDER, "workflow", "scripts", "matrix_region_labels.py"),
         cg_scale = config['heat_mcg'],
         chg_scale = config['heat_mchg'],
         chh_scale = config['heat_mchh']
@@ -1117,12 +1149,10 @@ rule computing_matrix_scales:
     shell:
         """
         {{        
-        header="$(cat {input.header})"
-        count=$(wc -l {input.target_file} | cut -d' ' -f 1)
-        if [[ "${{header}}" == "yes" ]]; then
-            count=$((count-1))
-        fi
-        awk -v ORS="" -v r=${{count}} -v n={params.target_name} 'BEGIN {{print "--regionsLabel "n"("r")"}}' > {output.params_regions}
+        # One label per region group, counts taken from the matrix itself --
+        # a stranded target can carry a separate 'nostrand' group, and
+        # --skipZeros drops regions, so the target file cannot tell us either.
+        python3 "{params.labeller}" {input.matrix} > {output.params_regions}
 
         if [[ "{params.scales}" == "default" ]]; then
             touch {output.params_heatmap}
@@ -1288,8 +1318,9 @@ rule sort_heatmap:
     shell:
         """
         printf "Sorting heatmap {params.matrix} for mC {params.target_name} on {params.ref_genome}\n"
-        label="$(cat {input.params_regions} | cut -d" " -f 2)"
-        computeMatrixOperations relabel -m {input.matrix} --groupLabels ${{label}} -o {output.temp_matrix}
+        # Everything after the flag: one label per region group, not just the first.
+        labels="$(cat {input.params_regions} | cut -d" " -f 2-)"
+        computeMatrixOperations relabel -m {input.matrix} --groupLabels ${{labels}} -o {output.temp_matrix}
         computeMatrixOperations sort -m {output.temp_matrix} -R {input.sorted_regions} -o {output.matrix}
         """
 
