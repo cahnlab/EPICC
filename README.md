@@ -472,7 +472,7 @@ Since mC requires different deeptools parameters it is handled independently. If
 Output is a pdf file, or two if sorted heatmap for mC samples was generated.\
 By default, heatmaps are scaled by data type (`heatmaps_scales: "type"` in the options file; each ChIP mark, TF, RNA, sRNA size, and mC context on its own scale). Change to `"default"` for a single scale or `"sample"` for per-sample scaling.\
 By default, regions are sorted by mean signal (`heatmaps_sort_options: "mean"`). Change to `"median"` or `"no"` to preserve the bedfile order.\
-If the bedfile is stranded, heatmaps will split plus/minus strand for properly stranded data types (RNAseq, sRNA). Disable with `stranded_heatmaps: false` in the options file.\
+If the bedfile is stranded, heatmaps use the sense-strand track for properly stranded data types (RNAseq, sRNA), so each region contributes one column per sample rather than separate plus and minus columns. Regions whose strand column is neither `+` nor `-` (GFF3 `?`, or `.`) have no sense strand and are plotted as their own region group — a TE annotation with a handful of these is still treated as stranded. Disable with `stranded_heatmaps: false` in the options file.\
 Color scheme defaults: `seismic` for all non-mC samples, `Oranges` for mC. Change via `heatmaps_plot_params` in the options file.
 Window sizes (`before`, `after`, scaled-region `middle`) and bin size (`binsize`) are configurable in `heatmaps` per matrix type in the options file.
 

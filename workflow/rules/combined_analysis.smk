@@ -44,10 +44,13 @@ def get_matrix_inputs(wildcards):
     bedfile = define_combined_target_file(wildcards)
     prefix = f"{RESULTS_DIR}/combined/matrix/matrix_{wildcards.matrix_param}__{wildcards.env}__{wildcards.analysis_name}__{wildcards.ref_genome}__{wildcards.target_name}"
     with checkpoints.is_stranded.get(bedfile=bedfile).output[0].open() as f:
-        if f.read().strip() == "stranded" and stranded_heatmaps:
-            return [ f"{prefix}__plus.gz", f"{prefix}__minus.gz" ]
-        else:
-            return [ f"{prefix}__unstranded.gz" ]
+        verdict = f.read().strip()
+    if not stranded_heatmaps or verdict == "unstranded":
+        return [ f"{prefix}__unstranded.gz" ]
+    if verdict == "stranded_mixed":
+        # The '.'/'?' rows become their own region group -- see is_stranded.
+        return [ f"{prefix}__plus.gz", f"{prefix}__minus.gz", f"{prefix}__nostrand.gz" ]
+    return [ f"{prefix}__plus.gz", f"{prefix}__minus.gz" ]
 
 def define_sort_options(wildcards):
     sort_options = config['heatmaps_sort_options']
@@ -202,6 +205,13 @@ def define_key_for_plots(wildcards, string):
     ref_genome = wildcards.ref_genome
     globenv = wildcards.env
     strand = getattr(wildcards, "strand", "unstranded")
+    # The 'nostrand' pass covers regions whose strand is '.' or '?', so sense is
+    # undefined for them. rbind requires every matrix it merges to carry the same
+    # samples in the same order, so this pass cannot emit both strands the way
+    # 'unstranded' does -- it takes the plus track, the coordinate-forward one,
+    # which is also the orientation computeMatrix gives an unstranded region.
+    if strand == "nostrand":
+        strand = "plus"
     
     if globenv == "all":
         filtered_analysis_samples = analysis_samples[ analysis_samples['ref_genome'] == ref_genome ].copy()
@@ -445,6 +455,12 @@ def define_key_for_plots(wildcards, string):
         return labels
     elif string == "marks":
         return marks
+    elif string == "colors":
+        # The same tab20-keyed-on-levels_label assignment the browser uses for
+        # its backgrounds, so a genotype keeps one colour everywhere it appears.
+        # deeptools 4 samples a sequential colormap ('gnuplot') for its default
+        # line colours, which makes consecutive samples near-indistinguishable.
+        return backcolors
     elif string == "table":
         table_name = f"{RESULTS_DIR}/combined/matrix/sample_table__{wildcards.target_name}__{wildcards.regionID}__{wildcards.env}__{wildcards.analysis_name}__{wildcards.ref_genome}.tab"
         os.makedirs(os.path.dirname(table_name), exist_ok=True)
@@ -712,11 +728,20 @@ checkpoint is_stranded:
                     has_strand = True
                     strand_values.add(cols[5])
 
+        # A file with any '+'/'-' at all is stranded: annotations routinely carry
+        # a few '.' or '?' rows (GFF3 uses '?' for "stranded but unknown"), and
+        # demoting the whole file on account of them costs every stranded track
+        # its sense-strand orientation. 631 of ColCEN's 42,927 TEs were enough to
+        # do that. Those rows go to their own 'nostrand' pass and stay a separate
+        # region group downstream, since sense is undefined for them.
+        oriented = strand_values & {"+", "-"}
         with open(output.file, "w") as out:
-            if has_strand and strand_values.issubset({"+", "-"}):
-                out.write("stranded\n")
-            else:
+            if not has_strand or not oriented:
                 out.write("unstranded\n")
+            elif strand_values - {"+", "-"}:
+                out.write("stranded_mixed\n")
+            else:
+                out.write("stranded\n")
 
 ###
 # Rules to prep and then plot the mapping stats:
@@ -985,7 +1010,7 @@ rule making_stranded_matrix_on_targetfile:
         temp = temp(f"{RESULTS_DIR}/combined/matrix/temp_file_{{matrix_param}}__{{env}}__{{analysis_name}}__{{ref_genome}}__{{target_name}}_{{strand}}.bed"),
         matrix = temp(f"{RESULTS_DIR}/combined/matrix/matrix_{{matrix_param}}__{{env}}__{{analysis_name}}__{{ref_genome}}__{{target_name}}__{{strand}}.gz")
     wildcard_constraints:
-        strand = "plus|minus|unstranded"
+        strand = "plus|minus|nostrand|unstranded"
     params:
         analysis_name = config['analysis_name'],
         ref_genome = lambda wildcards: wildcards.ref_genome,
@@ -993,6 +1018,7 @@ rule making_stranded_matrix_on_targetfile:
         target_name = lambda wildcards: wildcards.target_name,
         labels = lambda wildcards: define_key_for_plots(wildcards, "labels"),
         marks = lambda wildcards: define_key_for_plots(wildcards, "marks"),
+        colors = lambda wildcards: define_key_for_plots(wildcards, "colors"),
         matrix = lambda wildcards: wildcards.matrix_param,
         strand = lambda wildcards: wildcards.strand,
         base = lambda wildcards: get_heatmap_param(wildcards.matrix_param, 'base'),
@@ -1017,10 +1043,12 @@ rule making_stranded_matrix_on_targetfile:
             fi
         else
             case "{params.strand}" in
-                plus)   sign="+";;
-                minus)  sign="-";;
+                plus)     awk '$6=="+"' {input.target_file} > {output.temp};;
+                minus)    awk '$6=="-"' {input.target_file} > {output.temp};;
+                # Unlike the two above, this predicate matches a header line
+                # (its column 6 is neither '+' nor '-'), so drop it explicitly.
+                nostrand) awk -v h="${{header}}" 'h=="yes" && NR==1 {{next}} $6!="+" && $6!="-"' {input.target_file} > {output.temp};;
             esac
-            awk -v s=${{sign}} '$6==s' {input.target_file} > {output.temp}
         fi
         # computeMatrix accepts only '+', '-' and '.' in the strand column and
         # panics on anything else ("Strand should either be + or - or . \"?\" is
@@ -1034,6 +1062,9 @@ rule making_stranded_matrix_on_targetfile:
         mv "$TMPDIR/target_strand_fixed.bed" {output.temp}
         echo "{params.labels}" | xargs -n1 > "{config[output_dir]}/combined/matrix/labels_{params.matrix}__{params.env}__{params.analysis_name}__{params.ref_genome}__{params.target_name}.txt"
         echo "{params.marks}" | xargs -n1 > "{config[output_dir]}/combined/matrix/marks_{params.matrix}__{params.env}__{params.analysis_name}__{params.ref_genome}__{params.target_name}.txt"
+        # Written in the same order as --samplesLabel, so it lines up with the
+        # matrix columns without needing a lookup at plot time.
+        echo "{params.colors}" | xargs -n1 > "{config[output_dir]}/combined/matrix/colors_{params.matrix}__{params.env}__{params.analysis_name}__{params.ref_genome}__{params.target_name}.txt"
         printf "Making {params.strand} strand {params.matrix} matrix for {params.env} {params.target_name} on {params.ref_genome}\n"
         if [[ "{params.env}" == "mC" ]]; then
             computeMatrix {params.base_mc} -R {output.temp} -S {input.bigwigs} --samplesLabel {params.labels} -bs {params.bs_mc} -b {params.before} -a {params.after} {params.middle} -p {threads} -o {output.matrix}
@@ -1061,38 +1092,48 @@ rule merging_matrix:
         """
         {{
         nfile=$(echo {input} | wc -w)
-        if [[ ${{nfile}} -eq 2 ]]; then
+        if [[ ${{nfile}} -eq 1 ]]; then
+            # Relabel rather than copy: computeMatrix names the group after its
+            # input BED, which here is an internal temp file, and that name is
+            # what ends up printed on the plot as the region label.
+            computeMatrixOperations relabel -m {input} \
+                --groupLabels "{params.target_name}" -o {output}
+        else
             printf "\nMerging stranded matrices aligned by {params.matrix} for {params.env} {params.target_name} on {params.ref_genome}\n"
             # rbind merges region groups that share a label and keeps apart any
             # that differ. computeMatrix names each group after its input BED, so
             # the plus and minus halves arrive labelled '..._plus' and '..._minus'
             # and survive the merge as two groups -- while every rule downstream
-            # (plotHeatmap, plotProfile, sort_heatmap's relabel) passes a single
-            # --regionsLabel and dies on the count mismatch. Give both halves one
-            # label so they fold into one group, which is what these plots showed
-            # under deeptools 3: there computeMatrix labelled every single-BED
-            # group 'genes' regardless of filename, so the halves merged by
-            # accident. Don't rely on that default again.
-            i=0
+            # (plotHeatmap, plotProfile, sort_heatmap's relabel) passes one
+            # --regionsLabel per group and dies on a count mismatch. Relabelling
+            # decides the grouping outright: plus and minus take the target name
+            # and fold into one group, and the 'nostrand' pass -- regions whose
+            # strand is '.' or '?', for which sense is undefined -- takes its own
+            # label and stays a group of its own.
+            #
+            # deeptools 3 labelled every single-BED group 'genes' regardless of
+            # filename, so plus and minus merged by accident there. Don't rely on
+            # that default again.
             relabelled=()
+            i=0
             for matrix in {input}; do
                 i=$((i+1))
+                case "${{matrix}}" in
+                    *__nostrand.gz) label="{params.target_name}_nostrand";;
+                    *)              label="{params.target_name}";;
+                esac
                 computeMatrixOperations relabel -m "${{matrix}}" \
-                    --groupLabels "{params.target_name}" -o "$TMPDIR/relabelled_${{i}}.gz"
+                    --groupLabels "${{label}}" -o "$TMPDIR/relabelled_${{i}}.gz"
                 relabelled+=("$TMPDIR/relabelled_${{i}}.gz")
             done
             computeMatrixOperations rbind -m "${{relabelled[@]}}" -o {output}
-        else
-            cp {input} {output}
         fi
         }} 2>&1 | tee -a "{log}"
         """
 
 rule computing_matrix_scales:
     input:
-        matrix = f"{RESULTS_DIR}/combined/matrix/final_matrix_{{matrix_param}}__{{env}}__{{analysis_name}}__{{ref_genome}}__{{target_name}}.gz",
-        target_file = lambda wildcards: define_combined_target_file(wildcards),
-        header = lambda wildcards: f"{define_combined_target_file(wildcards)}.header"
+        matrix = f"{RESULTS_DIR}/combined/matrix/final_matrix_{{matrix_param}}__{{env}}__{{analysis_name}}__{{ref_genome}}__{{target_name}}.gz"
     output:
         params_heatmap = temp(f"{RESULTS_DIR}/combined/matrix/params_heatmap_final_matrix_{{matrix_param}}__{{env}}__{{analysis_name}}__{{ref_genome}}__{{target_name}}.txt"),
         params_profile = temp(f"{RESULTS_DIR}/combined/matrix/params_profile_final_matrix_{{matrix_param}}__{{env}}__{{analysis_name}}__{{ref_genome}}__{{target_name}}.txt"),
@@ -1108,6 +1149,7 @@ rule computing_matrix_scales:
         matrix = lambda wildcards: wildcards.matrix_param,
         scales = config['heatmaps_scales'],
         profile = config['profiles_scale'],
+        labeller = os.path.join(REPO_FOLDER, "workflow", "scripts", "matrix_region_labels.py"),
         cg_scale = config['heat_mcg'],
         chg_scale = config['heat_mchg'],
         chh_scale = config['heat_mchh']
@@ -1117,12 +1159,10 @@ rule computing_matrix_scales:
     shell:
         """
         {{        
-        header="$(cat {input.header})"
-        count=$(wc -l {input.target_file} | cut -d' ' -f 1)
-        if [[ "${{header}}" == "yes" ]]; then
-            count=$((count-1))
-        fi
-        awk -v ORS="" -v r=${{count}} -v n={params.target_name} 'BEGIN {{print "--regionsLabel "n"("r")"}}' > {output.params_regions}
+        # One label per region group, counts taken from the matrix itself --
+        # a stranded target can carry a separate 'nostrand' group, and
+        # --skipZeros drops regions, so the target file cannot tell us either.
+        python3 "{params.labeller}" {input.matrix} > {output.params_regions}
 
         if [[ "{params.scales}" == "default" ]]; then
             touch {output.params_heatmap}
@@ -1158,8 +1198,15 @@ rule computing_matrix_scales:
                     zmini="0"
                     zmaxi="0.005"
                 fi
-                ymini=$(grep "${{mark}}" {output.temp_profile_values} | awk '{{m=$3; for (i=3;i<=NF;i++) if ($i<m) m=$i; print m}}' | awk 'BEGIN {{m=99999}} {{if ($1<m) m=$1}} END {{if (m<0) a=m*1.2; else a=m*0.8; print a}}')
-                ymaxi=$(grep "${{mark}}" {output.temp_profile_values} | awk '{{m=$3; for (i=3;i<=NF;i++) if ($i>m) m=$i; print m}}' | awk 'BEGIN {{m=-99999}} {{if ($1>m) m=$1}} END {{if (m<0) a=m*0.8; else a=m*1.2; print a}}')
+                # Pad the axis by a tenth of the data's RANGE, not of its value.
+                # Multiplying the endpoints (min*0.8, max*1.2) scales the padding
+                # with the baseline, so data sitting high above zero in a narrow
+                # band gets a huge axis: ColCEN TE mCG spans 41.6-50.1 and was
+                # drawn on 33.3-60.1, filling a third of the plot. Genes were
+                # unaffected only because their mCG dips near zero.
+                ybounds=$(grep "${{mark}}" {output.temp_profile_values} | awk '{{ for (i=3;i<=NF;i++) if ($i+0==$i) {{ if (n==0 || $i+0<lo) lo=$i+0; if (n==0 || $i+0>hi) hi=$i+0; n++ }} }} END {{ if (n==0) {{ print 0, 0; exit }} pad=(hi-lo)*0.1; if (pad<=0) pad=(hi<0?-hi:hi)*0.1; if (pad<=0) pad=0.01; print lo-pad, hi+pad }}')
+                ymini=$(echo "${{ybounds}}" | cut -d" " -f1)
+                ymaxi=$(echo "${{ybounds}}" | cut -d" " -f2)
                 test=$(awk -v a=${{ymini}} -v b=${{ymaxi}} 'BEGIN {{if (a==0 && b==0) c="yes"; else c="no"; print c}}')
                 if [[ ${{test}} == "yes" ]]; then
                     ymini=("0")
@@ -1209,8 +1256,15 @@ rule computing_matrix_scales:
                     zmaxs+=("$zmaxi")
                 fi
                 
-                ymini=$(grep "${{sample}}" {output.temp_profile_values} | awk '{{m=$3; for(i=3;i<=NF;i++) if ($i<m) m=$i; print m}}' | awk 'BEGIN {{m=99999}} {{if ($1<m) m=$1}} END {{if (m<0) a=m*1.2; else a=m*0.8; print a}}')
-                ymaxi=$(grep "${{sample}}" {output.temp_profile_values} | awk '{{m=$3; for(i=3;i<=NF;i++) if ($i>m) m=$i; print m}}' | awk 'BEGIN {{m=-99999}} {{if ($1>m) m=$1}} END {{if (m<0) a=m*0.8; else a=m*1.2; print a}}')
+                # Pad the axis by a tenth of the data's RANGE, not of its value.
+                # Multiplying the endpoints (min*0.8, max*1.2) scales the padding
+                # with the baseline, so data sitting high above zero in a narrow
+                # band gets a huge axis: ColCEN TE mCG spans 41.6-50.1 and was
+                # drawn on 33.3-60.1, filling a third of the plot. Genes were
+                # unaffected only because their mCG dips near zero.
+                ybounds=$(grep "${{sample}}" {output.temp_profile_values} | awk '{{ for (i=3;i<=NF;i++) if ($i+0==$i) {{ if (n==0 || $i+0<lo) lo=$i+0; if (n==0 || $i+0>hi) hi=$i+0; n++ }} }} END {{ if (n==0) {{ print 0, 0; exit }} pad=(hi-lo)*0.1; if (pad<=0) pad=(hi<0?-hi:hi)*0.1; if (pad<=0) pad=0.01; print lo-pad, hi+pad }}')
+                ymini=$(echo "${{ybounds}}" | cut -d" " -f1)
+                ymaxi=$(echo "${{ybounds}}" | cut -d" " -f2)
                 test=$(awk -v a=${{ymini}} -v b=${{ymaxi}} 'BEGIN {{if (a==0 && b==0) c="yes"; else c="no"; print c}}')
                 if [[ "${{test}}" == "yes" ]]; then
                     ymins+=("0")
@@ -1288,8 +1342,9 @@ rule sort_heatmap:
     shell:
         """
         printf "Sorting heatmap {params.matrix} for mC {params.target_name} on {params.ref_genome}\n"
-        label="$(cat {input.params_regions} | cut -d" " -f 2)"
-        computeMatrixOperations relabel -m {input.matrix} --groupLabels ${{label}} -o {output.temp_matrix}
+        # Everything after the flag: one label per region group, not just the first.
+        labels="$(cat {input.params_regions} | cut -d" " -f 2-)"
+        computeMatrixOperations relabel -m {input.matrix} --groupLabels ${{labels}} -o {output.temp_matrix}
         computeMatrixOperations sort -m {output.temp_matrix} -R {input.sorted_regions} -o {output.matrix}
         """
 
@@ -1355,12 +1410,24 @@ rule plotting_profile_on_targetfile:
         printf "Plotting profile {params.matrix} for {params.env} {params.target_name} on {params.ref_genome}\n"
         reg="$(cat {input.params_regions})"
         prof="$(cat {input.params_profile})"
-        plotProfile -m {input.matrix} -out {output.plot1} {params.plot_params} ${{reg}} ${{prof}} ${{add}}
+        # deeptools 4 picks line colours by sampling a sequential colormap, which
+        # leaves consecutive samples nearly identical. Use the pipeline's own
+        # categorical palette instead (tab20 keyed on levels_label), written in
+        # matrix column order by making_stranded_matrix_on_targetfile.
+        colorfile="{config[output_dir]}/combined/matrix/colors_{params.matrix}__{params.env}__{params.analysis_name}__{params.ref_genome}__{params.target_name}.txt"
+        col="--colors $(tr '\n' ' ' < "${{colorfile}}")"
+        plotProfile -m {input.matrix} -out {output.plot1} {params.plot_params} ${{reg}} ${{prof}} ${{col}} ${{add}}
         
         printf "Plotting per group profile {params.matrix} for {params.env} {params.target_name} on {params.ref_genome}\n"
         ymin=$(cat {input.params_profile} | awk 'BEGIN {{y=99999}} {{for (i=1; i<=NF; i++) {{if ($i == "--yMin") {{for (j=i+1; j<=NF && $j !~ /^--/; j++) {{if ($j<y) y=$j}} break}} }} }} END {{print y}}' )
         ymax=$(cat {input.params_profile} | awk 'BEGIN {{y=-99999}} {{for (i=1; i<=NF; i++) {{if ($i == "--yMax") {{for (j=i+1; j<=NF && $j !~ /^--/; j++) {{if ($j>y) y=$j}} break}} }} }} END {{print y}}' )
-        plotProfile -m {input.matrix} -out {output.plot2} {params.plot_params} ${{reg}} --yMin ${{ymin}} --yMax ${{ymax}} ${{add}} --perGroup
+        # --perGroup draws one legend entry per sample, and deeptools 4 anchors
+        # that legend below the axes in a single column without growing the
+        # figure -- so past ~8 samples the axes collapse to a sliver and the plot
+        # comes out blank. Grow the panel to cover the legend it will carry.
+        nsample=$(wc -l < "${{colorfile}}")
+        height=$(awk -v n="${{nsample}}" 'BEGIN {{h=7+0.55*n; if (h>50) h=50; printf "%.1f", h}}')
+        plotProfile -m {input.matrix} -out {output.plot2} {params.plot_params} ${{reg}} --yMin ${{ymin}} --yMax ${{ymax}} ${{col}} --plotHeight ${{height}} ${{add}} --perGroup
         }} 2>&1 | tee -a "{log}"
         """
 

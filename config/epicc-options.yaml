@@ -414,7 +414,7 @@ srna_heatmap_sizes: [21, 22, 24] # these sizes in nucleotide will be used for pl
 plot_allreps: false # whether to use data from all individual replicates or from merged samples when multiple replicates are present. Default to false (using merged replicates).
 # For deeptools heatmaps and profiles
 heatmaps_scales: "type" # options: [ 'default' = default scaling from deeptools, one scale for all samples | 'sample' = each sample on its own scale | 'type' = each type of data on a different scale (each ChIP mark + each TF + RNA + sRNA + each mC context) ]
-stranded_heatmaps: true # chose whether the heatmap should be done with stranded information or not. If true, lines in the bedfile without strand information (6th column "+" or "-") will not be included.
+stranded_heatmaps: true # chose whether the heatmap should be done with stranded information or not. If true, stranded data types (RNAseq, sRNA) contribute their sense-strand track for each region. Regions whose 6th column is neither "+" nor "-" have no sense strand, so they are plotted as a separate region group rather than dropped.
 heatmaps_sort_options: "mean" # options: [ 'no' | 'mean' | median' ]; mean = "--sortRegions descend --sortUsing mean"
 heatmap_sort_mc_after_others: true # chose whether the heatmaps for mC samples are done based on the sort order of the other samples or not.
 profiles_scale: "mean" # options: [ 'mean' | median' ]
