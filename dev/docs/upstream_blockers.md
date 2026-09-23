@@ -231,9 +231,13 @@ it before merging the entry; otherwise the file will rot.
   `slurm-no-requeue` would avoid both problems but leaves a preempted job
   cancelled, which the plugin waits on indefinitely.
 - **Upstream:** introduced in
-  snakemake/snakemake-executor-plugin-slurm#411; present through 2.8.0. The
-  lookup needs `--duplicates` (or the placeholder filtered out) and the value
-  `safe_quote()`d, as `--qos` and `--reservation` already are.
+  snakemake/snakemake-executor-plugin-slurm#411; present through 2.8.0.
+  Reported in
+  <https://github.com/snakemake/snakemake-executor-plugin-slurm/issues/485>;
+  the requeue race is described in
+  <https://github.com/snakemake/snakemake-executor-plugin-slurm/issues/353>.
+  The lookup needs `--duplicates` (or the placeholder filtered out) and the
+  value `safe_quote()`d, as `--qos` and `--reservation` already are.
 - **Check:** `grep -A12 'NODE_FAIL' $(python -c 'import
   snakemake_executor_plugin_slurm as m; print(m.__file__)') | grep -Eq
   'None assigned|duplicates'` — starts succeeding once upstream fixes the
