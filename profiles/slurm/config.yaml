@@ -21,6 +21,17 @@ max-status-checks-per-second: 5
 # ephemeral-port reuse under high concurrent load; ~1-2 % of jobs on
 # whole-genome plant runs). Real bugs still surface after the retry.
 retries: 1
+# Node failures and preemption are SLURM's to requeue; `retries` covers
+# everything else. This flag submits jobs with `sbatch --requeue` and tells
+# the plugin to keep tracking a NODE_FAIL'd job under its original ID
+# instead of reporting it failed. Without it, on a cluster with
+# JobRequeue=1 the plugin retries a job SLURM has already requeued, and the
+# two copies run at once in the same output directory (Bismark's temp
+# splits get clobbered and bowtie2 aborts on mismatched mates). Don't
+# switch to `slurm-no-requeue`: a preempted job is then cancelled, and the
+# plugin waits on it indefinitely. See dev/docs/upstream_blockers.md for
+# the one node-failure bug this does not avoid.
+slurm-requeue: true
 
 # Safety-net defaults sent with every sbatch submission.
 #
