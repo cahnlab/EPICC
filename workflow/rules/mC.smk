@@ -493,11 +493,10 @@ rule merging_mc_replicates:
     input:
         report_files = get_cx_reports_for_merging
     output:
-        bedfile = temp(f"{RESULTS_DIR}/mC/methylcall/{{sample_name}}.bed"),
-        tempmergefile = temp(f"{RESULTS_DIR}/mC/methylcall/{{sample_name}}.merged.CX_report.txt"),
         mergefile = temp(f"{RESULTS_DIR}/mC/methylcall/{{sample_name}}.merged.CX_report.txt.gz")
     params:
-        sname = lambda wildcards: wildcards.sample_name
+        sname = lambda wildcards: wildcards.sample_name,
+        merge_cx = os.path.join(REPO_FOLDER, "workflow", "scripts", "merge_cx_reports.sh")
     log:
         temp(return_log_mc("{sample_name}", "merging_reps", ""))
     conda: CONDA_ENV_MC
@@ -505,9 +504,7 @@ rule merging_mc_replicates:
         """
         {{
         printf "\nMerging replicates of {params.sname}\n"
-        zcat {input.report_files} | sort -k1,1 -k2,2n | awk -v OFS="\t" '{{print $1,$2-1,$2,$3,$4,$5,$6,$7}}' > {output.bedfile}
-		bedtools merge -d -1 -o distinct,sum,sum,distinct,distinct -c 4,5,6,7,8 -i {output.bedfile} | awk -v OFS="\t" '{{print $1,$3,$4,$5,$6,$7,$8}}' > {output.tempmergefile}
-        pigz -p {threads} "{output.tempmergefile}" -c > "{output.mergefile}"
+        bash "{params.merge_cx}" {threads} "{output.mergefile}" {input.report_files}
         }} 2>&1 | tee -a "{log}"
         """
 
@@ -552,19 +549,16 @@ rule make_mc_bigwig_files:
             done
         done
 
-        # Demux methylation calls into per-context bedGraphs (and per-strand
-        # variants). The CX_report has all three contexts interleaved; the
-        # awk output redirection writes each line to the matching context
-        # file. Cheap to do unconditionally — empty bedGraphs are dropped
-        # below for inactive contexts.
-        zcat {input.cx_report} | awk -v OFS="\t" -v s=$sname '($4+$5)>0 {{a=$4+$5; if ($6=="CHH") print $1,$2-1,$2,$4/a*100 >> "'"$outdir"'/"s"__CHH.bedGraph"; else if ($6=="CHG") print $1,$2-1,$2,$4/a*100 >> "'"$outdir"'/"s"__CHG.bedGraph"; else if ($6=="CG") print $1,$2-1,$2,$4/a*100 >> "'"$outdir"'/"s"__CG.bedGraph"}}'
-        for strand in plus minus; do
-            case "$strand" in
-                plus)  sign="+";;
-                minus) sign="-";;
-            esac
-            zcat {input.cx_report} | awk -v n="$sign" '$3==n' | awk -v OFS="\t" -v s=$sname -v d=$strand '($4+$5)>0 {{a=$4+$5; if ($6=="CHH") print $1,$2-1,$2,$4/a*100 >> "'"$outdir"'/"s"__CHH__"d".bedGraph"; else if ($6=="CHG") print $1,$2-1,$2,$4/a*100 >> "'"$outdir"'/"s"__CHG__"d".bedGraph"; else if ($6=="CG") print $1,$2-1,$2,$4/a*100 >> "'"$outdir"'/"s"__CG__"d".bedGraph"}}'
-        done
+        # Demux methylation calls into per-context bedGraphs, combined and
+        # per strand, in one pass over the CX report. Cheap to do for every
+        # context; empty bedGraphs are dropped below for inactive contexts.
+        zcat {input.cx_report} | awk -v OFS="\t" -v dir="$outdir" -v s="$sname" '
+            ($4+$5) > 0 && ($6=="CG" || $6=="CHG" || $6=="CHH") {{
+                a = $4+$5; v = $4/a*100
+                print $1, $2-1, $2, v > (dir "/" s "__" $6 ".bedGraph")
+                if ($3=="+") print $1, $2-1, $2, v > (dir "/" s "__" $6 "__plus.bedGraph")
+                else if ($3=="-") print $1, $2-1, $2, v > (dir "/" s "__" $6 "__minus.bedGraph")
+            }}'
 
         # A sample with no covered cytosine anywhere is a failed sample, not a
         # biological result: its bigwigs are flat, it contributes nothing but
