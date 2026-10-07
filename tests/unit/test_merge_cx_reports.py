@@ -120,3 +120,15 @@ def test_corrupt_report_fails(tmp_path):
                             capture_output=True, text=True,
                             env={**os.environ, "TMPDIR": str(tmp_path)})
     assert result.returncode != 0
+
+
+def test_corrupt_single_replicate_fails(tmp_path):
+    # With one report there is no second replicate to disagree with it.
+    a = _report(tmp_path / "a.gz", [(1, 0)] * len(SITES))
+    bad = tmp_path / "bad.gz"
+    bad.write_bytes(Path(a).read_bytes()[:-6])
+    out = tmp_path / "merged.gz"
+    result = subprocess.run(["bash", str(SCRIPT), "1", str(out), str(bad)],
+                            capture_output=True, text=True,
+                            env={**os.environ, "TMPDIR": str(tmp_path)})
+    assert result.returncode != 0

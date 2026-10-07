@@ -70,7 +70,7 @@ fi
 # reports don't hold the same rows.
 blocks="$work/blocks"
 if ! awk -F'\t' -v n="$n" '
-        { file[FILENAME] = 1; path[FILENAME, $1] = $2 }
+        { path[FILENAME, $1] = $2 }
         FILENAME == ARGV[1] { order[++m] = $1 }
         END {
             for (r = 2; r <= n; r++) if (count(ARGV[r]) != m) exit 3
