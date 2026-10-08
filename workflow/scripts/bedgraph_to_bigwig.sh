@@ -11,7 +11,11 @@
 # zero-value base. An empty input yields an all-zero bigWig over the whole
 # genome rather than a one-chromosome stub.
 #
-# The input does not need to be sorted; this sorts before conversion.
+# The input does not need to be sorted. Input that is already grouped by
+# chromosome with ascending starts -- every bedGraph the pipeline builds, since
+# they come from CX reports and coordinate-sorted BAMs -- is put in order by
+# concatenating per-chromosome blocks, which is linear. Anything else goes
+# through sort, which on a 10 GB CHH track from a 1 Gb genome took hours.
 
 set -euo pipefail
 
@@ -32,12 +36,29 @@ fi
 work=$(mktemp -d "${TMPDIR:-/tmp}/bg2bw.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 
-# Chromosomes in chrom.sizes with no interval in the data. Keyed on FILENAME
-# rather than NR==FNR so an empty bedGraph still pads every chromosome.
-awk -v first="$in_bg" -v OFS='\t' '
+mkdir "$work/chr"
+
+# Split the data into one file per chromosome; exit 3 means the input is not
+# grouped by chromosome with ascending starts, and is sorted instead.
+grouped=0
+LC_ALL=C awk -v dir="$work/chr" -f "$(dirname "$0")/split_by_chrom.awk" "$in_bg" \
+    || grouped=$?
+if [[ "$grouped" -ne 0 && "$grouped" -ne 3 ]]; then
+    exit "$grouped"
+fi
+
+# Chromosomes in chrom.sizes with no interval in the data, padded with a
+# single zero-value base. Keyed on FILENAME rather than NR==FNR so an empty
+# bedGraph (empty index) still pads every chromosome.
+if [[ "$grouped" -eq 0 ]]; then
+    seen_from="$work/chr/index"
+else
+    seen_from="$in_bg"
+fi
+awk -v first="$seen_from" -v OFS='\t' '
     FILENAME == first { seen[$1] = 1; next }
     !($1 in seen) { print $1, 0, 1, 0 }
-' "$in_bg" "$chrom_sizes" > "$work/pad.bedGraph"
+' "$seen_from" "$chrom_sizes" > "$work/pad.bedGraph"
 
 n_pad=$(wc -l < "$work/pad.bedGraph")
 if [[ "$n_pad" -gt 0 ]]; then
@@ -45,7 +66,20 @@ if [[ "$n_pad" -gt 0 ]]; then
            "$(basename "$in_bg")" "$n_pad"
 fi
 
-cat "$in_bg" "$work/pad.bedGraph" \
-    | LC_COLLATE=C sort -k1,1 -k2,2n > "$work/sorted.bedGraph"
+if [[ "$grouped" -eq 0 ]]; then
+    # Each pad line is a block of its own, so it sorts in with the rest.
+    n=$(wc -l < "$work/chr/index")
+    while IFS=$'\t' read -r chrom _ _ _; do
+        n=$((n + 1))
+        printf '%s\t0\t1\t0\n' "$chrom" > "$work/chr/$n"
+        printf '%s\t%s\n' "$chrom" "$work/chr/$n" >> "$work/chr/index"
+    done < "$work/pad.bedGraph"
+    LC_ALL=C sort -t $'\t' -k1,1 "$work/chr/index" | cut -f2 | xargs -r -d '\n' cat \
+        > "$work/sorted.bedGraph"
+else
+    cat "$in_bg" "$work/pad.bedGraph" \
+        | LC_COLLATE=C sort -k1,1 -k2,2n > "$work/sorted.bedGraph"
+fi
+rm -rf "$work/chr"
 
 bedGraphToBigWig "$work/sorted.bedGraph" "$chrom_sizes" "$out_bw"
