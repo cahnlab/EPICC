@@ -388,7 +388,7 @@ def _lock_present(repo):
     return locks.exists() and any(locks.iterdir())
 
 
-def maybe_clear_stale_lock(args, repo):
+def maybe_clear_stale_lock(args, extra_args, repo):
     """Clear a stale Snakemake lock before running, but only if opted in.
 
     Killed runs (SLURM timeouts, Ctrl-C, node failures) leave files in
@@ -412,10 +412,13 @@ def maybe_clear_stale_lock(args, repo):
     print("  on this same directory, unlocking will corrupt its state.",
           file=sys.stderr)
     print("=" * 72, file=sys.stderr)
-    cmd = ["snakemake", "--unlock", "--configfile", args.options]
-    if _is_installed_mode():
-        cmd += ["--snakefile", str(repo / "workflow" / "Snakefile")]
-    subprocess.run(cmd, cwd=str(run_dir), check=False)
+    cmd = build_snakemake_cmd(args, extra_args, unlock=True)
+    result = subprocess.run(cmd, cwd=str(run_dir))
+    # Carrying on would only hit the lock again, with snakemake's
+    # LockException hiding why the unlock itself failed.
+    if result.returncode != 0:
+        sys.exit(f"EPICC: --auto-unlock failed (exit code {result.returncode}); "
+                 "see the snakemake error above.")
 
 
 _PLACEHOLDER_RE = __import__("re").compile(r"<your-[a-z0-9-]+>", __import__("re").IGNORECASE)
@@ -692,8 +695,15 @@ def _prepare_options_file(args):
     return tmp.name
 
 
-def build_snakemake_cmd(args, extra_args, *, dry_run=False):
-    """Construct the snakemake command line from parsed arguments."""
+def build_snakemake_cmd(args, extra_args, *, dry_run=False, unlock=False):
+    """Construct the snakemake command line from parsed arguments.
+
+    unlock=True builds the matching `snakemake --unlock` call. It has to carry
+    the run's full config: snakemake parses the Snakefile before unlocking,
+    and the Snakefile reads the sample sheet, so an unlock that drops a
+    --samples override fails wherever the options file's own sample_file is
+    stale.
+    """
     repo = find_repo_root()
 
     cmd = ["snakemake"]
@@ -739,6 +749,8 @@ def build_snakemake_cmd(args, extra_args, *, dry_run=False):
     # Dry-run
     if dry_run:
         cmd.append("--dry-run")
+    if unlock:
+        cmd.append("--unlock")
 
     # Re-run any jobs Snakemake marked incomplete on a prior interrupted run.
     # Without this, Snakemake errors out on the first affected rule, which is
@@ -823,7 +835,7 @@ def cmd_run(args, extra_args):
     if not _is_installed_mode():
         os.chdir(repo)
 
-    maybe_clear_stale_lock(args, repo)
+    maybe_clear_stale_lock(args, extra_args, repo)
 
     profile, cores = detect_execution_mode(args)
     check_profile_placeholders(profile)
