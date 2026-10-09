@@ -45,6 +45,10 @@
 
 * [ ] Remove all functions/scripts used for backward compatibility with previous config. 
 
+* [ ] Test ColCEN datasets on different clusters (Elzar, Genotoul) to extract and compare performance (Jon to do).
+
+* [ ] Test run on laptop to check that it works (local executor), and compare with performance on cluster. Use Pombe testrun for small genome.
+
 ### Testing
 
 #### ColCEN
