@@ -17,7 +17,10 @@ annotated<-read.delim(args[2], header = TRUE) %>%
 	rename(Distance=Gap)
 env<-args[3]
 types<-unlist(strsplit(args[4], ":"))
-output<-args[5]
+# label=type pairs from define_samples_for_upset; split on the first '='
+label_types<-unlist(strsplit(args[5], ","))
+label_types<-setNames(sub("^[^=]*=", "", label_types), sub("=.*$", "", label_types))
+output<-args[6]
 
 sampleslist<-unique(unlist(strsplit(as.character(merged$Samples), ",")))
 
@@ -50,6 +53,12 @@ mat<-separate_rows(merged, Samples, sep = ",") %>%
 	
 mat$Category<-factor(mat$Category, levels=c("Distal_downstream","Terminator","Gene_body","Promoter","Distal_upstream"))
 
+# Sample columns of each type, looked up rather than pattern-matched: one type
+# can be a substring of another (H3K9me / H3K9me2), and mat also carries
+# annotation columns.
+type_cols<-lapply(types, function(t) intersect(sampleslist, names(label_types)[label_types == t]))
+names(type_cols)<-types
+
 ## To create queries to color when the same mark is shared in the intersection matrix
 qual_col_pals<-brewer.pal.info[brewer.pal.info$category == 'qual',]
 colorlist<-unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
@@ -57,7 +66,7 @@ i<-1
 queries<-c()
 listcolor<-c()
 for (sampletype in types) {
-    setcols<-colnames(mat)[grep(sampletype, colnames(mat))]
+    setcols<-type_cols[[sampletype]]
     max_k<-length(setcols)
     k_values<-seq_len(max_k)
     # check if not too large number of combinations
@@ -80,14 +89,11 @@ for (sampletype in types) {
 }
 colmarks<-setNames(listcolor, types)
 
-type_cols<-lapply(types, function(t) { grep(t, colnames(mat), value = TRUE) })
-names(type_cols)<-types
-
 ## To add a exclusive_mark column when all the sample of a the set contains the same mark in the violin plot
 
 mat$exclusive_mark<-"Mix"
 for (type in types) {
-	type_cols_subset<-colnames(mat)[grep(type, colnames(mat))]
+	type_cols_subset<-type_cols[[type]]
 	exclu<-rowSums(mat[, type_cols_subset, drop=FALSE]) == rowSums(mat[, sampleslist, drop=FALSE])
 	mat$exclusive_mark[exclu]<-type
 }

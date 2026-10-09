@@ -68,6 +68,8 @@ def define_samples_for_upset(wildcards, string):
     names = []
     files = []
     types = set()
+    label_types = {}
+    srna_prefixes = []
     ref_genome = wildcards.ref_genome
     srna_sizes = config['srna_heatmap_sizes']
     globenv = wildcards.env
@@ -96,12 +98,14 @@ def define_samples_for_upset(wildcards, string):
                     names.append(f"{label}:{file}")
                     files.append(file)
                     types.add(row.sample_type)
+                    label_types[label] = row.sample_type
             else:
                 file = f"{RESULTS_DIR}/{row.env}/peaks/selected_peaks__{row['mapped_name']}.bedPeak"
                 label = f"{row.levels_label}_{row.sample_type}"
                 names.append(f"{label}:{file}")
                 files.append(file)
                 types.add(row.sample_type)
+                label_types[label] = row.sample_type
         elif globenv == "RAMPAGE":
             if allreps:
                 for sid in get_replicate_sample_ids(row['sample_name'], samples):
@@ -111,12 +115,14 @@ def define_samples_for_upset(wildcards, string):
                     names.append(f"{label}:{file}")
                     files.append(file)
                     types.add(f"{row.levels_label}")
+                    label_types[label] = row.levels_label
             else:
                 file = f"{RESULTS_DIR}/RNA/TSS/TSS__merged__{row['sample_name']}_peaks.narrowPeak"
                 label = f"{row.levels_label}"
                 names.append(f"{label}:{file}")
                 files.append(file)
                 types.add(f"{row.levels_label}")
+                label_types[label] = row.levels_label
         elif row.env == "sRNA":
             for sid in get_replicate_sample_ids(row['sample_name'], samples):
                 file = f"{RESULTS_DIR}/sRNA/mapped/{sid}/clusters.bed"
@@ -124,6 +130,7 @@ def define_samples_for_upset(wildcards, string):
                 label = f"{row.levels_label}_{rep}"
                 names.append(f"{label}:{file}")
                 files.append(file)
+                srna_prefixes.append(label)
 
     if globenv == "sRNA":
         srna_min = config['srna_min_size']
@@ -131,6 +138,11 @@ def define_samples_for_upset(wildcards, string):
         types = [f"{s}nt" for s in range(srna_min, srna_max + 1)]
         types += ["MIRNA", "Others"]
         ordered = ":".join(types)
+        # combine_clusterfiles suffixes each label with the cluster's size class
+        # (clusters.bed column 4), so the plotted column is '{label}_{type}'.
+        for prefix in srna_prefixes:
+            for t in types:
+                label_types[f"{prefix}_{t}"] = t
     else:
         ordered = ":".join(sorted(types))
     
@@ -140,6 +152,11 @@ def define_samples_for_upset(wildcards, string):
         return files
     elif string == "types":
         return ordered
+    elif string == "label_types":
+        # Explicit label->type map for the UpSet scripts: a type can be a
+        # substring of another (H3K9me / H3K9me2), so the scripts can't
+        # recover it by matching on the label text.
+        return ",".join(f"{label}={t}" for label, t in label_types.items())
 
 def define_upset_script(wildcards):
     globenv = wildcards.env
@@ -990,13 +1007,14 @@ rule plotting_upset_regions:
     params:
         env = lambda wildcards: wildcards.env,
         types = lambda wildcards: define_samples_for_upset(wildcards, "types"),
+        label_types = lambda wildcards: define_samples_for_upset(wildcards, "label_types"),
         script = lambda wildcards: define_upset_script(wildcards)
     log:
         temp(return_log_combined("{analysis_name}", "{ref_genome}", "plot_upset_{target_name}_{env}"))
     conda: CONDA_ENV
     shell:
         """
-        Rscript "{params.script}" "{input.mergedfile}" "{input.annotatedfile}" "{params.env}" "{params.types}" "{output.plot}"
+        Rscript "{params.script}" "{input.mergedfile}" "{input.annotatedfile}" "{params.env}" "{params.types}" "{params.label_types}" "{output.plot}"
         """
 
 ###
