@@ -16,10 +16,14 @@ import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
+import sys
+
 import pandas as pd
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO / "workflow" / "scripts"))
+from sample_sheet import check_unique_labels, plot_levels_labels  # noqa: E402
 SMK = REPO / "workflow" / "rules" / "combined_analysis.smk"
 SCRIPTS = REPO / "workflow" / "scripts"
 UPSET_SCRIPTS = ["R_Upset_plot_peaks.R", "R_Upset_plot_TSS.R",
@@ -44,8 +48,8 @@ def _load_define_samples_for_upset(allreps):
     assert m, "define_samples_for_upset not found"
 
     analysis_samples = pd.DataFrame(
-        [{"sample_name": n, "mapped_name": n, "env": e, "sample_type": t,
-          "levels_label": lv, "ref_genome": "Spombe"}
+        [{"sample_name": n, "mapped_name": n, "Assay": n.split("__")[0],
+          "env": e, "sample_type": t, "levels_label": lv, "ref_genome": "Spombe"}
          for n, e, t, lv, _ in ROWS])
     reps = {n: [f"{n}_{r}" for r in rr] for n, _, _, _, rr in ROWS}
     ns = {
@@ -58,6 +62,8 @@ def _load_define_samples_for_upset(allreps):
         "parse_sample_name": lambda sid: {"replicate": sid.rsplit("_", 1)[1]},
         "get_peaktype_for_env": lambda name, env: "broad",
         "get_sample_info_from_name": lambda name, df, field: "PE",
+        "plot_levels_labels": plot_levels_labels,
+        "check_unique_labels": check_unique_labels,
     }
     exec(compile(m.group(0), str(SMK), "exec"), ns)
     return ns["define_samples_for_upset"]

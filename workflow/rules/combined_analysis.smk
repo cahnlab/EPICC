@@ -80,6 +80,7 @@ def define_samples_for_upset(wildcards, string):
         filtered_analysis_samples = analysis_samples[ (analysis_samples['sample_type'] == "RAMPAGE") & (analysis_samples['ref_genome'] == ref_genome) ].copy()
     else:
         filtered_analysis_samples = analysis_samples[ (analysis_samples['env'] == globenv) & (analysis_samples['ref_genome'] == ref_genome) ].copy()
+    filtered_analysis_samples["levels_label"] = plot_levels_labels(filtered_analysis_samples)
     for _, row in filtered_analysis_samples.iterrows():
         if row.env in ["ChIP", "ATAC"]:
             if allreps:
@@ -145,7 +146,8 @@ def define_samples_for_upset(wildcards, string):
                 label_types[f"{prefix}_{t}"] = t
     else:
         ordered = ":".join(sorted(types))
-    
+    check_unique_labels([n[:-len(f) - 1] for n, f in zip(names, files)], f"the {globenv} UpSet plot")
+
     if string == "pairs":
         return names
     elif string == "files":
@@ -236,6 +238,7 @@ def define_key_for_plots(wildcards, string):
         filtered_analysis_samples = analysis_samples[ (analysis_samples['env'] != "mC") & (analysis_samples['ref_genome'] == ref_genome) ].copy()
     else:
         filtered_analysis_samples = analysis_samples[ (analysis_samples['env'] == globenv) & (analysis_samples['ref_genome'] == ref_genome) ].copy()
+    filtered_analysis_samples["levels_label"] = plot_levels_labels(filtered_analysis_samples)
     for _, row in filtered_analysis_samples.iterrows():
         rep_ids = get_replicate_sample_ids(row['sample_name'], samples)
         if row.env == "ChIP":
@@ -447,6 +450,7 @@ def define_key_for_plots(wildcards, string):
         sum([grouped_labs.get(f"{srna}", []) for srna in sorted(unique_srna)], []) +
         sum([grouped_labs.get(f"{mc}", []) for mc in sorted(unique_mc)], [])
     )
+    check_unique_labels(labels, f"the {globenv} plots")
     marks = ( sorted(unique_chip) + sorted(unique_atac) + [f"{rna}_{strand}" for rna in sorted(unique_rna) for strand in ["plus", "minus"]] + [f"{srna}_{strand}" for srna in sorted(unique_srna) for strand in ["plus", "minus"]] + sorted(unique_mc) ) if strand == "unstranded" else ( sorted(unique_chip) + sorted(unique_atac) + sorted(unique_rna) + sorted(unique_srna) + sorted(unique_mc) )
 
     marksforbrowser = ( sorted(unique_chip) + sorted(unique_atac) + sorted(unique_rna) + sorted(unique_srna) + sorted(unique_mc) )
@@ -542,6 +546,7 @@ def define_input_for_pca(wildcards, string):
     
     if globenv in ["mCG", "mCHG", "mCHH"]:
         filtered_samples = samples[ (samples['env'] == "mC") & (samples['ref_genome'] == ref_genome) ].copy()
+        filtered_samples["levels_label"] = plot_levels_labels(filtered_samples)
         context = globenv[1:]
         for _, row in filtered_samples.iterrows():
             bw = f"{RESULTS_DIR}/mC/tracks/{row['mapped_name']}__{context}.bw"
@@ -573,9 +578,16 @@ def define_input_for_pca(wildcards, string):
             labels.append(label)
             unique_group.add(group)
             label_to_group[label] = group
-    
+    # PCA points are replicates, controls included, so two libraries can share
+    # Levels, mark, assay and replicate (separate Inputs for two marks). The
+    # Sample_ID tells them apart.
+    groups = [label_to_group[lab] for lab in labels]
+    counts = Counter(labels)
+    labels = [sid if counts[lab] > 1 else lab for lab, sid in zip(labels, filtered_samples["Sample_ID"])]
+    check_unique_labels(labels, f"the {globenv} PCA")
+
     palette = assign_colors(unique_group, "tab20")
-    colors = [palette[label_to_group[lab]] for lab in labels]
+    colors = [palette[group] for group in groups]
     
     if string == "tracks":
         return tracks
@@ -1254,8 +1266,8 @@ rule computing_matrix_scales:
             ymaxs=()
             while read sample
             do
-                zmini=$(grep "${{sample}}" {output.temp_values} | awk '{{if ($5 != "nan") print $5; else print 0}}')
-                zmaxi=$(grep "${{sample}}" {output.temp_values} | awk '{{if ($6 != "nan") print $6; else print 0}}')
+                zmini=$(awk -F"\t" -v s="${{sample}}" '$1==s' {output.temp_values} | awk '{{if ($5 != "nan") print $5; else print 0}}')
+                zmaxi=$(awk -F"\t" -v s="${{sample}}" '$1==s' {output.temp_values} | awk '{{if ($6 != "nan") print $6; else print 0}}')
                 test=$(awk -v a=${{zmini}} -v b=${{zmaxi}} 'BEGIN {{if (a==0 && b==0) c="yes"; else c="no"; print c}}')
                 if [[ "${{test}}" == "yes" && "${{sample}}" =~ mCG ]]; then
                     zmins+=("0")
@@ -1280,7 +1292,7 @@ rule computing_matrix_scales:
                 # band gets a huge axis: ColCEN TE mCG spans 41.6-50.1 and was
                 # drawn on 33.3-60.1, filling a third of the plot. Genes were
                 # unaffected only because their mCG dips near zero.
-                ybounds=$(grep "${{sample}}" {output.temp_profile_values} | awk '{{ for (i=3;i<=NF;i++) if ($i+0==$i) {{ if (n==0 || $i+0<lo) lo=$i+0; if (n==0 || $i+0>hi) hi=$i+0; n++ }} }} END {{ if (n==0) {{ print 0, 0; exit }} pad=(hi-lo)*0.1; if (pad<=0) pad=(hi<0?-hi:hi)*0.1; if (pad<=0) pad=0.01; print lo-pad, hi+pad }}')
+                ybounds=$(awk -F"\t" -v s="${{sample}}" '$1==s' {output.temp_profile_values} | awk '{{ for (i=3;i<=NF;i++) if ($i+0==$i) {{ if (n==0 || $i+0<lo) lo=$i+0; if (n==0 || $i+0>hi) hi=$i+0; n++ }} }} END {{ if (n==0) {{ print 0, 0; exit }} pad=(hi-lo)*0.1; if (pad<=0) pad=(hi<0?-hi:hi)*0.1; if (pad<=0) pad=0.01; print lo-pad, hi+pad }}')
                 ymini=$(echo "${{ybounds}}" | cut -d" " -f1)
                 ymaxi=$(echo "${{ybounds}}" | cut -d" " -f2)
                 test=$(awk -v a=${{ymini}} -v b=${{ymaxi}} 'BEGIN {{if (a==0 && b==0) c="yes"; else c="no"; print c}}')

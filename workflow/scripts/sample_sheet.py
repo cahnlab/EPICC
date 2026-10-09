@@ -743,6 +743,55 @@ def get_peaktype(assay, config_override=None):
 
 
 # ---------------------------------------------------------------------------
+# Plot labels
+# ---------------------------------------------------------------------------
+
+def plot_levels_labels(df):
+    """levels_label per row, with the assay added where two assays would share a plot label.
+
+    Combined-analysis labels are built from levels_label plus the mark (the
+    IP_target for pulldowns, the env for mC and sRNA), not the assay, so a ChIP
+    and a CUT_TAG H3K27me3 from the same Levels, or a WGBS and a PBAT from the
+    same Levels, would get one label between them. Those rows get the assay
+    appended (WT -> WT_CUT_TAG), with the peak type too only when the assay
+    alone does not tell them apart. Rows that don't collide keep levels_label
+    unchanged.
+    """
+    if df.empty:
+        return df["levels_label"].copy()
+    core = df.apply(lambda r: r["env"] if r["env"] in ("mC", "sRNA") else r["sample_type"], axis=1)
+    base = df["Assay"].str.replace(r"_(broad|narrow)$", "", regex=True)
+    labels = df["levels_label"].copy()
+    for _, idx in df.groupby([df["levels_label"], core]).groups.items():
+        assays = df.loc[idx, "Assay"]
+        if assays.nunique() < 2:
+            continue
+        disc = base.loc[idx] if base.loc[idx].nunique() == assays.nunique() else assays
+        labels.loc[idx] = df.loc[idx, "levels_label"] + "_" + disc
+    return labels
+
+
+def check_unique_labels(labels, where):
+    """Fail at DAG build if two plotted samples share a label.
+
+    Labels name per-sample files (browser tracks) and identify samples in
+    merged peak sets, so a duplicate silently overwrites or merges one sample
+    into another rather than failing.
+    """
+    seen, dups = set(), []
+    for lab in labels:
+        if lab in seen and lab not in dups:
+            dups.append(lab)
+        seen.add(lab)
+    if dups:
+        raise ValueError(
+            f"Duplicate plot labels in {where}: {', '.join(dups)}. Each label is "
+            "built from Levels, the mark and the assay; make the Levels of these "
+            "samples distinct."
+        )
+
+
+# ---------------------------------------------------------------------------
 # Backward-compatibility bridge columns
 # ---------------------------------------------------------------------------
 
