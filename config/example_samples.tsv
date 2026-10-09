@@ -17,6 +17,7 @@
 #                files are tagged with the genome. Must not contain '__'.
 #   Levels       Comma-separated factor:level pairs (genotype:WT,tissue:leaf).
 #                All rows in the sheet must use the same factor keys.
+#                No '=' in factor names or levels.
 #   Replicate_ID Replicate label (rep1, rep2, repA, ...).
 #   Read_files   SRA/ENA/DDBJ accession (SRR12345), local FASTQ/BAM path,
 #                HTTP(S) URL, or '+'-separated list to merge multiple inputs.

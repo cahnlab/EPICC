@@ -131,44 +131,80 @@ class TestLabelTypeMap:
                 in block)
 
 
-def _r_type_cols(script, types, label_types, sampleslist):
-    """Run the script's own arg parsing and type_cols lookup in base R."""
-    lines = (SCRIPTS / script).read_text().splitlines()
-    start = next(i for i, l in enumerate(lines) if l.startswith("types<-"))
-    head = lines[start:next(i for i, l in enumerate(lines) if l.startswith("output<-"))]
-    tc = next(i for i, l in enumerate(lines) if l.startswith("type_cols<-"))
+COMMON_R = SCRIPTS / "upset_common.R"
+
+
+def _r_type_cols(types, label_arg, sampleslist):
+    """Parse the map and look up type columns with the shared R helpers."""
     code = "\n".join([
         "args<-commandArgs(trailingOnly=TRUE)",
-        *head,
-        "sampleslist<-unlist(strsplit(args[6], ','))",
-        lines[tc], lines[tc + 1],
-        "for (t in names(type_cols)) cat(t, ':', paste(type_cols[[t]], collapse=','), '\\n', sep='')",
+        f"source({str(COMMON_R)!r})",
+        "types<-unlist(strsplit(args[1], ':'))",
+        "label_types<-parse_label_types(args[2])",
+        "sampleslist<-unlist(strsplit(args[3], ','))",
+        "type_cols<-upset_type_cols(types, label_types, sampleslist)",
+        "for (t in names(type_cols)) cat(t, '\\t', paste(type_cols[[t]], collapse=','), '\\n', sep='')",
     ])
     out = subprocess.run(
-        ["Rscript", "-e", code, "m", "a", "e", ":".join(types),
-         ",".join(f"{k}={v}" for k, v in label_types.items()),
-         ",".join(sampleslist)],
+        ["Rscript", "-e", code, ":".join(types), label_arg, ",".join(sampleslist)],
         check=True, capture_output=True, text=True).stdout
     return {k: (v.split(",") if v else [])
-            for k, v in (l.split(":", 1) for l in out.splitlines())}
+            for k, v in (l.split("\t", 1) for l in out.splitlines())}
+
+
+def _arg(label_types):
+    return ",".join(f"{k}={v}" for k, v in label_types.items())
+
+
+@pytest.mark.parametrize("script", UPSET_SCRIPTS)
+def test_scripts_use_the_shared_helpers(script):
+    src = (SCRIPTS / script).read_text()
+    assert 'source(file.path(script_dir, "upset_common.R"))' in src
+    assert "parse_label_types(args[5])" in src
+    assert "upset_type_cols(types, label_types, sampleslist)" in src
+    assert "colnames(mat))" not in src  # no pattern match over mat's columns
 
 
 @pytest.mark.skipif(shutil.which("Rscript") is None, reason="Rscript not on PATH")
-@pytest.mark.parametrize("script", UPSET_SCRIPTS)
 class TestRLookup:
-    def test_substring_types_do_not_collide(self, script):
+    def test_substring_types_do_not_collide(self):
         label_types = {"WT_H3K9me": "H3K9me", "WT_H3K9me2": "H3K9me2",
                        "dcr1_H3K9me2": "H3K9me2"}
-        got = _r_type_cols(script, ["H3K9me", "H3K9me2"], label_types,
+        got = _r_type_cols(["H3K9me", "H3K9me2"], _arg(label_types),
                            ["WT_H3K9me2", "WT_H3K9me", "dcr1_H3K9me2"])
         assert got == {"H3K9me": ["WT_H3K9me"],
                        "H3K9me2": ["WT_H3K9me2", "dcr1_H3K9me2"]}
 
-    def test_only_present_sample_columns_are_used(self, script):
+    def test_only_present_sample_columns_are_used(self):
         # A mapped label with no regions is not a column of mat.
         label_types = {"WT_rep1_21nt": "21nt", "WT_rep1_Others": "Others",
                        "WT_rep1_24nt": "24nt"}
-        got = _r_type_cols(script, ["21nt", "24nt", "Others"], label_types,
+        got = _r_type_cols(["21nt", "24nt", "Others"], _arg(label_types),
                            ["WT_rep1_Others", "WT_rep1_21nt"])
         assert got == {"21nt": ["WT_rep1_21nt"], "24nt": [],
                        "Others": ["WT_rep1_Others"]}
+
+    def test_pair_splits_at_the_last_equals(self):
+        # Only the label side, built from Levels, could carry an '='.
+        got = _r_type_cols(["H3K9me2"], "dose=1_H3K9me2=H3K9me2",
+                           ["dose=1_H3K9me2"])
+        assert got == {"H3K9me2": ["dose=1_H3K9me2"]}
+
+    def test_empty_map(self):
+        got = _r_type_cols(["H3K9me2"], "", ["WT_H3K9me2"])
+        assert got == {"H3K9me2": []}
+
+    def test_script_dir_resolution(self, tmp_path):
+        """The scripts find upset_common.R next to themselves, whatever the cwd."""
+        lines = (SCRIPTS / "R_Upset_plot_peaks.R").read_text().splitlines()
+        loader = [l for l in lines if l.startswith("script_dir<-") or
+                  l.startswith("source(file.path(script_dir")]
+        assert len(loader) == 2
+        installed = tmp_path / "share" / "epicc" / "workflow" / "scripts"
+        installed.mkdir(parents=True)
+        shutil.copy(COMMON_R, installed)
+        probe = installed / "probe.R"
+        probe.write_text("\n".join(loader + ["cat(exists('upset_type_cols'))"]))
+        out = subprocess.run(["Rscript", str(probe)], cwd=tmp_path,
+                             check=True, capture_output=True, text=True).stdout
+        assert out.strip() == "TRUE"

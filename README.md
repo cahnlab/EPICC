@@ -221,7 +221,7 @@ The four trailing columns (`IP_target`, `Control`, `Peak_type`, `Comments`) are 
 ### Common to all types of samples
 
 - **Sample_ID**: A unique identifier for this sample. Used in output filenames. Must be filesystem-safe (no `__`, `/`, whitespace, or shell metacharacters).
-- **Levels**: Comma-separated `factor:level` pairs describing experimental conditions (e.g. `genotype:WT,tissue:leaf` or `genotype:Col0,treatment:control`). The combination of levels is used for comparisons. All samples must have the same number of factors with the same factor names.
+- **Levels**: Comma-separated `factor:level` pairs describing experimental conditions (e.g. `genotype:WT,tissue:leaf` or `genotype:Col0,treatment:control`). The combination of levels is used for comparisons. All samples must have the same number of factors with the same factor names. Factor names and levels must not contain `=`.
 - **Replicate_ID**: Any value to identify replicates (e.g. `rep1`, `repA`, `1`). Replicates with the same Assay, Levels, IP_target, and Genome are merged for downstream analysis.
 - **Read_files**: Path to input data. Supports:
   - SRA accession: `SRR27821931` (will be downloaded automatically)

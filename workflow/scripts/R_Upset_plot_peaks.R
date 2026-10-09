@@ -8,6 +8,10 @@ library(ggplot2)
 library(ComplexUpset)
 library(RColorBrewer)
 
+# Resolved from this script's own path so it works from the repo and an install alike
+script_dir<-dirname(normalizePath(sub("^--file=", "", grep("^--file=", commandArgs(trailingOnly=FALSE), value=TRUE)[1])))
+source(file.path(script_dir, "upset_common.R"))
+
 args = commandArgs(trailingOnly=TRUE)
 
 merged<-read.delim(args[1], header = TRUE)
@@ -17,9 +21,7 @@ annotated<-read.delim(args[2], header = TRUE) %>%
 	rename(Distance=Gap)
 env<-args[3]
 types<-unlist(strsplit(args[4], ":"))
-# label=type pairs from define_samples_for_upset; split on the first '='
-label_types<-unlist(strsplit(args[5], ","))
-label_types<-setNames(sub("^[^=]*=", "", label_types), sub("=.*$", "", label_types))
+label_types<-parse_label_types(args[5])
 output<-args[6]
 
 sampleslist<-unique(unlist(strsplit(as.character(merged$Samples), ",")))
@@ -53,11 +55,7 @@ mat<-separate_rows(merged, Samples, sep = ",") %>%
 	
 mat$Category<-factor(mat$Category, levels=c("Distal_downstream","Terminator","Gene_body","Promoter","Distal_upstream"))
 
-# Sample columns of each type, looked up rather than pattern-matched: one type
-# can be a substring of another (H3K9me / H3K9me2), and mat also carries
-# annotation columns.
-type_cols<-lapply(types, function(t) intersect(sampleslist, names(label_types)[label_types == t]))
-names(type_cols)<-types
+type_cols<-upset_type_cols(types, label_types, sampleslist)
 
 ## To create queries to color when the same mark is shared in the intersection matrix
 qual_col_pals<-brewer.pal.info[brewer.pal.info$category == 'qual',]

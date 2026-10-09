@@ -100,6 +100,26 @@ class TestReadFilesPathExistence:
 
 
 # ---------------------------------------------------------------------------
+# Levels: '=' is reserved (UpSet label=type map)
+# ---------------------------------------------------------------------------
+
+class TestLevelsReservedChars:
+    @pytest.mark.parametrize("levels", [
+        "genotype:WT=1", "geno=type:WT", "genotype:WT,tissue:a=b"])
+    def test_equals_rejected(self, levels):
+        df = pd.DataFrame([_row("s1", "RNAseq", "SRR1", Levels=levels)])
+        with pytest.raises(ValueError) as excinfo:
+            check_table(df)
+        assert "must not contain '='" in str(excinfo.value)
+        assert "[X] Row #1 's1'" in str(excinfo.value)
+
+    def test_plain_levels_pass(self):
+        df = pd.DataFrame([_row("s1", "RNAseq", "SRR1",
+                                Levels="genotype:WT-1,tissue:leaf.2")])
+        check_table(df)
+
+
+# ---------------------------------------------------------------------------
 # Read_files: '+'-merge type compatibility (SRA + FASTQ mergeable; BAM,
 # bedMethyl, and mixed-type merges rejected)
 # ---------------------------------------------------------------------------

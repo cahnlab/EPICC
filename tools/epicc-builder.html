@@ -983,7 +983,7 @@ const COLUMN_DESCRIPTIONS = {
   Sample_ID: "Unique identifier for each sample row. Used as a filesystem path component. Must not contain '__' or unsafe characters (/ \\ whitespace '\";&|<>$`!{}()[]?*~#). Concise descriptive IDs like 'WT_leaf_H3K9me2_rep1' are recommended.",
   Assay: "Experimental assay type (the method, not the analysis). Determines pipeline routing: ChIP, CUT_RUN (CUT&RUN), CUT_TAG (CUT&Tag), ATAC, RNAseq, RAMPAGE, sRNA, WGBS (directional), WGBS_nd (non-directional, e.g. Zymo Pico), PBAT, EMseq (enzymatic), dmC (direct methylation from long reads). Peak-calling type (broad/narrow) is set separately in the Peak_type column.",
   Genome: "Reference genome name (e.g. Spombe, ColCEN, hg38). Used to locate genome files under genomes/{Genome}/. Tick several genomes to map the same sample to each reference (e.g. B73,W22): the reads are downloaded and trimmed once, then aligned to each, and post-alignment outputs are tagged with the genome.",
-  Levels: "Comma-separated factor:level pairs (e.g. genotype:WT,tissue:root). All rows must have the same factors. Level values form the 'levels_label' in analysis names.",
+  Levels: "Comma-separated factor:level pairs (e.g. genotype:WT,tissue:root). All rows must have the same factors; '=' is not allowed. Level values form the 'levels_label' in analysis names.",
   Replicate_ID: "Replicate identifier (e.g. rep1, rep2). Replicates are mapped independently then merged for downstream analysis.",
   Read_files: "SRA accession (SRR12345678), local path, URL (https://...), or '+'-separated SRA accessions for merging (SRA only). PE: comma-separated R1,R2 pair.",
   Read_layout: "Sequencing layout: SE (single-end) or PE (paired-end).",
@@ -1024,6 +1024,14 @@ function parseLevels(str) {
     result.push({ factor: factor.trim(), level: rest.join(":").trim() });
   }
   return result;
+}
+
+// Why a factor:level pair is invalid, or "" if it is fine. '=' is reserved:
+// labels built from levels reach the UpSet plots as label=type pairs.
+function levelsPairIssue(factor, level) {
+  if (!factor.trim() || !level.trim()) return "empty factor name or level in Levels";
+  if (factor.includes("=") || level.includes("=")) return "factor names and levels must not contain '='";
+  return "";
 }
 
 function levelsToLabel(str) {
@@ -1113,9 +1121,9 @@ function addFactor(name) {
   for (var i = 0; i < factors.length; i++) {
     if (factors[i].toLowerCase() === name.toLowerCase()) return;
   }
-  // Forbidden chars in factor names: : , __
-  if (name.includes(":") || name.includes(",") || name.includes("__")) {
-    alert("Factor name cannot contain ':', ',' or '__'.");
+  // Forbidden chars in factor names: : , = __
+  if (name.includes(":") || name.includes(",") || name.includes("=") || name.includes("__")) {
+    alert("Factor name cannot contain ':', ',', '=' or '__'.");
     return;
   }
   factors.push(name);
@@ -1741,7 +1749,7 @@ function showFactorDescription(factorName) {
   descPanel.appendChild(document.createTextNode(
     " Level of factor '" + factorName + "'. " +
     "Stored as comma-separated factor:level pairs (e.g. genotype:WT,tissue:root) " +
-    "in the sample sheet TSV 'Levels' column. All rows must have the same factors. " +
+    "in the sample sheet TSV 'Levels' column. All rows must have the same factors; '=' is not allowed. " +
     "Level values form the 'levels_label' in analysis names."
   ));
 }
@@ -1978,8 +1986,11 @@ function runValidation() {
         var fField = factorField(factors[fi]);
         if (!fval)
           addIssue(cellIssues, errors, rowKey, fField, "[X] Row #" + rowNum + " '" + sid + "': " + factors[fi] + " level is required");
-        else if (fval.includes(":") || fval.includes(","))
-          addIssue(cellIssues, errors, rowKey, fField, "[X] Row #" + rowNum + " '" + sid + "': " + factors[fi] + " level must not contain ':' or ','");
+        else if (fval.includes(":") || fval.includes(",") || fval.includes("="))
+          addIssue(cellIssues, errors, rowKey, fField, "[X] Row #" + rowNum + " '" + sid + "': " + factors[fi] + " level must not contain ':', ',' or '='");
+        // Imported sheets set factor names without going through addFactor.
+        if (factors[fi].includes("="))
+          addIssue(cellIssues, errors, rowKey, fField, "[X] Row #" + rowNum + " '" + sid + "': factor name '" + factors[fi] + "' must not contain '='");
       }
     } else {
       // Fallback: validate Levels column directly
@@ -1996,8 +2007,9 @@ function runValidation() {
             var parts = p.split(":");
             var factor = parts[0];
             var level = parts.slice(1).join(":");
-            if (!factor.trim() || !level.trim())
-              addIssue(cellIssues, errors, rowKey, "Levels", "[X] Row #" + rowNum + " '" + sid + "': empty factor name or level in Levels");
+            var pairIssue = levelsPairIssue(factor, level);
+            if (pairIssue)
+              addIssue(cellIssues, errors, rowKey, "Levels", "[X] Row #" + rowNum + " '" + sid + "': " + pairIssue);
           }
         }
       }

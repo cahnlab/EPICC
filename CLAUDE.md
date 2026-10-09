@@ -55,7 +55,7 @@ Sample metadata is defined in a TSV file with 11 columns:
 - **Sample_ID**: Unique identifier, used as filesystem name. Must be unique and filesystem-safe (no `__`, `/`, whitespace).
 - **Assay**: Controlled vocabulary (experimental method only): `ChIP`, `CUT_RUN`, `CUT_TAG`, `ATAC`, `RNAseq`, `RAMPAGE`, `sRNA`, `WGBS`, `WGBS_nd`, `PBAT`, `EMseq`, `dmC`.
 - **Genome**: Reference genome name (e.g. `Spombe`, `ColCEN`), or a comma-separated list (`B73,W22`) to map the same reads to several references. Multi-genome rows are exploded internally into one row per `(Sample_ID, Genome)`. A genome name must not contain `__`.
-- **Levels**: Comma-separated `factor:level` pairs (e.g. `genotype:WT,tissue:root`). All samples must have the same factors.
+- **Levels**: Comma-separated `factor:level` pairs (e.g. `genotype:WT,tissue:root`). All samples must have the same factors. No `=` in factor names or levels (reserved by the UpSet `label=type` map).
 - **Replicate_ID**: Replicate identifier (e.g. `rep1`, `rep2`)
 - **Read_files**: SRA accession (`SRR12345`), local path, HTTP(S) URL, public S3 URI (`s3://bucket/key`), or `+`-separated for merging multiple inputs (`+`-merge supported for SRA accessions and FASTQ files, local or URL; BAM/bedMethyl must be merged upstream)
 - **Read_layout**: `SE` or `PE`
