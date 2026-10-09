@@ -1478,6 +1478,7 @@ rule prep_browser_on_region:
         trackfolder = lambda wildcards: f"{RESULTS_DIR}/combined/matrix/tracks_{wildcards.target_name}__{wildcards.regionID}__{wildcards.env}__{wildcards.analysis_name}__{wildcards.ref_genome}",
         regionID = lambda wildcards: wildcards.regionID,
         browser_scales = config['browser_scales'],
+        column_awk = os.path.join(REPO_FOLDER, "workflow", "scripts", "column_for_label.awk"),
         mc_scales = config['fixed_mc_scales'],
         cg_scale = config['fixed_mcg'],
         chg_scale = config['fixed_mchg'],
@@ -1558,7 +1559,7 @@ rule prep_browser_on_region:
         do
             path="{params.trackfolder}/${{lab}}_${{mark}}"
             printf "Making bw for ${{lab}}\n"
-            col=($(awk -v ORS=" " -v t=${{lab}} 'NR==1 {{for (i=1;i<=NF;i++) if ($i~t) print i}}' {output.tempvalues}))
+            col=$(awk -v label="${{lab}}" -f {params.column_awk} {output.tempvalues})
             if [[ "${{lab}}" == *_minus ]]; then
                 awk -v OFS="\t" -v a=${{col}} 'NR>1 {{if ($a == "nan") b=0; else b=-$a; print $1,$2,$3,b}}' {output.tempvalues} | bedtools sort -g {input.chrom_sizes} > "${{path}}.bedGraph"
             else
