@@ -7,7 +7,7 @@ vocabularies, environment mappings, and helper functions live here.
 
 import io
 import re
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 import pandas as pd
 
 # ---------------------------------------------------------------------------
@@ -746,48 +746,47 @@ def get_peaktype(assay, config_override=None):
 # Plot labels
 # ---------------------------------------------------------------------------
 
-def plot_levels_labels(df):
-    """levels_label per row, with the assay added where two assays would share a plot label.
+def disambiguate_labels(labels, assays, sample_ids, suffixes=None):
+    """Make plot labels unique, leaving labels that are already unique unchanged.
 
-    Combined-analysis labels are built from levels_label plus the mark (the
-    IP_target for pulldowns, the env for mC and sRNA), not the assay, so a ChIP
-    and a CUT_TAG H3K27me3 from the same Levels, or a WGBS and a PBAT from the
-    same Levels, would get one label between them. Those rows get the assay
-    appended (WT -> WT_CUT_TAG), with the peak type too only when the assay
-    alone does not tell them apart. Rows that don't collide keep levels_label
-    unchanged.
+    Combined-analysis labels are built from Levels plus the mark, not the
+    assay, so a ChIP and a CUT_TAG H3K27me3 from the same Levels, or a WGBS and
+    a PBAT from the same Levels, come out with the same label. Each label
+    occurring more than once gets a discriminator appended, trying in turn the
+    assay without its peak type (WT_H3K27me3_CUT_TAG), the full assay token
+    (WT_H3K27me3_ChIP_broad), then the Sample_ID the label came from, which
+    covers two replicates sharing a Replicate_ID or two separate controls.
+
+    ``suffixes`` (e.g. '_plus'/'_minus' for stranded tracks) are kept after
+    the discriminator, so both halves of a stranded pair get the same one.
+    Returns the full labels, suffixes included.
     """
-    if df.empty:
-        return df["levels_label"].copy()
-    core = df.apply(lambda r: r["env"] if r["env"] in ("mC", "sRNA") else r["sample_type"], axis=1)
-    base = df["Assay"].str.replace(r"_(broad|narrow)$", "", regex=True)
-    labels = df["levels_label"].copy()
-    for _, idx in df.groupby([df["levels_label"], core]).groups.items():
-        assays = df.loc[idx, "Assay"]
-        if assays.nunique() < 2:
-            continue
-        disc = base.loc[idx] if base.loc[idx].nunique() == assays.nunique() else assays
-        labels.loc[idx] = df.loc[idx, "levels_label"] + "_" + disc
-    return labels
+    n = len(labels)
+    suffixes = list(suffixes) if suffixes is not None else [""] * n
+    base = [re.sub(r"_(broad|narrow)$", "", a) for a in assays]
+    out = [lab + suf for lab, suf in zip(labels, suffixes)]
+    for disc in (base, list(assays), list(sample_ids)):
+        counts = Counter(out)
+        if all(c == 1 for c in counts.values()):
+            break
+        out = [f"{lab}_{d}{suf}" if counts[o] > 1 else o
+               for o, lab, d, suf in zip(out, labels, disc, suffixes)]
+    return out
 
 
 def check_unique_labels(labels, where):
-    """Fail at DAG build if two plotted samples share a label.
+    """Fail at DAG build if two plotted samples still share a label.
 
     Labels name per-sample files (browser tracks) and identify samples in
     merged peak sets, so a duplicate silently overwrites or merges one sample
-    into another rather than failing.
+    into another rather than failing. disambiguate_labels should leave none;
+    this guards against a builder that bypasses it.
     """
-    seen, dups = set(), []
-    for lab in labels:
-        if lab in seen and lab not in dups:
-            dups.append(lab)
-        seen.add(lab)
+    dups = [lab for lab, c in Counter(labels).items() if c > 1]
     if dups:
         raise ValueError(
-            f"Duplicate plot labels in {where}: {', '.join(dups)}. Each label is "
-            "built from Levels, the mark and the assay; make the Levels of these "
-            "samples distinct."
+            f"Duplicate plot labels in {where}: {', '.join(dups)}. Assay and "
+            "Sample_ID did not tell these samples apart; please report this."
         )
 
 

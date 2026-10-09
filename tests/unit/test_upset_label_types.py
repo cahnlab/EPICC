@@ -23,7 +23,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "workflow" / "scripts"))
-from sample_sheet import check_unique_labels, plot_levels_labels  # noqa: E402
+from sample_sheet import check_unique_labels, disambiguate_labels  # noqa: E402
 SMK = REPO / "workflow" / "rules" / "combined_analysis.smk"
 SCRIPTS = REPO / "workflow" / "scripts"
 UPSET_SCRIPTS = ["R_Upset_plot_peaks.R", "R_Upset_plot_TSS.R",
@@ -62,7 +62,7 @@ def _load_define_samples_for_upset(allreps):
         "parse_sample_name": lambda sid: {"replicate": sid.rsplit("_", 1)[1]},
         "get_peaktype_for_env": lambda name, env: "broad",
         "get_sample_info_from_name": lambda name, df, field: "PE",
-        "plot_levels_labels": plot_levels_labels,
+        "disambiguate_labels": disambiguate_labels,
         "check_unique_labels": check_unique_labels,
     }
     exec(compile(m.group(0), str(SMK), "exec"), ns)
