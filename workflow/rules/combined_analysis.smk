@@ -1478,7 +1478,6 @@ rule prep_browser_on_region:
         trackfolder = lambda wildcards: f"{RESULTS_DIR}/combined/matrix/tracks_{wildcards.target_name}__{wildcards.regionID}__{wildcards.env}__{wildcards.analysis_name}__{wildcards.ref_genome}",
         regionID = lambda wildcards: wildcards.regionID,
         browser_scales = config['browser_scales'],
-        column_awk = os.path.join(REPO_FOLDER, "workflow", "scripts", "column_for_label.awk"),
         mc_scales = config['fixed_mc_scales'],
         cg_scale = config['fixed_mcg'],
         chg_scale = config['fixed_mchg'],
@@ -1554,12 +1553,22 @@ rule prep_browser_on_region:
         done < {params.sample_table}
         printf "Summarize bigwigs in binsize of ${{binsize}} bp on {params.regionID}\n"
         multiBigwigSummary bins -b ${{filelist2[@]}} -l {params.labels} -r ${{region}} -p {threads} -bs ${{binsize}} -out {output.temparray} --outRawCounts {output.tempvalues}
-        
+
+        # --outRawCounts writes one column per bigwig, in -b order, after
+        # chr/start/end; -b was built from the sample table's rows in order, so
+        # row n is column n+3. Positional rather than by label: two samples can
+        # share a label (same Levels and IP_target under different assays).
+        ncols=$(head -1 {output.tempvalues} | awk '{{print NF}}')
+        if [[ ${{ncols}} -ne $(( ${{#filelist2[@]}} + 3 )) ]]; then
+            printf "Error: {output.tempvalues} has ${{ncols}} columns for ${{#filelist2[@]}} bigwigs\n"
+            exit 1
+        fi
+        col=3
         while read bw lab back track plus minus mark
         do
             path="{params.trackfolder}/${{lab}}_${{mark}}"
             printf "Making bw for ${{lab}}\n"
-            col=$(awk -v label="${{lab}}" -f {params.column_awk} {output.tempvalues})
+            col=$(( col + 1 ))
             if [[ "${{lab}}" == *_minus ]]; then
                 awk -v OFS="\t" -v a=${{col}} 'NR>1 {{if ($a == "nan") b=0; else b=-$a; print $1,$2,$3,b}}' {output.tempvalues} | bedtools sort -g {input.chrom_sizes} > "${{path}}.bedGraph"
             else
