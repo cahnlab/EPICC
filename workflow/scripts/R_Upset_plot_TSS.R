@@ -8,6 +8,10 @@ library(ggplot2)
 library(ComplexUpset)
 library(RColorBrewer)
 
+# Resolved from this script's own path so it works from the repo and an install alike
+script_dir<-dirname(normalizePath(sub("^--file=", "", grep("^--file=", commandArgs(trailingOnly=FALSE), value=TRUE)[1])))
+source(file.path(script_dir, "upset_common.R"))
+
 args = commandArgs(trailingOnly=TRUE)
 
 merged<-read.delim(args[1], header = TRUE)
@@ -17,7 +21,8 @@ annotated<-read.delim(args[2], header = TRUE) %>%
 	rename(Distance=Gap)
 env<-args[3]
 types<-unlist(strsplit(args[4], ":"))
-output<-args[5]
+label_types<-parse_label_types(args[5])
+output<-args[6]
 
 sampleslist<-unique(unlist(strsplit(as.character(merged$Samples), ",")))
 
@@ -50,6 +55,8 @@ mat<-separate_rows(merged, Samples, sep = ",") %>%
 	
 mat$Category<-factor(mat$Category, levels=c("Distal_downstream","Terminator","Gene_body","Promoter","Distal_upstream"))
 
+type_cols<-upset_type_cols(types, label_types, sampleslist)
+
 ## To create queries to color when the same mark is shared in the intersection matrix
 qual_col_pals<-brewer.pal.info[brewer.pal.info$category == 'qual',]
 colorlist<-unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
@@ -57,7 +64,7 @@ i<-1
 queries<-c()
 listcolor<-c()
 for (sampletype in types) {
-	setcols<-colnames(mat)[grep(sampletype, colnames(mat))]
+	setcols<-type_cols[[sampletype]]
 	combos<-map(seq_along(setcols), ~ combn(setcols, ., FUN = c, simplify = FALSE)) %>% 
 			unlist(recursive = FALSE)
 	tmpqueries<-map(combos, ~ upset_query(intersect = .x, color = colorlist[i], 
@@ -68,14 +75,11 @@ for (sampletype in types) {
 }
 colmarks<-setNames(listcolor, types)
 
-type_cols <- lapply(types, function(t) { grep(t, colnames(mat), value = TRUE) })
-names(type_cols) <- types
-
 ## To add a exclusive_mark column when all the sample of a the set contains the same mark in the violin plot
 
 mat$exclusive_mark<-"Mix"
 for (type in types) {
-	type_cols_subset<-colnames(mat)[grep(type, colnames(mat))]
+	type_cols_subset<-type_cols[[type]]
 	exclu<-rowSums(mat[, type_cols_subset, drop=FALSE]) == rowSums(mat[, sampleslist, drop=FALSE])
 	mat$exclusive_mark[exclu]<-type
 }

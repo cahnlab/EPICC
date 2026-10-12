@@ -7,7 +7,7 @@ vocabularies, environment mappings, and helper functions live here.
 
 import io
 import re
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 import pandas as pd
 
 # ---------------------------------------------------------------------------
@@ -740,6 +740,54 @@ def get_peaktype(assay, config_override=None):
             "CUT_TAG_narrow, and ATAC."
         )
     return pt
+
+
+# ---------------------------------------------------------------------------
+# Plot labels
+# ---------------------------------------------------------------------------
+
+def disambiguate_labels(labels, assays, sample_ids, suffixes=None):
+    """Make plot labels unique, leaving labels that are already unique unchanged.
+
+    Combined-analysis labels are built from Levels plus the mark, not the
+    assay, so a ChIP and a CUT_TAG H3K27me3 from the same Levels, or a WGBS and
+    a PBAT from the same Levels, come out with the same label. Each label
+    occurring more than once gets a discriminator appended, trying in turn the
+    assay without its peak type (WT_H3K27me3_CUT_TAG), the full assay token
+    (WT_H3K27me3_ChIP_broad), then the Sample_ID the label came from, which
+    covers two replicates sharing a Replicate_ID or two separate controls.
+
+    ``suffixes`` (e.g. '_plus'/'_minus' for stranded tracks) are kept after
+    the discriminator, so both halves of a stranded pair get the same one.
+    Returns the full labels, suffixes included.
+    """
+    n = len(labels)
+    suffixes = list(suffixes) if suffixes is not None else [""] * n
+    base = [re.sub(r"_(broad|narrow)$", "", a) for a in assays]
+    out = [lab + suf for lab, suf in zip(labels, suffixes)]
+    for disc in (base, list(assays), list(sample_ids)):
+        counts = Counter(out)
+        if all(c == 1 for c in counts.values()):
+            break
+        out = [f"{lab}_{d}{suf}" if counts[o] > 1 else o
+               for o, lab, d, suf in zip(out, labels, disc, suffixes)]
+    return out
+
+
+def check_unique_labels(labels, where):
+    """Fail at DAG build if two plotted samples still share a label.
+
+    Labels name per-sample files (browser tracks) and identify samples in
+    merged peak sets, so a duplicate silently overwrites or merges one sample
+    into another rather than failing. disambiguate_labels should leave none;
+    this guards against a builder that bypasses it.
+    """
+    dups = [lab for lab, c in Counter(labels).items() if c > 1]
+    if dups:
+        raise ValueError(
+            f"Duplicate plot labels in {where}: {', '.join(dups)}. Assay and "
+            "Sample_ID did not tell these samples apart; please report this."
+        )
 
 
 # ---------------------------------------------------------------------------

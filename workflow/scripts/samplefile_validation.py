@@ -191,6 +191,13 @@ def check_table(tab, check_paths=True):
                         f"[X] Row #{i} '{row.get('Sample_ID', '')}': "
                         f"empty factor name or level in Levels"
                     )
+                # Labels built from levels reach the UpSet scripts as
+                # label=type pairs, so '=' is reserved.
+                if "=" in pair:
+                    errors.append(
+                        f"[X] Row #{i} '{row.get('Sample_ID', '')}': "
+                        f"Levels entry '{pair}' must not contain '='"
+                    )
                 factor_names.append(factor.strip())
         # Store the sheet row number alongside the factors: rows with blank
         # Levels are skipped above, so a positional index would misreport

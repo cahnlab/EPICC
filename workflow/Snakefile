@@ -31,6 +31,7 @@ from scripts.sample_sheet import (
     get_sample_field, get_control_sample_id,
     get_env, get_peaktype,
     add_compat_columns,
+    disambiguate_labels, check_unique_labels,
 )
 
 min_version("9.0")

@@ -139,6 +139,7 @@ Comma-separated list of `factor:level` pairs describing experimental conditions.
 | Pair format | Each entry must contain exactly one `:` separating a non-empty factor name from a non-empty level value |
 | Consistent factor count | All rows must have the same number of `factor:level` pairs |
 | Consistent factor names | All rows must use the same factor names in the same order (e.g. if row 1 has `genotype,tissue`, all rows must have `genotype,tissue`) |
+| Reserved character | Factor names and level values must not contain `=` |
 
 **Derived values**: The level values (not factor names) are joined with `_` to
 form the `levels_label` used in analysis-level filenames. For example,
