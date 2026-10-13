@@ -58,9 +58,12 @@ subset-*.log
 # are already tracked; add any new real fixture with `git add -f`.
 tests/integration/data/mock_inputs/
 
-# Site-specific SLURM profile (CSHL Elzar); not shipped — profiles/slurm
-# is the example. Other profiles/* are tracked.
-profiles/elzar/
+# Only the shipped profiles are tracked; site profiles stay local
+# (profiles/slurm is the template to copy).
+profiles/*
+!profiles/default/
+!profiles/slurm/
+!profiles/uge/
 
 # Temporary files
 *.tmp
