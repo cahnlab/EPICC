@@ -34,7 +34,7 @@ EpigeneticButton is a comprehensive pipeline that processes and analyzes multipl
   - Additional output options such as heatmaps, metaplots and browsers
 
 - **Flexible Configuration**:
-  - Self-contained local HTML builder (`tools/epicc-builder.html`) to build and validate sample sheets and options files
+  - Local HTML builder (`tools/epicc-builder.html`) to build and validate sample sheets and options files
   - Customizable mapping parameters
   - Configurable analysis options
   - Resource management
@@ -65,7 +65,7 @@ If you want to run the pipeline on a different platform than locally or slurm, y
 
 ### Configuration
 
-For new users, it is recommended to use the local HTML builder at `tools/epicc-builder.html` (open directly in a browser — self-contained, no internet connection required) to build and validate your sample metadata file and choose analysis options.
+For new users, it is recommended to use the local HTML builder at `tools/epicc-builder.html` (open directly in a browser; it loads its Tabulator and js-yaml libraries from a CDN, so it needs an internet connection) to build and validate your sample metadata file and choose analysis options.
 
 1. Prepare your sample metadata file (start from the documented template at `config/example_samples.tsv` and pass yours via `epicc run --samples ...`) with the required columns below (see Input requirements for more details specific to each data-type):
    - `Sample_ID`: Unique identifier for the sample (e.g. `WT_leaf_H3K9me2_rep1`). Must be filesystem-safe.
@@ -77,7 +77,7 @@ For new users, it is recommended to use the local HTML builder at `tools/epicc-b
    - `Read_layout`: [`PE` | `SE`]
    - `IP_target`: Required for pulldown assays (`ChIP`/`CUT_RUN`/`CUT_TAG`) — the IP target (e.g. `H3K9me2`) or control type (e.g. `Input`, `WCE`, `IgG`). Leave blank for other assays.
    - `Control`: Sample_ID of the control sample for this IP (e.g. the Input sample's Sample_ID). Required for pulldown and RAMPAGE IP samples. Leave blank for plain controls and non-pulldown assays.
-   - `Peak_type`: [`broad` | `narrow`] — the peak-calling type, kept separate from the assay. Required on `ChIP`/`CUT_RUN`/`CUT_TAG` rows that call peaks (those with a `Control`); leave blank on a control-only row and on every other assay.
+   - `Peak_type`: [`broad` | `narrow`] — the peak-calling type, kept separate from the assay. Required on `ChIP`/`CUT_RUN`/`CUT_TAG` rows that call peaks (those with a `Control`); optional on a control-only row, which calls no peaks; blank on every other assay.
    - `Comments`: Optional free text for your own notes. Never read by the pipeline. The column may be omitted entirely.
 
 2. Update `config/epicc-options.yaml` with your paths and parameters:
@@ -107,8 +107,8 @@ For new users, it is recommended to use the local HTML builder at `tools/epicc-b
    - No Gene Ontology analysis: Due to the difficulty in automating building a GO database, this option is OFF by default. Change `GO` option in the options file. Please refer to Additional output options #2 below and [Help GO](Help/Gene_Ontology.md) before setting it to `true` as it requires 2 other files. These files are available for Arabidopsis thaliana (Tair10 / ColCEN assembly) and Maize B73 (v5 or NAM assembly) in the `data` folder.
    - No TE analysis: By default, no analysis on transposable elements is performed. Change `te_analysis` in the options file ([see below](#main-output-options)).
    - For ChIP-seq and ATAC-seq: the default aligner is bowtie2. Set `chip_aligner`/`atac_aligner` to `"chromap"` for ~10x faster mapping — recommended for SE-only datasets; PE data shows only 11–28% properly-paired reads with chromap vs 99%+ with bowtie2 (chromap maps ends independently, causing one mate to be MAPQ-filtered). Mapping strategy options are available via `chip_mapping_strategy` ([see below](#chip-mapping-parameters)). When using `repeat` or `repeatall` strategies, bowtie2 is used automatically regardless of the aligner setting.
-   - For sRNA-seq: the default is not based on Netflex v3 library preparation. If your data was made with this kit, an additional deduplication and read trimming is required. To turn it ON, change the `Netflex_v3_deduplication` in the options file. See [Known issues #3](#known-potential-issues) below if you have mixed libraries.
-   - For sRNA-seq: the default is not to filter structural RNAs prior to shortstack analysis. Change `structural_rna_depletion` in the options file.  While this step is recommended for small interfering RNA analysis, it requires a pre-build database of fasta files. Please refer to the [Help structural RNAs](Help/Structural_RNAs_Rfam.md) before setting it to `true`. This file is available for Maize in the `data` folder.
+   - For sRNA-seq: the default is not based on NEXTflex v3 library preparation. If your data was made with this kit, an additional deduplication and read trimming is required. To turn it ON, set `nextflex_v3_deduplication: true` in the options file. See [Known issues #2](#known-potential-issues) below if you have mixed libraries.
+   - For sRNA-seq: structural RNAs (rRNAs, tRNAs, snoRNAs) are filtered out before ShortStack analysis by default (`structural_rna_depletion: true`). The structural RNA FASTA is derived automatically with Infernal/Rfam; to supply your own, set `structural_rna_fafile` for the genome (see [Help structural RNAs](Help/Structural_RNAs_Rfam.md)). Set `structural_rna_depletion: false` to skip the step.
    - For sRNA-seq: the default is to only perform *de novo* micro RNA identification (`--dn_mirna` argument in ShortStack). If you also want the known microRNAs, download the fasta file from [miRbase](https://www.mirbase.org), filter it for your species of interest, and add to the `srna_mapping_params` entry in the options file `--known_miRNAs <path/to/known_miRNA_file.fa>`.
 
 ### Running the Pipeline
@@ -526,11 +526,10 @@ EPICC/
 ├── Help/			# Help files (e.g. Structural_RNAs_Rfam.md, Gene_Ontology.md)
 ├── profiles/
 │	├── default/		# Workflow-level per-rule resource/thread defaults
-│	├── geno/		# Example profile for additional scheduler types
 │	├── slurm/		# Config file to run the pipeline on a SLURM cluster
 │	└── uge/		# Config file to run the pipeline on a UGE cluster (qsub)
 ├── tools/
-│	└── epicc-builder.html	# Self-contained HTML5 sample sheet and options builder
+│	└── epicc-builder.html	# Local HTML5 sample sheet and options builder
 ├── workflow/
 │	├── envs/		# Conda environment YAML files per analysis type
 │	├── rules/		# Snakemake rule files by data type
@@ -564,7 +563,7 @@ EPICC/
 Control samples are linked via the `Control` column in the sample sheet (must be a valid Sample_ID). IP and Control samples must use the same Read_layout (both PE or both SE).
 
 2. small RNA-seq libraries\
-Different small RNAseq libraries have different chemistry and might need to be trimmed differently. For now, the code only works if all your samples were done using the same library preparation, either netflex v3 or not. If you have a mix of libraries, you should run the pipeline with each kind separately, and then rerun the analysis with all the samples you want to anlayze together.
+Different small RNAseq libraries have different chemistry and might need to be trimmed differently. For now, the code only works if all your samples were done using the same library preparation, either NEXTflex v3 or not. If you have a mix of libraries, you should run the pipeline with each kind separately, and then rerun the analysis with all the samples you want to anlayze together.
 
 3. idr/numpy version\
 IDR relies on an older version of numpy to work (due to deprecated np.int) and needs to be loaded as a seperate environment. Not best practice, but more portable than patching idr (np.int=int).
