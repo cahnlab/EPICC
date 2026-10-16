@@ -212,7 +212,7 @@ analysis-level names and plot labels.
 
 | Rule | Detail |
 |------|--------|
-| Required for IP-peak assays | Must be non-empty for any assay in `IP_PEAK_ASSAYS` (`ChIP_broad/narrow`, `CUT_RUN_broad/narrow`, `CUT_TAG_broad/narrow`), **including control samples** (e.g. `Input`, `WCE`, `IgG`) |
+| Required for IP-peak assays | Must be non-empty for pulldown assay (`ChIP`, `CUT_RUN`, `CUT_TAG`), **including control samples** (e.g. `Input`, `WCE`, `IgG`) |
 | Blank for others | Must be empty/absent for all non-IP assays (`ATAC`, `RNAseq`, `RAMPAGE`, `sRNA`, `WGBS`, `EMseq`, `dmC`) |
 
 **Examples**: `H3K9me2`, `H3K4me3`, `H3K27me3`, `CTCF`, `Input`, `WCE`, `IgG`
@@ -224,19 +224,19 @@ References the Sample_ID of the control sample used for normalization.
 | Rule | Detail |
 |------|--------|
 | Valid reference | Must match an existing Sample_ID in the sheet |
-| Allowed assays only | May only be specified for IP-peak assays (`ChIP_*`, `CUT_RUN_*`, `CUT_TAG_*`) and `RAMPAGE` samples |
+| Allowed assays only | May only be specified for pulldown assays (`ChIP`, `CUT_RUN`, `CUT_TAG`) and `RAMPAGE` samples |
 | Not itself | A sample may not list itself as its own Control |
 | Chain depth ≤ 2 | The referenced control **may** declare its own Control (the *dual-role* case below), but that one must not. Deeper chains are rejected; the bound also makes control cycles impossible |
 | Sharing allowed | Multiple IP samples may reference the same control (typical CUT&RUN convention: one IgG per batch) |
 | Optional | Blank/absent is valid (sample has no associated control) |
 
 **Examples**:
-- ChIP: `WT_leaf_Input_rep1` (`Assay: ChIP_broad`, `IP_target: Input`)
+- ChIP: `WT_leaf_Input_rep1` (`Assay: ChIP`, `IP_target: Input`)
   referenced as `Control` by H3K9me2 IP samples.
-- CUT&RUN: `WT_endosperm_IgG_rep1` (`Assay: CUT_RUN_broad`, `IP_target: IgG`)
+- CUT&RUN: `WT_endosperm_IgG_rep1` (`Assay: CUT_RUN`, `IP_target: IgG`)
   shared as `Control` by both H3K27me3 replicates in the same family. The
   builder constrains the Control dropdown to same-family assays
-  (`ChIP_*`, `CUT_RUN_*`, or `CUT_TAG_*`), but freetext entry is allowed
+  (`ChIP`, `CUT_RUN`, or `CUT_TAG`), but freetext entry is allowed
   for cross-family controls if a study uses one.
 
 **Dual-role samples.** A sample can serve as another row's control *and* be

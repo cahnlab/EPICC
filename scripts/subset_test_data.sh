@@ -48,10 +48,15 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# SLURM parameters (matching project conventions from epicc-options.yaml)
+# SLURM parameters
 # ---------------------------------------------------------------------------
-PARTITION="cpuq"
-QOS="cpuq_base"
+# Partition and QoS are site-specific; set SUBSET_PARTITION / SUBSET_QOS to
+# pass them, or leave them unset to use the cluster's defaults.
+PARTITION="${SUBSET_PARTITION:-}"
+QOS="${SUBSET_QOS:-}"
+SITE_FLAGS=()
+[[ -n "$PARTITION" ]] && SITE_FLAGS+=(--partition="$PARTITION")
+[[ -n "$QOS" ]] && SITE_FLAGS+=(--qos="$QOS")
 ALIGN_THREADS=24           # alignment + samtools sort threads
 ALIGN_MEM="80G"            # per alignment job (~12GB per bismark --parallel instance)
 ALIGN_TMP="500G"
@@ -180,8 +185,7 @@ submit_job() {
 
     local cmd=(
         sbatch
-        --partition="$PARTITION"
-        --qos="$QOS"
+        ${SITE_FLAGS[@]+"${SITE_FLAGS[@]}"}
         --job-name="subset-${name}"
         --cpus-per-task="$threads"
         --mem="$mem"
@@ -972,8 +976,7 @@ GATHEREOF
         local gather_jid
         gather_jid=$(
             sbatch \
-                --partition="$PARTITION" \
-                --qos="$QOS" \
+                ${SITE_FLAGS[@]+"${SITE_FLAGS[@]}"} \
                 --job-name="subset-gather" \
                 --cpus-per-task=1 \
                 --mem="$CTRL_MEM" \

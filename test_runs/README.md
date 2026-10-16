@@ -7,7 +7,7 @@ Point a test run's outputs here so the working tree stays clean:
 
 ```bash
 epicc run \
-  --profile profiles/elzar/config.yaml \
+  --profile <your-site-profile> \
   --options tests/integration/data/test_options_colcen.yaml \
   --samples tests/integration/data/test_samples_colcen.tsv \
   --output-dir test_runs/colcen/results \
