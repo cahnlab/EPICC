@@ -171,10 +171,12 @@ def test_colcen_pbat_and_wgbs_separated():
     assert "Col0_flower_mCG" in got  # no collision, unchanged
 
 
-def test_colcen_pca_separates_the_two_inputs_by_sample_id():
+def test_colcen_pca_inputs_are_distinct_without_a_suffix():
+    # The CenH3 and H3K9me2 Inputs come from different genotypes (rdr126 vs
+    # rdr126ddm1, per GSE132005), so their labels differ on Levels alone.
     got = _labels("test_samples_colcen.tsv", False, "define_input_for_pca", "ChIP", "labels", None)
-    assert "Input_rdr126ddm1_leaf_ChIP_broad_rep1_rdr126ddm1_leaf_CenH3Input_rep1" in got
-    assert "Input_rdr126ddm1_leaf_ChIP_broad_rep1_rdr126ddm1_leaf_H3K9me2Input_rep1" in got
+    assert "Input_rdr126_leaf_ChIP_broad_rep1" in got
+    assert "Input_rdr126ddm1_leaf_ChIP_broad_rep1" in got
     assert "CenH3_Col0_leaf_ChIP_broad_rep1" in got
 
 

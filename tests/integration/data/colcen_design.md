@@ -32,21 +32,25 @@ maintenance." *Nature Plants* 10, 1453-1467. doi:10.1038/s41477-024-01779-7
 
 ### Experimental design
 
-- **Factor**: `genotype` — WT, rdr126ddm1, rdr126ddm1hp5
-- **Tissue**: leaf (all samples)
-- **Replicates**: 2 per genotype × mark × IP/Input
-- **Layout**: PE, Illumina
+- **Factor**: `genotype` — WT, rdr126, ddm1rdr12 (CenH3); rdr126ddm1, rdr126ddm1hp5 (H3K9me2)
+- **Tissue**: GEO records seedlings; the sheet uses `leaf` (immaterial to the test)
+- **Replicates**: 2 per genotype × mark; each biological replicate has its own Input
+- **Layout**: CenH3 PE; H3K9me2 SE (SRA labels it PAIRED, but each run has one 76 bp FASTQ)
+
+GEO lists each block of four as ChIP Rep1, Input Rep1, ChIP Rep2, Input Rep2
+(verified against each GSM's `genotype` and `chip antibody` fields), so the
+IP and Input accessions interleave.
 
 ### CenH3 ChIP (12 samples)
 
 | Genotype | Rep | IP SRR | Input SRR |
 |----------|-----|--------|-----------|
-| WT | rep1 | SRR28453410 | SRR28453412 |
-| WT | rep2 | SRR28453411 | SRR28453413 |
-| rdr126ddm1 | rep1 | SRR28453414 | SRR28453416 |
-| rdr126ddm1 | rep2 | SRR28453415 | SRR28453417 |
-| rdr126ddm1hp5 | rep1 | SRR28453418 | SRR28453420 |
-| rdr126ddm1hp5 | rep2 | SRR28453419 | SRR28453421 |
+| WT | rep1 | SRR28453410 | SRR28453411 |
+| WT | rep2 | SRR28453412 | SRR28453413 |
+| rdr126 | rep1 | SRR28453414 | SRR28453415 |
+| rdr126 | rep2 | SRR28453416 | SRR28453417 |
+| ddm1rdr12 | rep1 | SRR28453418 | SRR28453419 |
+| ddm1rdr12 | rep2 | SRR28453420 | SRR28453421 |
 
 ### H3K9me2 ChIP (8 samples)
 
@@ -55,10 +59,10 @@ Inputs (different GEO entries, different library preparations).
 
 | Genotype | Rep | IP SRR | Input SRR |
 |----------|-----|--------|-----------|
-| rdr126ddm1 | rep1 | SRR28453402 | SRR28453404 |
-| rdr126ddm1 | rep2 | SRR28453403 | SRR28453405 |
-| rdr126ddm1hp5 | rep1 | SRR28453406 | SRR28453408 |
-| rdr126ddm1hp5 | rep2 | SRR28453407 | SRR28453409 |
+| rdr126ddm1 | rep1 | SRR28453402 | SRR28453403 |
+| rdr126ddm1 | rep2 | SRR28453404 | SRR28453405 |
+| rdr126ddm1hp5 | rep1 | SRR28453406 | SRR28453407 |
+| rdr126ddm1hp5 | rep2 | SRR28453408 | SRR28453409 |
 
 ## Dataset 2: dmC (ONT modBAM) — Shimada et al. 2024
 
@@ -189,8 +193,8 @@ than per IP replicate.
 
 | Assay | Genotypes | Tissue | Layout | Reps | Samples | Source |
 |-------|-----------|--------|--------|------|---------|--------|
-| ChIP_broad (CenH3) | WT, rdr126ddm1, rdr126ddm1hp5 | leaf | PE | 2 | 12 | SRA (GSE132005) |
-| ChIP_broad (H3K9me2) | rdr126ddm1, rdr126ddm1hp5 | leaf | PE | 2 | 8 | SRA (GSE132005) |
+| ChIP_broad (CenH3) | WT, rdr126, ddm1rdr12 | leaf | PE | 2 | 12 | SRA (GSE132005) |
+| ChIP_broad (H3K9me2) | rdr126ddm1, rdr126ddm1hp5 | leaf | SE | 2 | 8 | SRA (GSE132005) |
 | dmC (ONT modBAM) | rdr126ddm1, rdr126ddm1het, rdr126ddm1hp5, rdr126ddm1hethp5 | leaf | SE | 1 | 4 | lemna.org URLs |
 | EMseq | WT, rdr6 | flower | PE | 2 | 4 | SRA (PRJNA1111825) |
 | PBAT | WT, tarp1tarp2 | seedling | PE | 2 | 4 | DDBJ (PRJDB14218) |
