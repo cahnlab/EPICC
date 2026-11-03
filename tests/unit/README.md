@@ -218,7 +218,7 @@ If you get import errors when running tests:
 
 ```bash
 # Make sure you're in the repository root
-cd /grid/martienssen/home/eernst/src/epigeneticbutton
+cd /path/to/EPICC
 
 # Run tests with PYTHONPATH set
 PYTHONPATH=. pytest tests/unit/

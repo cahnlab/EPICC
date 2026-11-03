@@ -20,15 +20,19 @@
 #                No '=' in factor names or levels.
 #   Replicate_ID Replicate label (rep1, rep2, repA, ...).
 #   Read_files   SRA/ENA/DDBJ accession (SRR12345), local FASTQ/BAM path,
-#                HTTP(S) URL, or '+'-separated list to merge multiple inputs.
+#                HTTP(S) URL, public s3:// URI, or '+'-separated list to merge
+#                multiple inputs.
 #                For PE FASTQs at explicit paths: comma-separate R1,R2.
 #   Read_layout  SE or PE.
 #   IP_target    Required for ChIP / CUT_RUN / CUT_TAG (H3K9me2, Input, WCE,
 #                etc.). Blank for other assays.
 #   Control      Sample_ID of the matching control (Input/WCE for ChIP).
-#                Control samples themselves leave this blank.
+#                Leave blank on a control row, unless that control is also
+#                analysed against its own control (e.g. H3 normalized to Input);
+#                a chain is at most two deep.
 #   Peak_type    broad | narrow — the peak-calling type, a separate parameter
-#                from the assay. Required for ChIP / CUT_RUN / CUT_TAG (broad
+#                from the assay. Required on ChIP / CUT_RUN / CUT_TAG rows with a
+#                Control, optional on a control-only row (broad
 #                for histone domains like H3K9me2/H3K27me3; narrow for TFs and
 #                sharp marks like H3K4me3/H3K27ac). Blank for all other assays.
 #                Applies to only three assays, so it sits near the end.

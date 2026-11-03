@@ -366,7 +366,7 @@ dmr_thresholds:
     CHH: 10000    # cap CHH to avoid OOM on dense plant data
 
 # Whether to use the custom version of the script to call DMRs
-custom_script_dmrs: false # true will use workflow/scripts/call_DMRs_custom.R which explore different options to call DMRs (more time and resource intensive)
+custom_script_dmrs: false # true will use workflow/scripts/R_call_DMRs_custom.R which explore different options to call DMRs (more time and resource intensive)
 
 # Direct methylation (dmC) parameters
 # For Assay "dmC" - native base modification detection from long-read sequencing (Oxford Nanopore, PacBio)
