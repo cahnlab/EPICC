@@ -1,15 +1,15 @@
 Sample_ID	Assay	Genome	Levels	Replicate_ID	Read_files	Read_layout	IP_target	Control	Peak_type
 Col0_leaf_CenH3_rep1	ChIP	ColCEN	genotype:Col0,tissue:leaf	rep1	SRR28453410	PE	CenH3	Col0_leaf_CenH3Input_rep1	broad
-Col0_leaf_CenH3_rep2	ChIP	ColCEN	genotype:Col0,tissue:leaf	rep2	SRR28453411	PE	CenH3	Col0_leaf_CenH3Input_rep2	broad
-Col0_leaf_CenH3Input_rep1	ChIP	ColCEN	genotype:Col0,tissue:leaf	rep1	SRR28453412	PE	Input		broad
+Col0_leaf_CenH3_rep2	ChIP	ColCEN	genotype:Col0,tissue:leaf	rep2	SRR28453412	PE	CenH3	Col0_leaf_CenH3Input_rep2	broad
+Col0_leaf_CenH3Input_rep1	ChIP	ColCEN	genotype:Col0,tissue:leaf	rep1	SRR28453411	PE	Input		broad
 Col0_leaf_CenH3Input_rep2	ChIP	ColCEN	genotype:Col0,tissue:leaf	rep2	SRR28453413	PE	Input		broad
-rdr126ddm1_leaf_CenH3_rep1	ChIP	ColCEN	genotype:rdr126ddm1,tissue:leaf	rep1	SRR28453414	PE	CenH3	rdr126ddm1_leaf_CenH3Input_rep1	broad
-rdr126ddm1_leaf_CenH3_rep2	ChIP	ColCEN	genotype:rdr126ddm1,tissue:leaf	rep2	SRR28453415	PE	CenH3	rdr126ddm1_leaf_CenH3Input_rep2	broad
-rdr126ddm1_leaf_CenH3Input_rep1	ChIP	ColCEN	genotype:rdr126ddm1,tissue:leaf	rep1	SRR28453416	PE	Input		broad
-rdr126ddm1_leaf_CenH3Input_rep2	ChIP	ColCEN	genotype:rdr126ddm1,tissue:leaf	rep2	SRR28453417	PE	Input		broad
+rdr126_leaf_CenH3_rep1	ChIP	ColCEN	genotype:rdr126,tissue:leaf	rep1	SRR28453414	PE	CenH3	rdr126_leaf_CenH3Input_rep1	broad
+rdr126_leaf_CenH3_rep2	ChIP	ColCEN	genotype:rdr126,tissue:leaf	rep2	SRR28453416	PE	CenH3	rdr126_leaf_CenH3Input_rep2	broad
+rdr126_leaf_CenH3Input_rep1	ChIP	ColCEN	genotype:rdr126,tissue:leaf	rep1	SRR28453415	PE	Input		broad
+rdr126_leaf_CenH3Input_rep2	ChIP	ColCEN	genotype:rdr126,tissue:leaf	rep2	SRR28453417	PE	Input		broad
 rdr126ddm1_leaf_H3K9me2_rep1	ChIP	ColCEN	genotype:rdr126ddm1,tissue:leaf	rep1	SRR28453402	SE	H3K9me2	rdr126ddm1_leaf_H3K9me2Input_rep1	broad
-rdr126ddm1_leaf_H3K9me2_rep2	ChIP	ColCEN	genotype:rdr126ddm1,tissue:leaf	rep2	SRR28453403	SE	H3K9me2	rdr126ddm1_leaf_H3K9me2Input_rep2	broad
-rdr126ddm1_leaf_H3K9me2Input_rep1	ChIP	ColCEN	genotype:rdr126ddm1,tissue:leaf	rep1	SRR28453404	SE	Input		broad
+rdr126ddm1_leaf_H3K9me2_rep2	ChIP	ColCEN	genotype:rdr126ddm1,tissue:leaf	rep2	SRR28453404	SE	H3K9me2	rdr126ddm1_leaf_H3K9me2Input_rep2	broad
+rdr126ddm1_leaf_H3K9me2Input_rep1	ChIP	ColCEN	genotype:rdr126ddm1,tissue:leaf	rep1	SRR28453403	SE	Input		broad
 rdr126ddm1_leaf_H3K9me2Input_rep2	ChIP	ColCEN	genotype:rdr126ddm1,tissue:leaf	rep2	SRR28453405	SE	Input		broad
 Col0_suvh1.1_Input_rep1	ChIP	ColCEN	genotype:Col0,tissue:seedling	rep1	SRR27821931	SE	Input		narrow
 Col0_suvh1.1_Input_rep2	ChIP	ColCEN	genotype:Col0,tissue:seedling	rep2	SRR27821934	SE	Input		narrow
@@ -49,15 +49,15 @@ Col0_inflo_sRNA_rep1	sRNA	ColCEN	genotype:Col0,tissue:inflorescence	rep1	SRR8792
 # Col0_suvh3_SUVH3_repA	ChIP	ColCEN	genotype:Col0,tissue:seedling	repA	SRR27821930	SE	SUVH3	Col0_suvh3_Input_repA	narrow
 #
 # Trimmed 2026-05-29 to cut redundant code-path coverage (see git log):
-#   rdr126ddm1hp5 CenH3/H3K9me2 (dup genotype), 3 dmC groups (dup modkit
+#   ddm1rdr12 CenH3 + rdr126ddm1hp5 H3K9me2 (dup ChIP paths), 3 dmC groups (dup modkit
 #   path), rdr6 EMseq + tarp1tarp2 PBAT (dup assay paths), nrpd1 ATAC.
-# rdr126ddm1hp5_leaf_CenH3_rep1	ChIP	ColCEN	genotype:rdr126ddm1hp5,tissue:leaf	rep1	SRR28453418	PE	CenH3	rdr126ddm1hp5_leaf_CenH3Input_rep1	broad
-# rdr126ddm1hp5_leaf_CenH3_rep2	ChIP	ColCEN	genotype:rdr126ddm1hp5,tissue:leaf	rep2	SRR28453419	PE	CenH3	rdr126ddm1hp5_leaf_CenH3Input_rep2	broad
-# rdr126ddm1hp5_leaf_CenH3Input_rep1	ChIP	ColCEN	genotype:rdr126ddm1hp5,tissue:leaf	rep1	SRR28453420	PE	Input		broad
-# rdr126ddm1hp5_leaf_CenH3Input_rep2	ChIP	ColCEN	genotype:rdr126ddm1hp5,tissue:leaf	rep2	SRR28453421	PE	Input		broad
+# ddm1rdr12_leaf_CenH3_rep1	ChIP	ColCEN	genotype:ddm1rdr12,tissue:leaf	rep1	SRR28453418	PE	CenH3	ddm1rdr12_leaf_CenH3Input_rep1	broad
+# ddm1rdr12_leaf_CenH3_rep2	ChIP	ColCEN	genotype:ddm1rdr12,tissue:leaf	rep2	SRR28453420	PE	CenH3	ddm1rdr12_leaf_CenH3Input_rep2	broad
+# ddm1rdr12_leaf_CenH3Input_rep1	ChIP	ColCEN	genotype:ddm1rdr12,tissue:leaf	rep1	SRR28453419	PE	Input		broad
+# ddm1rdr12_leaf_CenH3Input_rep2	ChIP	ColCEN	genotype:ddm1rdr12,tissue:leaf	rep2	SRR28453421	PE	Input		broad
 # rdr126ddm1hp5_leaf_H3K9me2_rep1	ChIP	ColCEN	genotype:rdr126ddm1hp5,tissue:leaf	rep1	SRR28453406	SE	H3K9me2	rdr126ddm1hp5_leaf_H3K9me2Input_rep1	broad
-# rdr126ddm1hp5_leaf_H3K9me2_rep2	ChIP	ColCEN	genotype:rdr126ddm1hp5,tissue:leaf	rep2	SRR28453407	SE	H3K9me2	rdr126ddm1hp5_leaf_H3K9me2Input_rep2	broad
-# rdr126ddm1hp5_leaf_H3K9me2Input_rep1	ChIP	ColCEN	genotype:rdr126ddm1hp5,tissue:leaf	rep1	SRR28453408	SE	Input		broad
+# rdr126ddm1hp5_leaf_H3K9me2_rep2	ChIP	ColCEN	genotype:rdr126ddm1hp5,tissue:leaf	rep2	SRR28453408	SE	H3K9me2	rdr126ddm1hp5_leaf_H3K9me2Input_rep2	broad
+# rdr126ddm1hp5_leaf_H3K9me2Input_rep1	ChIP	ColCEN	genotype:rdr126ddm1hp5,tissue:leaf	rep1	SRR28453407	SE	Input		broad
 # rdr126ddm1hp5_leaf_H3K9me2Input_rep2	ChIP	ColCEN	genotype:rdr126ddm1hp5,tissue:leaf	rep2	SRR28453409	SE	Input		broad
 # rdr126ddm1het_leaf_dmC_rep1	dmC	ColCEN	genotype:rdr126ddm1het,tissue:leaf	rep1	https://transfer.lemna.org/modbams-shimada2024/as5-1-wt_Rep1.bam	SE
 # rdr126ddm1hp5_leaf_dmC_rep1	dmC	ColCEN	genotype:rdr126ddm1hp5,tissue:leaf	rep1	https://transfer.lemna.org/modbams-shimada2024/as6-1_Rep1.bam	SE
