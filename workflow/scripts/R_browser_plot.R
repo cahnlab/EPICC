@@ -63,20 +63,54 @@ for ( i in c(1:tot) ) {
 }
 
 axistrack<-GenomeAxisTrack(scale=0.1, labelPos="above")
-genetrack<-GeneRegionTrack(genes, name="Genes", shape="smallArrow", col="black", fill="grey60", rotation.title=0, cex.title=0.5, lwd=0.1, fontsize=12, fontcolor.title="black", collapseTranscripts=FALSE, showId=TRUE, stacking="squish")
 tetrack<-AnnotationTrack(tes, name="TEs", stacking = "dense", fill = "lightgreen", shape="box", rotation.title=0, cex.title=0.5, lwd=0.1, fontsize=12, fontcolor.title="black")
 
-if ( length(htcol) > 0 ) {
-	httrack <- HighlightTrack(trackList=tracklist, start=htstart, width=htwidth, col=htcol, fill=htcol2)
-	pdf(pdfname, width = 12, height = tot)
-	plotTracks(list(axistrack, genetrack, tetrack, httrack), sizes=tracksize, main=plotname, cex.main = 1)
-	dev.off()
-} else {
-	tracks<-append(list(axistrack, genetrack, tetrack), tracklist)
-	pdf(pdfname, width = 12, height = tot)
-	plotTracks(tracks, sizes=tracksize, main=plotname, cex.main = 1)
-	dev.off()
+# Gene track layouts, most detailed first. Gviz refuses to draw a squished
+# track whose rows don't fit the space it gets ("Too many stacks to draw"),
+# which happens on gene-dense or wide regions (issue #98). Each fallback trades
+# detail for rows: "meta" collapses every gene's transcripts onto one model so
+# overlapping isoforms stop adding rows, and is labelled with its gene ID
+# rather than one arbitrary transcript ID; the last layout
+# draws all genes on a single row without names, which always fits.
+gene_layouts<-list(
+	full=list(shape="smallArrow", collapseTranscripts=FALSE, showId=TRUE, stacking="squish"),
+	collapsed=list(shape="smallArrow", collapseTranscripts="meta", showId=TRUE, transcriptAnnotation="gene", stacking="squish"),
+	dense=list(shape="box", collapseTranscripts=TRUE, showId=FALSE, stacking="dense")
+)
+
+make_gene_track<-function(layout) {
+	do.call(GeneRegionTrack, c(list(genes, name="Genes", col="black", fill="grey60", rotation.title=0, cex.title=0.5, lwd=0.1, fontsize=12, fontcolor.title="black"), layout))
 }
+
+draw_browser<-function(genetrack) {
+	if ( length(htcol) > 0 ) {
+		httrack <- HighlightTrack(trackList=tracklist, start=htstart, width=htwidth, col=htcol, fill=htcol2)
+		tracks<-list(axistrack, genetrack, tetrack, httrack)
+	} else {
+		tracks<-append(list(axistrack, genetrack, tetrack), tracklist)
+	}
+	pdf(pdfname, width = 12, height = tot)
+	# Close the device whether or not plotTracks succeeds, so a failed attempt
+	# leaves no half-written page behind for the next layout to append to.
+	on.exit(dev.off())
+	plotTracks(tracks, sizes=tracksize, main=plotname, cex.main = 1)
+}
+
+for ( layout_name in names(gene_layouts) ) {
+	drawn<-tryCatch({
+		draw_browser(make_gene_track(gene_layouts[[layout_name]]))
+		TRUE
+	}, error=function(e) {
+		if ( !grepl("Too many stacks", conditionMessage(e)) ) stop(e)
+		print(paste0("Gene track does not fit with the '", layout_name, "' layout, trying a more compact one"))
+		FALSE
+	})
+	if ( drawn ) {
+		print(paste0("Gene track drawn with the '", layout_name, "' layout"))
+		break
+	}
+}
+if ( !drawn ) stop("Gene track does not fit even with the dense layout")
 
 
 
