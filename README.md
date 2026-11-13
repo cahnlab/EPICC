@@ -220,6 +220,8 @@ The sample metadata file is a tab-separated file (TSV) with 11 columns. Each row
 
 The four trailing columns (`IP_target`, `Control`, `Peak_type`, `Comments`) are optional and may be left blank or omitted from the right-hand end of a row — a WGBS row can stop after `Read_layout`. See the documented template at `config/example_samples.tsv`.
 
+A line whose first non-whitespace character is `#` is skipped, so you can park samples without deleting them: prefix the row with `#`. A `#` inside a field (e.g. a URL fragment) is kept. The builder imports `#`-prefixed rows as greyed-out *commented* samples that stay editable, toggles them with **Comment Selected** (or the row menu), and writes them back with their `#`; other comment lines and blank lines are kept in place, so importing and exporting a sheet leaves it unchanged. Commented samples are left out of validation, except that an active row whose `Control` is a commented sample is an error (the pipeline would not find that control).
+
 ### Common to all types of samples
 
 - **Sample_ID**: A unique identifier for this sample. Used in output filenames. Must be filesystem-safe (no `__`, `/`, whitespace, or shell metacharacters).
