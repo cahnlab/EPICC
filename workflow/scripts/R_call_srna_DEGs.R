@@ -32,7 +32,12 @@ filename<-args[6]
 output_dir<-args[7]
 genome_dir<-args[8]
 
-if ( filename %in% c(paste0(output_dir,"/combined/bedfiles/",refgenome,"__all_genes.bed"), paste0(output_dir,"/combined/bedfiles/",refgenome,"__protein_coding_genes.bed"), paste0(genome_dir,"/",refgenome,"/",refgenome,"__TE_file.bed")) ) {
+# The prepared TE file is <G>__TE_file.bed, or <G>__TE_file_<tag>.bed for an
+# alternative annotation (epicc --te-file); both are headerless BED6.
+is_te_file <- dirname(filename) == paste0(genome_dir,"/",refgenome) &&
+	startsWith(basename(filename), paste0(refgenome,"__TE_file")) &&
+	grepl("^__TE_file(_[A-Za-z0-9_-]+)?\\.bed$", substring(basename(filename), nchar(refgenome) + 1))
+if ( is_te_file || filename %in% c(paste0(output_dir,"/combined/bedfiles/",refgenome,"__all_genes.bed"), paste0(output_dir,"/combined/bedfiles/",refgenome,"__protein_coding_genes.bed")) ) {
 	region_file<-read.delim(filename, header = FALSE, col.names = c("Chr","Start","Stop","Name","Value","Strand"))
 } else {
 	region_file<-read.delim(filename, header = TRUE)

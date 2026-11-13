@@ -145,6 +145,8 @@ epicc run --samples config/my_samples.tsv --profile profiles/uge
    - `--use-node-tmpdir` — skip the workflow's TMPDIR override and use the cluster's default (see TMPDIR routing below)
    - `--no-rerun-incomplete` — skip re-running Snakemake-flagged incomplete jobs from prior interrupted runs
    - `--forcerun RULE [RULE ...]` — force re-execution of specific rules
+   - `--ref-genome GENOME` — analyze only the samples mapped to `GENOME` (sets `only_genome`); other genomes in a multi-genome sample sheet are skipped and need no entry in the options file
+   - `--te-file PATH` — TE annotation (`.bed(.gz)` or `.gff3(.gz)`, local or URL) for the analyzed genome, used in place of `genomes.<GENOME>.te_file` for this run. It applies to `--ref-genome`, or to the sample sheet's genome when there is only one. The file is prepared under a tag taken from its name (`genomes/<GENOME>/<GENOME>__TE_file_<tag>.bed`), and the TE outputs it produces are named `all_TEs_<tag>`, so the options-file TE file and its results are left as they are and nothing reruns when you switch back. Combine with `--te-analysis` to turn the TE analyses on
    - `-- SNAKEMAKE_ARGS` — anything after `--` is forwarded directly to Snakemake
 
 5. Optional: validate configuration and generate a workflow graph before running:
@@ -508,7 +510,19 @@ The target file is a bed-like file with columns: Chr Start End ID Binsize Highli
 Each region will be printed individually and merged into a final PDF.\
 Highlight columns are optional; they mark regions of the browser view with colored boxes. As many highlights as needed can be provided as comma-separated lists — the first highlight is blue and all others are red. For example, for a region chr1:1000-5000, col6=3000,4000 and col7=50,200 will produce a blue box at chr1:3000-3050 and a red box at chr1:4000-4200.\
 Use `--env all` to include all samples, `most` for all data types except mC, or any single environment `[ChIP, ATAC, RNA, sRNA, mC]`.\
-By default, no TE file is used. To add TE annotations, supply a bed file in the options file under `browser_TE_file`.
+The TE track uses the genome's `te_file` from the options file when `browser_TE_file` is `true` (the default). Pass `--te-file PATH` to use a different TE annotation for this run; it is prepared beside the options-file one, not over it.\
+Extra BED files can be drawn as annotation rows under the TE track:
+```bash
+epicc output --plot-type browser \
+  --input-file data/target_loci.bed \
+  --ref-genome ColCEN \
+  --env all \
+  --extra-tracks peaks.bed,dmrs.bed.gz \
+  --extra-tracks-labels Peaks,DMRs \
+  --extra-tracks-colors "#E78AC3,#B2182B"
+```
+Labels default to the file names and colours to a fixed palette. The same tracks can be set for every run with `browser_extra_tracks` in the options file.\
+If the region holds too many genes or isoforms for the gene track, the plot falls back to one model per gene, then to all genes on a single row without names.
 
 ### **8. Rerunning a specific analysis**
 To force Snakemake to recreate a specific output, use `epicc run -- <target_file> --forcerun <rule>` or pass the target via `epicc run -- --force <target_file>`. For example:

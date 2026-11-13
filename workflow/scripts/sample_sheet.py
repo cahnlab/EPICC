@@ -442,6 +442,27 @@ def explode_genomes(df):
     return df.explode("Genome", ignore_index=True)
 
 
+def restrict_to_genome(df, genome):
+    """Keep only the rows mapped to ``genome`` (the ``only_genome`` option).
+
+    Runs on the exploded sheet, so a multi-genome row (``B73,W22``) keeps its
+    ``B73`` copy and drops the rest. Controls are per-genome rows too, so every
+    kept pulldown still finds its control. An empty ``genome`` keeps all rows.
+
+    Raises ValueError when no row is mapped to ``genome``: a typo there would
+    otherwise yield an empty sheet and a run that silently does nothing.
+    """
+    if not genome:
+        return df
+    present = sorted(set(df["Genome"]))
+    if genome not in present:
+        raise ValueError(
+            f"only_genome '{genome}' matches no sample. Genomes in the sample "
+            f"sheet: {', '.join(present) or '(none)'}"
+        )
+    return df[df["Genome"] == genome].reset_index(drop=True)
+
+
 # ---------------------------------------------------------------------------
 # Analysis key / name building
 # ---------------------------------------------------------------------------

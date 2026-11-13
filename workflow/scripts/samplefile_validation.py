@@ -5,6 +5,7 @@ Implements the rules defined in dev/docs/sample-sheet-spec.md.
 
 import os
 import re
+from scripts.browser_extra_tracks import normalize_extra_tracks
 from scripts.sample_sheet import (
     VALID_ASSAYS, ASSAY_TO_ENV, IP_PEAK_ASSAYS,
     PEAK_TYPE_ASSAYS, VALID_PEAK_TYPES,
@@ -514,9 +515,10 @@ def check_genome_config(tab, config, check_paths=True, repo_folder=None):
 
         # Local path existence checks (URLs and "<auto>" sentinels are skipped).
         # gtf_file is optional and defaults to "<auto>" (derived from gff_file).
-        # te_file is optional. fasta_file and gff_file are required above.
+        # te_file and alt_te_file (epicc --te-file) are optional. fasta_file
+        # and gff_file are required above.
         if check_paths:
-            for field in ("fasta_file", "gff_file", "gtf_file", "te_file"):
+            for field in ("fasta_file", "gff_file", "gtf_file", "te_file", "alt_te_file"):
                 val = gcfg.get(field)
                 if val and val != "<auto>" and not _is_url(val) \
                         and not os.path.exists(resolve_data_path(val, repo_folder)):
@@ -554,6 +556,19 @@ def check_genome_config(tab, config, check_paths=True, repo_folder=None):
                         errors.append(
                             f"[X] Genome '{genome}': {field} '{val}' does not exist"
                         )
+
+        # te_analysis builds TE heatmaps/profiles for every genome (and sRNA
+        # counts on TEs), so each one needs a TE annotation. Without this the
+        # run dies in check_te_file's params with a bare KeyError.
+        if config.get("te_analysis", False) \
+                and not gcfg.get("te_file") and not gcfg.get("alt_te_file"):
+            errors.append(
+                f"[X] Genome '{genome}': te_analysis is on but no TE annotation "
+                f"is set. Add te_file under genomes: {genome}: in the options "
+                f"file, pass --te-file PATH (with --ref-genome {genome} if the "
+                f"sample sheet has several genomes), or turn TE analyses off "
+                f"with --no-te-analysis (te_analysis: false)."
+            )
 
     # motif_ref_genome must reference a valid genome when motifs are enabled
     if config.get("motifs", False):
@@ -805,6 +820,23 @@ def check_extra_output_files(config, check_paths=True, repo_folder=None):
                 )
             elif check_paths:
                 _validate_geneid_target_file(bg, "rnaseq_background_file", errors)
+
+    # Extra BED tracks for browser plots. The structure (labels, colours) is
+    # checked whatever the analysis flags say: a bad entry is a config error
+    # even before any browser runs.
+    try:
+        extra_tracks = normalize_extra_tracks(config.get("browser_extra_tracks"))
+    except ValueError as e:
+        errors.append(f"[X] {e}")
+        extra_tracks = []
+    if check_paths:
+        for i, track in enumerate(extra_tracks):
+            key = f"browser_extra_tracks[{i}]"
+            rpath = resolve_data_path(track["file"], repo_folder)
+            if not os.path.exists(rpath):
+                errors.append(f"[X] {key}: '{track['file']}' does not exist")
+            else:
+                _validate_bed_target_file(rpath, key, errors)
 
     if errors:
         full_message = "\n".join(errors)

@@ -613,6 +613,9 @@ def _collect_config_overrides(args):
         ov.append(f"methylation_contexts=[{','.join(args.methylation_contexts)}]")
     if getattr(args, "dmr_caller", None):
         ov.append(f"dmr_caller={args.dmr_caller}")
+    # Restrict the run to one reference genome of a multi-genome sheet
+    if getattr(args, "ref_genome", None):
+        ov.append(f"only_genome={args.ref_genome}")
     return ov
 
 
@@ -652,7 +655,114 @@ def _collect_nested_overrides(args):
     if getattr(args, "cut_narrow_caller", None) is not None:
         nested.append(("cut_callpeaks.narrow_caller", args.cut_narrow_caller))
 
+    # Browser extra tracks (epicc output): a list of mappings, which --config
+    # can't express, so it goes through the merged options file too.
+    if getattr(args, "extra_tracks", None):
+        nested.append((("browser_extra_tracks",), _extra_track_entries(args)))
+
     return nested
+
+
+def _load_browser_extra_tracks():
+    """Import workflow/scripts/browser_extra_tracks.py (stdlib-only).
+
+    Shared with the workflow so `epicc output` rejects a bad label or colour
+    with the same message, before snakemake starts.
+    """
+    import importlib.util
+    path = find_repo_root() / "workflow" / "scripts" / "browser_extra_tracks.py"
+    spec = importlib.util.spec_from_file_location("epicc_browser_extra_tracks", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _extra_track_entries(args):
+    """browser_extra_tracks entries from --extra-tracks[-labels|-colors]."""
+    files = args.extra_tracks
+    entries = [{"file": f} for f in files]
+    for opt, key in (("extra_tracks_labels", "label"), ("extra_tracks_colors", "color")):
+        values = getattr(args, opt, None)
+        if values is None:
+            continue
+        if len(values) != len(files):
+            sys.exit(
+                f"Error: --{opt.replace('_', '-')} has {len(values)} value(s) "
+                f"for {len(files)} --extra-tracks file(s)."
+            )
+        for entry, value in zip(entries, values):
+            if value:
+                entry[key] = value
+    for f in files:
+        if not Path(f).is_file():
+            sys.exit(f"Error: --extra-tracks file not found: {f}")
+    try:
+        return _load_browser_extra_tracks().normalize_extra_tracks(entries)
+    except ValueError as e:
+        sys.exit(f"Error: {e}")
+
+
+def _abs_path(value):
+    """argparse type: make a local path absolute, leave URLs alone.
+
+    epicc chdirs to the repo before running snakemake (source-checkout mode),
+    so a path relative to the user's shell would otherwise resolve against
+    the wrong directory.
+    """
+    if is_url(value):
+        return value
+    return str(Path(value).expanduser().resolve())
+
+
+def _sheet_genomes(sample_file):
+    """Reference genomes named in a sample sheet's Genome column.
+
+    Skips '#'-commented rows and splits comma-separated (multi-genome) cells,
+    matching how the workflow reads the sheet. Returns a sorted list.
+    """
+    import csv
+    with open(sample_file, newline="") as fh:
+        rows = csv.DictReader(
+            (ln for ln in fh if not ln.lstrip().startswith("#")), delimiter="\t"
+        )
+        genomes = set()
+        for row in rows:
+            for g in (row.get("Genome") or "").split(","):
+                if g.strip():
+                    genomes.add(g.strip())
+    return sorted(genomes)
+
+
+def _resolve_te_genome(args, config):
+    """Pick the genome whose alt_te_file --te-file sets.
+
+    A TE annotation is species-specific, so it can only apply to one genome:
+    --ref-genome when given, otherwise the sample sheet's only genome.
+    """
+    genome = getattr(args, "ref_genome", None)
+    if not genome:
+        sample_file = getattr(args, "samples", None) or config.get("sample_file")
+        if not sample_file or not Path(sample_file).exists():
+            sys.exit(
+                "Error: --te-file needs --ref-genome, or a sample sheet "
+                "(--samples) to read the genome from."
+            )
+        genomes = _sheet_genomes(sample_file)
+        if len(genomes) != 1:
+            sys.exit(
+                f"Error: --te-file applies to one genome, but the sample sheet "
+                f"has {len(genomes)} ({', '.join(genomes) or 'none'}). Pass "
+                f"--ref-genome to choose one."
+            )
+        genome = genomes[0]
+    if genome not in (config.get("genomes") or {}):
+        sys.exit(
+            f"Error: --te-file: genome '{genome}' has no entry under genomes: "
+            f"in {args.options}."
+        )
+    if not is_url(args.te_file) and not Path(args.te_file).exists():
+        sys.exit(f"Error: --te-file not found: {args.te_file}")
+    return genome
 
 
 def _prepare_options_file(args):
@@ -664,7 +774,7 @@ def _prepare_options_file(args):
     nested overrides are set, returns args.options unchanged.
     """
     nested = _collect_nested_overrides(args)
-    if not nested:
+    if not nested and not getattr(args, "te_file", None):
         return args.options
 
     try:
@@ -674,11 +784,23 @@ def _prepare_options_file(args):
     import tempfile
     import atexit
 
+    if not Path(args.options).exists():
+        sys.exit(f"Error: Options file not found: {args.options}")
     with open(args.options) as f:
         config = yaml.safe_load(f) or {}
 
+    # --te-file belongs to one genome's block, which needs the config (and
+    # possibly the sample sheet) to pick. A tuple path, not a dotted one:
+    # genome names may contain dots.
+    if getattr(args, "te_file", None):
+        genome = _resolve_te_genome(args, config)
+        # alt_te_file, not te_file: the run's annotation is prepared and
+        # analysed under its own tag (workflow/scripts/te_files.py), so the
+        # options-file TE file and everything built on it stay untouched.
+        nested.append((("genomes", genome, "alt_te_file"), args.te_file))
+
     for dotpath, value in nested:
-        parts = dotpath.split(".")
+        parts = list(dotpath) if isinstance(dotpath, tuple) else dotpath.split(".")
         d = config
         for part in parts[:-1]:
             if not isinstance(d.get(part), dict):
@@ -930,7 +1052,9 @@ def cmd_validate(args, extra_args):
     except ImportError:
         sys.exit("Error: PyYAML not available. Activate the epicc conda environment.")
 
-    with open(options_file) as f:
+    # Read through the merged file so --te-file (and other nested overrides)
+    # are what gets checked below.
+    with open(_prepare_options_file(args)) as f:
         config = yaml.safe_load(f)
 
     # Basic config checks
@@ -968,9 +1092,15 @@ def cmd_validate(args, extra_args):
         ("fasta_file", "FASTA"),
         ("gff_file", "GFF"),
         ("te_file", "TE"),
+        ("alt_te_file", "TE (--te-file)"),
     ]
     url_checks = []
+    only_genome = getattr(args, "ref_genome", None)
+    if only_genome and only_genome not in genomes:
+        errors.append(f"--ref-genome {only_genome}: no entry under genomes: in {options_file}")
     for gname, gconf in genomes.items():
+        if only_genome and gname != only_genome:
+            continue
         for field, label in genome_fields:
             value = gconf.get(field, "")
             if not value:
@@ -1281,6 +1411,17 @@ def cmd_output(args, extra_args):
             f"separators, no leading dash): got '{label}'"
         )
 
+    # --- Browser-only options
+    browser_opts = [
+        f"--{o.replace('_', '-')}"
+        for o in ("extra_tracks", "extra_tracks_labels", "extra_tracks_colors")
+        if getattr(args, o, None) is not None
+    ]
+    if browser_opts and args.plot_type != "browser":
+        sys.exit(f"Error: {', '.join(browser_opts)} only apply to --plot-type browser.")
+    if not getattr(args, "extra_tracks", None) and browser_opts:
+        sys.exit(f"Error: {', '.join(browser_opts)} need --extra-tracks.")
+
     # --- Validate input file format
     validate_output_input(args.input_file, spec["format"])
 
@@ -1347,14 +1488,19 @@ def cmd_output(args, extra_args):
         config_overrides.append(f"analysis_name={analysis_name}")
     if getattr(args, "background", None):
         config_overrides.append(f"rnaseq_background_file={args.background}")
+    # Every output is for one genome: leave the others out of the DAG, so a
+    # multi-genome sheet doesn't need all its genomes configured to plot one.
+    if ref_genome:
+        config_overrides.append(f"only_genome={ref_genome}")
+    if getattr(args, "te_file", None) and args.plot_type == "browser":
+        config_overrides.append("browser_TE_file=true")
 
     # --- Build snakemake command (re-uses the same execution-mode logic)
     cmd = ["snakemake"]
     if _is_installed_mode():
         cmd += ["--snakefile", str(repo / "workflow" / "Snakefile")]
-    if not Path(args.options).exists():
-        sys.exit(f"Error: Options file not found: {args.options}")
-    cmd += ["--configfile", args.options]
+    # Merged options file when --te-file / --extra-tracks need nested keys
+    cmd += ["--configfile", _prepare_options_file(args)]
     workflow_profile = getattr(args, "workflow_profile", None) or str(
         repo / DEFAULT_WORKFLOW_PROFILE
     )
@@ -1705,6 +1851,24 @@ def add_analysis_options(parser):
     (dmr_thresholds.*, chip_callpeaks.params, cut_callpeaks.*) are applied
     via a temporary merged config file written by _prepare_options_file.
     """
+    # --- Genome selection ---
+    parser.add_argument(
+        "--ref-genome", dest="ref_genome", metavar="GENOME",
+        help="Analyze only the samples mapped to GENOME (sets only_genome). "
+             "Rows of a multi-genome sample sheet for other genomes are "
+             "skipped, and those genomes need no entry in the options file.",
+    )
+    parser.add_argument(
+        "--te-file", dest="te_file", type=_abs_path, metavar="PATH",
+        help="TE annotation (.bed(.gz) or .gff3(.gz), local or URL) for the "
+             "analyzed genome, used in place of genomes.<GENOME>.te_file for "
+             "this run. It is prepared and analyzed under a tag from its file "
+             "name (<GENOME>__TE_file_<tag>.bed, all_TEs_<tag> outputs), so "
+             "the options-file TE file and its results are left as they are. "
+             "Applies to --ref-genome, or to the sample sheet's genome when it "
+             "has only one. Does not switch on --te-analysis by itself.",
+    )
+
     # --- Aligners and mapping ---
     parser.add_argument(
         "--chip-aligner", dest="chip_aligner", choices=["bowtie2", "chromap"],
@@ -1929,6 +2093,34 @@ def build_parser():
         default="regions",
         help="Matrix layout for heatmap/metaplot: regions (whole feature), "
              "tss, or tes. Default: regions.",
+    )
+    p_out.add_argument(
+        "--te-file", dest="te_file", type=_abs_path, metavar="PATH",
+        help="TE annotation (.bed(.gz) or .gff3(.gz), local or URL) for "
+             "--ref-genome, used in place of genomes.<GENOME>.te_file and "
+             "prepared under its own tag (<GENOME>__TE_file_<tag>.bed), so the "
+             "options-file TE file is left as it is. With --plot-type browser "
+             "it also turns the TE track on (browser_TE_file).",
+    )
+    browser = p_out.add_argument_group("browser tracks (--plot-type browser)")
+    browser.add_argument(
+        "--extra-tracks", dest="extra_tracks", metavar="BED[,BED...]",
+        type=lambda s: [_abs_path(p.strip()) for p in s.split(",") if p.strip()],
+        help="BED files (plain or .gz) to draw as annotation rows under the "
+             "TE track, in order. Replaces browser_extra_tracks from the "
+             "options file for this run.",
+    )
+    browser.add_argument(
+        "--extra-tracks-labels", dest="extra_tracks_labels", metavar="LABEL[,LABEL...]",
+        type=lambda s: [p.strip() for p in s.split(",")],
+        help="Row labels for --extra-tracks, one per file (default: each "
+             "file's name without extension).",
+    )
+    browser.add_argument(
+        "--extra-tracks-colors", dest="extra_tracks_colors", metavar="COLOR[,COLOR...]",
+        type=lambda s: [p.strip() for p in s.split(",")],
+        help="Fill colours for --extra-tracks, one per file: hex (#RRGGBB) "
+             "or R colour names (default: a fixed palette).",
     )
     p_out.add_argument(
         "--dry-run", action="store_true",

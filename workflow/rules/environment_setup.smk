@@ -396,18 +396,23 @@ rule build_structural_rna_db:
         }} 2>&1 | tee -a "{log}"
         """
 
-rule check_te_file:
-    output:
-        te_file = f"{GENOMES_DIR}/{{ref_genome}}/{{ref_genome}}__TE_file.bed"
-    params:
-        te_file    = lambda wildcards: config["genomes"][wildcards.ref_genome]['te_file'],
-        ref_genome = lambda wildcards: wildcards.ref_genome,
-        to_ascii   = os.path.join(REPO_FOLDER, "workflow", "scripts", "to_ascii.py")
-    log:
-        temp(return_log_env("{ref_genome}", "TEs"))
-    conda: CONDA_ENV
-    shell:
-        """
+def alt_te_source(wildcards):
+    """Source of <G>__TE_file_<tag>.bed: the run's alt_te_file, if that's its tag."""
+    g = wildcards.ref_genome
+    if te_suffix(g) != "_" + wildcards.te_tag:
+        raise ValueError(
+            f"{g}__TE_file_{wildcards.te_tag}.bed was requested, but this run's "
+            f"alternative TE file for {g} is "
+            f"{config['genomes'].get(g, {}).get(ALT_TE_KEY) or 'not set'}"
+            f"{' (tag ' + te_suffix(g)[1:] + ')' if te_suffix(g) else ''}."
+        )
+    return config["genomes"][g][ALT_TE_KEY]
+
+# The TE-preparation shell is shared by the options-file annotation and an
+# alternative one given for a run (alt_te_file, `epicc --te-file`). It is kept
+# as a string, byte-identical to what check_te_file always ran, so moving it
+# here does not trip Snakemake's code rerun-trigger on existing TE files.
+TE_PREP_SHELL = """
         {{
         te_src="{params.te_file}"
 
@@ -477,3 +482,38 @@ rule check_te_file:
         fi
         }} 2>&1 | tee -a "{log}"
         """
+
+rule check_te_file:
+    output:
+        te_file = f"{GENOMES_DIR}/{{ref_genome}}/{{ref_genome}}__TE_file.bed"
+    params:
+        te_file    = lambda wildcards: config["genomes"][wildcards.ref_genome]['te_file'],
+        ref_genome = lambda wildcards: wildcards.ref_genome,
+        to_ascii   = os.path.join(REPO_FOLDER, "workflow", "scripts", "to_ascii.py")
+    log:
+        temp(return_log_env("{ref_genome}", "TEs"))
+    conda: CONDA_ENV
+    shell:
+        TE_PREP_SHELL
+
+rule check_alt_te_file:
+    # <G>__TE_file_<tag>.bed for genomes.<G>.alt_te_file; the .source record
+    # lets a later run with a different file of the same name pick a new tag
+    # (te_files.resolve_te_tag) instead of overwriting this one.
+    output:
+        te_file = f"{GENOMES_DIR}/{{ref_genome}}/{{ref_genome}}__TE_file_{{te_tag}}.bed",
+        source  = f"{GENOMES_DIR}/{{ref_genome}}/{{ref_genome}}__TE_file_{{te_tag}}.source"
+    wildcard_constraints:
+        te_tag = r"[A-Za-z0-9_-]+"
+    params:
+        te_file    = lambda wildcards: alt_te_source(wildcards),
+        ref_genome = lambda wildcards: wildcards.ref_genome,
+        to_ascii   = os.path.join(REPO_FOLDER, "workflow", "scripts", "to_ascii.py")
+    log:
+        temp(return_log_env("{ref_genome}", "TEs_{te_tag}"))
+    conda: CONDA_ENV
+    shell:
+        TE_PREP_SHELL + """
+        printf '%s\\n' "{params.te_file}" > {output.source}
+        """
+

@@ -17,12 +17,16 @@ from scripts.config_validation import (
 from scripts.samplefile_validation import (
     check_table, check_genome_config, check_extra_output_files, resolve_data_path,
 )
+from scripts.te_files import (
+    ALT_TE_KEY, te_suffixes, te_source, te_bed_path, te_target_name,
+    te_suffix_from_target,
+)
 from scripts.sample_sheet import (
     NEW_COLNAMES,
     VALID_ASSAYS, ASSAY_TO_ENV, ASSAY_TO_PEAKTYPE,
     parse_levels, levels_to_label, levels_to_factors,
     parse_read_files, get_seq_id_and_path,
-    read_sample_sheet,
+    read_sample_sheet, restrict_to_genome,
     build_analysis_key, build_analysis_name,
     build_analysis_to_replicates, get_replicate_sample_ids,
     identify_control_samples, is_peak_call_target, peak_callable_rows,
@@ -197,6 +201,23 @@ def resolve_repo_data(path):
     """
     return resolve_data_path(path, REPO_FOLDER)
 
+# A TE annotation given for one run (genomes.<G>.alt_te_file, set by
+# `epicc --te-file`) is prepared and analysed under its own tag rather than
+# replacing <G>__TE_file.bed: see workflow/scripts/te_files.py.
+TE_SUFFIX = te_suffixes(config.get("genomes"), GENOMES_DIR)
+
+def te_suffix(ref_genome):
+    return TE_SUFFIX.get(ref_genome, "")
+
+def te_source_for(ref_genome):
+    return te_source(config["genomes"].get(ref_genome), te_suffix(ref_genome))
+
+def te_bed_for(ref_genome):
+    return te_bed_path(GENOMES_DIR, ref_genome, te_suffix(ref_genome))
+
+def te_target_for(ref_genome):
+    return te_target_name(te_suffix(ref_genome))
+
 # Define the conda environment to build
 CONDA_ENV = os.path.join(REPO_FOLDER,"workflow","envs","epibutton.yaml")
 
@@ -225,6 +246,12 @@ if not config.get("sample_file"):
     )
 else:
     samples = read_sample_sheet(config["sample_file"])
+    # only_genome (epicc run --ref-genome) narrows a multi-genome sheet to one
+    # reference before validation, so genomes left out need no config entry.
+    try:
+        samples = restrict_to_genome(samples, config.get("only_genome") or "")
+    except ValueError as e:
+        sys.exit(f"Error: {e}")
     check_table(samples)
     check_genome_config(samples, config, repo_folder=REPO_FOLDER)
     check_extra_output_files(config, repo_folder=REPO_FOLDER)
