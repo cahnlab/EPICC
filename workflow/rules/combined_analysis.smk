@@ -22,8 +22,9 @@ def define_combined_target_file(wildcards):
         file = f"{RESULTS_DIR}/combined/bedfiles/{target_name}__{ref_genome}.bed"
     elif target_name.startswith("all_genes") or target_name.startswith("protein_coding_genes"):
         file = f"{RESULTS_DIR}/combined/bedfiles/{ref_genome}__{target_name}.bed"
-    elif target_name.startswith("all_TEs"):
-        file = f"{GENOMES_DIR}/{ref_genome}/{ref_genome}__TE_file.bed"
+    elif te_suffix_from_target(target_name) is not None:
+        # all_TEs -> <G>__TE_file.bed, all_TEs_<tag> -> <G>__TE_file_<tag>.bed
+        file = te_bed_path(GENOMES_DIR, ref_genome, te_suffix_from_target(target_name))
     else:
         raise ValueError(   
             f"{target_name} does not match possible files. It can be 'combined_peaks', 'combined_clusters', 'all_genes', 'all_TEs'" 
@@ -404,11 +405,18 @@ def define_individual_browser_plots(wildcards):
         files.append(f"{RESULTS_DIR}/combined/plots/single_browser__{target_name}__line{row_number}__{env}__{analysis_name}__{ref_genome}.pdf")    
     return files
 
+# User BED files drawn as extra annotation rows on every browser plot
+# (browser_extra_tracks; validated at startup by check_extra_output_files).
+from scripts.browser_extra_tracks import normalize_extra_tracks
+BROWSER_EXTRA_TRACKS = [
+    dict(t, file=resolve_repo_data(t["file"]))
+    for t in normalize_extra_tracks(config.get("browser_extra_tracks"))
+]
+
 def get_TE_file(wildcards):
     ref_genome = wildcards.ref_genome
-    te_file = config['genomes'][ref_genome].get('te_file')
-    if config['browser_TE_file'] and te_file:
-        return f"{GENOMES_DIR}/{ref_genome}/{ref_genome}__TE_file.bed"
+    if config['browser_TE_file'] and te_source_for(ref_genome):
+        return te_bed_for(ref_genome)
     return []
 
 def define_input_for_pca(wildcards, string):
@@ -486,6 +494,7 @@ def define_final_combined_output(ref_genome):
     mc_contexts = get_methylation_contexts()
     plot_files = []
     te_plots = []
+    te_target = te_target_for(ref_genome)
     
     all_analysis_samples = analysis_samples[ analysis_samples['ref_genome'] == ref_genome ].copy()
     chip_analysis_samples = analysis_samples[ (analysis_samples['env'] == 'ChIP') & (analysis_samples['ref_genome'] == ref_genome) ].copy()
@@ -519,45 +528,45 @@ def define_final_combined_output(ref_genome):
             plot_files.append(f"{RESULTS_DIR}/combined/plots/Heatmap_sorted__regions__mC__{analysis_name}__{ref_genome}__all_genes.pdf")
             plot_files.append(f"{RESULTS_DIR}/combined/plots/Heatmap_sorted__tss__mC__{analysis_name}__{ref_genome}__all_genes.pdf")
             plot_files.append(f"{RESULTS_DIR}/combined/plots/Heatmap_sorted__tes__mC__{analysis_name}__{ref_genome}__all_genes.pdf")            
-            te_plots.append(f"{RESULTS_DIR}/combined/plots/Heatmap_sorted__regions__mC__{analysis_name}__{ref_genome}__all_TEs.pdf")
-            te_plots.append(f"{RESULTS_DIR}/combined/plots/Heatmap_sorted__tss__mC__{analysis_name}__{ref_genome}__all_TEs.pdf")
-            te_plots.append(f"{RESULTS_DIR}/combined/plots/Heatmap_sorted__tes__mC__{analysis_name}__{ref_genome}__all_TEs.pdf")
+            te_plots.append(f"{RESULTS_DIR}/combined/plots/Heatmap_sorted__regions__mC__{analysis_name}__{ref_genome}__{te_target}.pdf")
+            te_plots.append(f"{RESULTS_DIR}/combined/plots/Heatmap_sorted__tss__mC__{analysis_name}__{ref_genome}__{te_target}.pdf")
+            te_plots.append(f"{RESULTS_DIR}/combined/plots/Heatmap_sorted__tes__mC__{analysis_name}__{ref_genome}__{te_target}.pdf")
             
             plot_files.append(f"{RESULTS_DIR}/combined/plots/Profile__regions__most__{analysis_name}__{ref_genome}__all_genes.pdf")
             plot_files.append(f"{RESULTS_DIR}/combined/plots/Profile__tss__most__{analysis_name}__{ref_genome}__all_genes.pdf")
             plot_files.append(f"{RESULTS_DIR}/combined/plots/Profile__tes__most__{analysis_name}__{ref_genome}__all_genes.pdf")
-            te_plots.append(f"{RESULTS_DIR}/combined/plots/Profile__regions__most__{analysis_name}__{ref_genome}__all_TEs.pdf")
-            te_plots.append(f"{RESULTS_DIR}/combined/plots/Profile__tss__most__{analysis_name}__{ref_genome}__all_TEs.pdf")
-            te_plots.append(f"{RESULTS_DIR}/combined/plots/Profile__tes__most__{analysis_name}__{ref_genome}__all_TEs.pdf")
+            te_plots.append(f"{RESULTS_DIR}/combined/plots/Profile__regions__most__{analysis_name}__{ref_genome}__{te_target}.pdf")
+            te_plots.append(f"{RESULTS_DIR}/combined/plots/Profile__tss__most__{analysis_name}__{ref_genome}__{te_target}.pdf")
+            te_plots.append(f"{RESULTS_DIR}/combined/plots/Profile__tes__most__{analysis_name}__{ref_genome}__{te_target}.pdf")
         else:
             plot_files.append(f"{RESULTS_DIR}/combined/plots/Heatmap__regions__mC__{analysis_name}__{ref_genome}__all_genes.pdf")
             plot_files.append(f"{RESULTS_DIR}/combined/plots/Heatmap__tss__mC__{analysis_name}__{ref_genome}__all_genes.pdf")
             plot_files.append(f"{RESULTS_DIR}/combined/plots/Heatmap__tes__mC__{analysis_name}__{ref_genome}__all_genes.pdf")
-            te_plots.append(f"{RESULTS_DIR}/combined/plots/Heatmap__regions__mC__{analysis_name}__{ref_genome}__all_TEs.pdf")
-            te_plots.append(f"{RESULTS_DIR}/combined/plots/Heatmap__tss__mC__{analysis_name}__{ref_genome}__all_TEs.pdf")
-            te_plots.append(f"{RESULTS_DIR}/combined/plots/Heatmap__tes__mC__{analysis_name}__{ref_genome}__all_TEs.pdf")
+            te_plots.append(f"{RESULTS_DIR}/combined/plots/Heatmap__regions__mC__{analysis_name}__{ref_genome}__{te_target}.pdf")
+            te_plots.append(f"{RESULTS_DIR}/combined/plots/Heatmap__tss__mC__{analysis_name}__{ref_genome}__{te_target}.pdf")
+            te_plots.append(f"{RESULTS_DIR}/combined/plots/Heatmap__tes__mC__{analysis_name}__{ref_genome}__{te_target}.pdf")
         
         plot_files.append(f"{RESULTS_DIR}/combined/plots/Profile__regions__mC__{analysis_name}__{ref_genome}__all_genes.pdf")
         plot_files.append(f"{RESULTS_DIR}/combined/plots/Profile__tss__mC__{analysis_name}__{ref_genome}__all_genes.pdf")
         plot_files.append(f"{RESULTS_DIR}/combined/plots/Profile__tes__mC__{analysis_name}__{ref_genome}__all_genes.pdf")
-        te_plots.append(f"{RESULTS_DIR}/combined/plots/Profile__regions__mC__{analysis_name}__{ref_genome}__all_TEs.pdf")
-        te_plots.append(f"{RESULTS_DIR}/combined/plots/Profile__tss__mC__{analysis_name}__{ref_genome}__all_TEs.pdf")
-        te_plots.append(f"{RESULTS_DIR}/combined/plots/Profile__tes__mC__{analysis_name}__{ref_genome}__all_TEs.pdf")
+        te_plots.append(f"{RESULTS_DIR}/combined/plots/Profile__regions__mC__{analysis_name}__{ref_genome}__{te_target}.pdf")
+        te_plots.append(f"{RESULTS_DIR}/combined/plots/Profile__tss__mC__{analysis_name}__{ref_genome}__{te_target}.pdf")
+        te_plots.append(f"{RESULTS_DIR}/combined/plots/Profile__tes__mC__{analysis_name}__{ref_genome}__{te_target}.pdf")
         
     else:
         plot_files.append(f"{RESULTS_DIR}/combined/plots/Heatmap__regions__most__{analysis_name}__{ref_genome}__all_genes.pdf")
         plot_files.append(f"{RESULTS_DIR}/combined/plots/Heatmap__tss__most__{analysis_name}__{ref_genome}__all_genes.pdf")
         plot_files.append(f"{RESULTS_DIR}/combined/plots/Heatmap__tes__most__{analysis_name}__{ref_genome}__all_genes.pdf")
-        te_plots.append(f"{RESULTS_DIR}/combined/plots/Heatmap__regions__most__{analysis_name}__{ref_genome}__all_TEs.pdf")
-        te_plots.append(f"{RESULTS_DIR}/combined/plots/Heatmap__tss__most__{analysis_name}__{ref_genome}__all_TEs.pdf")
-        te_plots.append(f"{RESULTS_DIR}/combined/plots/Heatmap__tes__most__{analysis_name}__{ref_genome}__all_TEs.pdf")
+        te_plots.append(f"{RESULTS_DIR}/combined/plots/Heatmap__regions__most__{analysis_name}__{ref_genome}__{te_target}.pdf")
+        te_plots.append(f"{RESULTS_DIR}/combined/plots/Heatmap__tss__most__{analysis_name}__{ref_genome}__{te_target}.pdf")
+        te_plots.append(f"{RESULTS_DIR}/combined/plots/Heatmap__tes__most__{analysis_name}__{ref_genome}__{te_target}.pdf")
     
         plot_files.append(f"{RESULTS_DIR}/combined/plots/Profile__regions__most__{analysis_name}__{ref_genome}__all_genes.pdf")
         plot_files.append(f"{RESULTS_DIR}/combined/plots/Profile__tss__most__{analysis_name}__{ref_genome}__all_genes.pdf")
         plot_files.append(f"{RESULTS_DIR}/combined/plots/Profile__tes__most__{analysis_name}__{ref_genome}__all_genes.pdf")
-        te_plots.append(f"{RESULTS_DIR}/combined/plots/Profile__regions__most__{analysis_name}__{ref_genome}__all_TEs.pdf")
-        te_plots.append(f"{RESULTS_DIR}/combined/plots/Profile__tss__most__{analysis_name}__{ref_genome}__all_TEs.pdf")
-        te_plots.append(f"{RESULTS_DIR}/combined/plots/Profile__tes__most__{analysis_name}__{ref_genome}__all_TEs.pdf")
+        te_plots.append(f"{RESULTS_DIR}/combined/plots/Profile__regions__most__{analysis_name}__{ref_genome}__{te_target}.pdf")
+        te_plots.append(f"{RESULTS_DIR}/combined/plots/Profile__tss__most__{analysis_name}__{ref_genome}__{te_target}.pdf")
+        te_plots.append(f"{RESULTS_DIR}/combined/plots/Profile__tes__most__{analysis_name}__{ref_genome}__{te_target}.pdf")
 
     mc_rep_samples = samples[ (samples['env'] == "mC") & (samples['ref_genome'] == ref_genome) ].copy()
     if len(mc_rep_samples) >=3:
@@ -1354,7 +1363,8 @@ rule prep_browser_on_region:
         chrom_sizes = lambda wildcards: f"{GENOMES_DIR}/{wildcards.ref_genome}/chrom.sizes",
         gff = lambda wildcards: f"{GENOMES_DIR}/{wildcards.ref_genome}/{wildcards.ref_genome}.gff",
         all_genes = lambda wildcards: f"{RESULTS_DIR}/combined/bedfiles/{wildcards.ref_genome}__all_genes.bed",
-        TE_file = lambda wildcards: get_TE_file(wildcards)
+        TE_file = lambda wildcards: get_TE_file(wildcards),
+        extra_tracks = [t["file"] for t in BROWSER_EXTRA_TRACKS]
     output:
         filenames = f"{RESULTS_DIR}/combined/matrix/filenames__{{target_name}}__{{regionID}}__{{env}}__{{analysis_name}}__{{ref_genome}}.txt",
         genes = f"{RESULTS_DIR}/combined/matrix/genes_in_locus__{{target_name}}__{{regionID}}__{{env}}__{{analysis_name}}__{{ref_genome}}.gff",
@@ -1362,6 +1372,7 @@ rule prep_browser_on_region:
         htstart = f"{RESULTS_DIR}/combined/matrix/highlight_start__{{target_name}}__{{regionID}}__{{env}}__{{analysis_name}}__{{ref_genome}}.txt",
         htwidth = f"{RESULTS_DIR}/combined/matrix/highlight_width__{{target_name}}__{{regionID}}__{{env}}__{{analysis_name}}__{{ref_genome}}.txt",
         name = f"{RESULTS_DIR}/combined/matrix/name__{{target_name}}__{{regionID}}__{{env}}__{{analysis_name}}__{{ref_genome}}.txt",
+        extras = f"{RESULTS_DIR}/combined/matrix/extra_tracks__{{target_name}}__{{regionID}}__{{env}}__{{analysis_name}}__{{ref_genome}}.txt",
         tempgenes = temp(f"{RESULTS_DIR}/combined/matrix/genes_in_locus__{{target_name}}__{{regionID}}__{{env}}__{{analysis_name}}__{{ref_genome}}.txt"),
         templocus = temp(f"{RESULTS_DIR}/combined/matrix/locus_{{target_name}}__{{regionID}}__{{env}}__{{analysis_name}}__{{ref_genome}}.bed"),
         temparray = temp(f"{RESULTS_DIR}/combined/matrix/array__{{target_name}}__{{regionID}}__{{env}}__{{analysis_name}}__{{ref_genome}}.npz"),
@@ -1374,6 +1385,10 @@ rule prep_browser_on_region:
         sample_table = lambda wildcards: define_key_for_plots(wildcards, "table"),
         trackfolder = lambda wildcards: f"{RESULTS_DIR}/combined/matrix/tracks_{wildcards.target_name}__{wildcards.regionID}__{wildcards.env}__{wildcards.analysis_name}__{wildcards.ref_genome}",
         regionID = lambda wildcards: wildcards.regionID,
+        # One "label<TAB>color<TAB>path" line per extra track; labels can't
+        # hold tabs, quotes or '$' (normalize_extra_tracks), so this is safe
+        # to read back in a shell loop.
+        extra_tracks = "\n".join(f"{t['label']}\t{t['color']}\t{t['file']}" for t in BROWSER_EXTRA_TRACKS),
         browser_scales = config['browser_scales'],
         mc_scales = config['fixed_mc_scales'],
         cg_scale = config['fixed_mcg'],
@@ -1433,6 +1448,27 @@ rule prep_browser_on_region:
         printf "Testing if all bw have data in this region\n"
         filelist2=()
         rm -rf "{params.trackfolder}" && mkdir "{params.trackfolder}"
+
+        ### Extra user BED tracks, clipped to the locus. Clipped, not just
+        # filtered (no -u): Gviz draws the union of every track's range, so one
+        # feature reaching past the locus would zoom the whole plot out. The
+        # TE and gene tracks are clipped the same way.
+        # zcat -f reads plain and gzipped files alike; comment, track/browser
+        # and column-header lines are dropped so bedtools sees only records,
+        # and only chrom/start/end/name are kept since the track is drawn as
+        # plain boxes (a non-numeric score column would break the BED import).
+        printf "Label\tColor\tPath\n" > {output.extras}
+        n=0
+        while IFS=$'\t' read -r label color src; do
+            [[ -z "${{src}}" ]] && continue
+            n=$(( n + 1 ))
+            path="{params.trackfolder}/extra_${{n}}.bed"
+            zcat -f "${{src}}" \
+                | awk -F"\t" -v OFS="\t" '/^(#|track|browser)/ {{next}} $2 !~ /^[0-9]+$/ {{next}} {{print $1,$2,$3,(NF>=4 ? $4 : ".")}}' \
+                | bedtools intersect -a stdin -b {output.templocus} > "${{path}}"
+            printf "Extra track %s: %s features in the region\n" "${{label}}" "$(wc -l < "${{path}}")"
+            printf "%s\t%s\t%s\n" "${{label}}" "${{color}}" "${{path}}" >> {output.extras}
+        done <<< "{params.extra_tracks}"
         while read bw lab back track plus minus mark
         do
             path="{params.trackfolder}/${{lab}}_empty"
@@ -1511,7 +1547,8 @@ rule make_single_loci_browser_plot:
         tes = f"{RESULTS_DIR}/combined/matrix/tes_in_locus__{{target_name}}__{{regionID}}__{{env}}__{{analysis_name}}__{{ref_genome}}.bed",
         name = f"{RESULTS_DIR}/combined/matrix/name__{{target_name}}__{{regionID}}__{{env}}__{{analysis_name}}__{{ref_genome}}.txt",
         htstart = f"{RESULTS_DIR}/combined/matrix/highlight_start__{{target_name}}__{{regionID}}__{{env}}__{{analysis_name}}__{{ref_genome}}.txt",
-        htwidth = f"{RESULTS_DIR}/combined/matrix/highlight_width__{{target_name}}__{{regionID}}__{{env}}__{{analysis_name}}__{{ref_genome}}.txt"
+        htwidth = f"{RESULTS_DIR}/combined/matrix/highlight_width__{{target_name}}__{{regionID}}__{{env}}__{{analysis_name}}__{{ref_genome}}.txt",
+        extras = f"{RESULTS_DIR}/combined/matrix/extra_tracks__{{target_name}}__{{regionID}}__{{env}}__{{analysis_name}}__{{ref_genome}}.txt"
     output:
         browser_plot = temp(f"{RESULTS_DIR}/combined/plots/single_browser__{{target_name}}__{{regionID}}__{{env}}__{{analysis_name}}__{{ref_genome}}.pdf")
     params:
@@ -1526,13 +1563,10 @@ rule make_single_loci_browser_plot:
         """
         {{
         name=$(cat {input.name})
-        if [[ -s {input.htstart} ]]; then
-            printf "\nPlotting browser on {params.regionID} with higlights\n\n"
-            Rscript "{params.script}" "{input.filenames}" "{input.genes}" "{input.tes}" "${{name}}" "{params.title}" "{input.htstart}" "{input.htwidth}"
-        else
-            printf "\nPlotting browser on {params.regionID} without higlights\n\n"
-            Rscript "{params.script}" "{input.filenames}" "{input.genes}" "{input.tes}" "${{name}}" "{params.title}"
-        fi
+        # Empty highlight files and a header-only extras table mean "none";
+        # the script checks, so the call is the same either way.
+        printf "\nPlotting browser on {params.regionID}\n\n"
+        Rscript "{params.script}" "{input.filenames}" "{input.genes}" "{input.tes}" "${{name}}" "{params.title}" "{input.htstart}" "{input.htwidth}" "{input.extras}"
         rm -rf {params.trackfolder}
         }} 2>&1 | tee -a "{log}"
         """

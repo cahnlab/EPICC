@@ -226,6 +226,24 @@ class TestGenomeConfigPathExistence:
             check_genome_config(_minimal_sample_df(), cfg)
         assert "te_file" in str(excinfo.value)
 
+    def test_te_analysis_without_te_file_raises(self):
+        cfg = {**self._genome_cfg(fasta_file="https://e.org/g.fa", gff_file="https://e.org/g.gff3"), "te_analysis": True}
+        with pytest.raises(ValueError) as excinfo:
+            check_genome_config(_minimal_sample_df(), cfg)
+        msg = str(excinfo.value)
+        assert "te_analysis is on but no TE annotation" in msg
+        assert "--te-file" in msg and "--no-te-analysis" in msg
+
+    @pytest.mark.parametrize("field", ["te_file", "alt_te_file"])
+    def test_te_analysis_with_te_annotation_passes(self, field):
+        cfg = {**self._genome_cfg(fasta_file="https://e.org/g.fa", gff_file="https://e.org/g.gff3",
+                               **{field: "https://e.org/te.bed"}), "te_analysis": True}
+        check_genome_config(_minimal_sample_df(), cfg)
+
+    def test_no_te_file_fine_when_te_analysis_off(self):
+        cfg = {**self._genome_cfg(fasta_file="https://e.org/g.fa", gff_file="https://e.org/g.gff3"), "te_analysis": False}
+        check_genome_config(_minimal_sample_df(), cfg)
+
     def test_check_paths_false_skips_existence(self, tmp_path):
         cfg = self._genome_cfg(
             fasta_file=str(tmp_path / "absent.fa"),

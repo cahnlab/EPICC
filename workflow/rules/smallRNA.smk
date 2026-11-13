@@ -61,8 +61,8 @@ def define_srna_target_file(wildcards):
         return f"{RESULTS_DIR}/combined/bedfiles/{wildcards.ref_genome}__all_genes.bed"
     elif wildcards.target_name == "protein_coding_genes":
         return f"{RESULTS_DIR}/combined/bedfiles/{wildcards.ref_genome}__protein_coding_genes.bed"
-    elif wildcards.target_name == "all_TEs":
-        return f"{GENOMES_DIR}/{wildcards.ref_genome}/{wildcards.ref_genome}__TE_file.bed"
+    elif te_suffix_from_target(wildcards.target_name) is not None:
+        return te_bed_path(GENOMES_DIR, wildcards.ref_genome, te_suffix_from_target(wildcards.target_name))
     elif wildcards.target_name == tname:
         return config['srna_target_file']
     else:
@@ -88,6 +88,7 @@ def define_final_srna_output(ref_genome):
     deg_files = []
     analysis_files = []
     te_analysis_files = []
+    te_target = te_target_for(ref_genome)
     
     filtered_rep_samples = samples[ (samples['env'] == 'sRNA') & (samples['ref_genome'] == ref_genome) ].copy()
     for _, row in filtered_rep_samples.iterrows():
@@ -120,11 +121,11 @@ def define_final_srna_output(ref_genome):
     if len(filtered_analysis_samples) >= 2 and any(len(get_replicate_sample_ids(row['sample_name'], samples)) >= 2 for _, row in filtered_analysis_samples.iterrows()):
         analysis_files.append(f"{RESULTS_DIR}/sRNA/chkpts/calling_differential_sRNA_clusters__{analysis_name}__{ref_genome}__on_new_clusters.done")
         analysis_files.append(f"{RESULTS_DIR}/sRNA/chkpts/calling_differential_sRNA_clusters__{analysis_name}__{ref_genome}__on_all_genes.done")
-        te_analysis_files.append(f"{RESULTS_DIR}/sRNA/chkpts/calling_differential_sRNA_clusters__{analysis_name}__{ref_genome}__on_all_TEs.done")
+        te_analysis_files.append(f"{RESULTS_DIR}/sRNA/chkpts/calling_differential_sRNA_clusters__{analysis_name}__{ref_genome}__on_{te_target}.done")
     elif len(filtered_analysis_samples) >= 1:
         analysis_files.append(f"{RESULTS_DIR}/sRNA/clusters/{analysis_name}__{ref_genome}__on_new_clusters/Counts.txt")
         analysis_files.append(f"{RESULTS_DIR}/sRNA/clusters/{analysis_name}__{ref_genome}__on_all_genes/Counts.txt")
-        te_analysis_files.append(f"{RESULTS_DIR}/sRNA/clusters/{analysis_name}__{ref_genome}__on_all_TEs/Counts.txt")
+        te_analysis_files.append(f"{RESULTS_DIR}/sRNA/clusters/{analysis_name}__{ref_genome}__on_{te_target}/Counts.txt")
     
     results = map_files + bigwig_files
 

@@ -9,6 +9,11 @@ analysis_name: "epicc"
 # See config/example_samples.tsv for a documented template.
 #sample_file: "config/my_samples.tsv"
 
+# Analyze only the samples mapped to this genome (optional). Rows of a
+# multi-genome sheet for other genomes are skipped, and those genomes need no
+# entry under genomes:. Same as `epicc run --ref-genome GENOME`.
+#only_genome: "ColCEN"
+
 # Reference genomes — each entry defines paths to annotation files and
 # species-level parameters. ColCEN below is a fully working public-URL
 # example (Arabidopsis thaliana, schatzlab Col-CEN v1.2 + EDTA TE
@@ -64,6 +69,9 @@ genomes:
   #  fasta_file: "<path/to/genome.fa(.gz)>"
   #  gff_file: "<path/to/genes.gff3(.gz)>"
   #  te_file: "<path/to/transposable_elements.bed(.gz) or .gff3(.gz)>"
+  #  alt_te_file: "<path>"  # usually set by `epicc --te-file`; prepared and analysed
+  #                         # under its own tag (<G>__TE_file_<tag>.bed, all_TEs_<tag>)
+  #                         # in place of te_file, leaving te_file's outputs untouched
   #  gaf_file: "<path/to/GO_annotations.tab(.gz)>"        # only for GO: true
   #  gene_info_file: "<path/to/gene_info.tab(.gz)>"       # only for GO: true
   #  #structural_rna_fafile: "<auto>"
@@ -496,6 +504,10 @@ heatmap_target_file: "data/target_genes.bed" # bed file containing the regions t
 browser_target_file_label: "target_loci" # This name will be used for the name of the results files and should used in the rule target.
 browser_target_file: "data/target_loci.bed" # bed file containing the regions to use for browser shots. Each region will be a seperate page in a pdf. Can have a header.
 browser_TE_file: true # Whether to use a file of TEs or not. The file should be listed in the corresponding reference genome, and be a (potentially gzipped) bed file.
+browser_extra_tracks: [] # Extra BED files (plain or .gz) drawn as annotation rows under the TE track, in order. Each entry is a path, or {file, label, color}; label defaults to the file name, color to a fixed palette. Set per run with `epicc output --plot-type browser --extra-tracks a.bed,b.bed [--extra-tracks-labels ...] [--extra-tracks-colors ...]`.
+# browser_extra_tracks:
+#   - "data/peaks.bed"
+#   - {file: "data/dmrs.bed.gz", label: "DMRs", color: "#B2182B"}
 browser_scales: "sample" # options: [ 'sample' = each sample on its own scale | 'type' = each type of data on a different scale (each ChIP mark + each TF + RNA + sRNA + each mC context) ]
 chromosome_bs: 50000 # default to 50kb bins for full chromosome browsers 
 fixed_mc_scales: true # Whether the scales for mC should be fixed to the value below
