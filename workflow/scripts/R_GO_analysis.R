@@ -40,6 +40,14 @@ rn1<-paste(geneid2GO[,1], sep="")
 gene2GO<-geneid2GO[,-1]
 names(gene2GO)<-rn1
 
+# Every GO output carries the analysis name and reference genome, like the
+# other analysis-level RNA outputs (plot_expression__<analysis>__<genome>__...).
+# Without them, two analyses sharing an output_dir and a target label (e.g. the
+# same level name "WT" giving UP_in_WT) overwrite each other's tables (issue #101).
+go_prefix<-function(name, ont) {
+	paste0("topGO__",analysisname,"__",refgenome,"__",name,"__",ont)
+}
+
 getGO<-function(genelist, target, ont, name) {
 	GOdata<-new("topGOdata", 
 				ontology = ont, 
@@ -69,10 +77,10 @@ getGO<-function(genelist, target, ont, name) {
 		arrange(GO) %>%
 		unique()
 	if (nrow(tab2) > 1) {
-		write.table(tab2,paste0(output_dir,"/RNA/GO/topGO_",name,"_",ont,"_GOs.txt"),sep="\t",row.names=FALSE,col.names=TRUE,quote=FALSE)
+		write.table(tab2,paste0(output_dir,"/RNA/GO/",go_prefix(name, ont),"_GOs.txt"),sep="\t",row.names=FALSE,col.names=TRUE,quote=FALSE)
 	}
 	if (nrow(tab3) > 0) {
-		write.table(tab3,paste0(output_dir,"/RNA/GO/topGO_",name,"_",ont,"_GIDs.txt"),sep="\t",row.names=FALSE,col.names=TRUE,quote=FALSE)
+		write.table(tab3,paste0(output_dir,"/RNA/GO/",go_prefix(name, ont),"_GIDs.txt"),sep="\t",row.names=FALSE,col.names=TRUE,quote=FALSE)
 	}	
   
 	scores<-setNames(-log10(as.numeric(tab$classicFisher)), tab$GO.ID)
@@ -91,7 +99,7 @@ getGO<-function(genelist, target, ont, name) {
 										threshold = 0.7,
 										orgdb=dbname)
 										
-			pdf(paste0(output_dir,"/RNA/plots/topGO_",name,"_",ont,"_treemap.pdf"), width=8, height=8)
+			pdf(paste0(output_dir,"/RNA/plots/",go_prefix(name, ont),"_treemap.pdf"), width=8, height=8)
 			treemapPlot(reducedTerms, size = "score")
 			dev.off()
 		}

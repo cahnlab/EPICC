@@ -428,7 +428,7 @@ epicc output --plot-type go \
 ```
 (`--background` sets `rnaseq_background_file` for this run; it is a tab-delimited
 file whose first column is gene IDs matching the reference GFF.)
-Output includes two pdf treemaps (`topGO_<label>_BP_treemap.pdf` for biological process and `topGO_<label>_MF_treemap.pdf` for molecular function) and corresponding enrichment tables under `results/RNA/GO/`.
+Output includes two pdf treemaps under `results/RNA/plots/` (`topGO__<analysis_name>__<genome>__<label>__BP_treemap.pdf` for biological process and `topGO__<analysis_name>__<genome>__<label>__MF_treemap.pdf` for molecular function) and the corresponding enrichment tables (`topGO__<analysis_name>__<genome>__<label>__{BP,MF}_{GOs,GIDs}.txt`) under `results/RNA/GO/`.
 
 ### **3. Finding motifs on target regions**
 Given a bed file containing different regions, it will perform a motifs analysis with meme.\

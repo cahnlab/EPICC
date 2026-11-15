@@ -116,3 +116,27 @@ class TestGODatabase:
         done = RESULTS / "RNA" / "GO" / \
             f"TopGO__{ANALYSIS_NAME}__{REF_GENOME}__unique_DEGs.done"
         assert done.exists(), f"Missing GO analysis checkpoint: {done}"
+
+    def test_go_outputs_carry_analysis_name(self, results_exist):
+        """GO tables and treemaps are named per analysis and genome (issue #101).
+
+        R_GO_analysis.R writes a table only when it has enriched terms, so an
+        empty result is allowed; what must not happen is a run producing only
+        the pre-#101 ``topGO_<label>_<ont>_*`` names, which a second analysis
+        in the same output_dir would overwrite.
+        """
+        prefix = f"topGO__{ANALYSIS_NAME}__{REF_GENOME}__"
+        go_dir = RESULTS / "RNA" / "GO"
+        plots_dir = RESULTS / "RNA" / "plots"
+        new = sorted(go_dir.glob(f"{prefix}*.txt")) + \
+            sorted(plots_dir.glob(f"{prefix}*_treemap.pdf"))
+        legacy = [
+            p for d in (go_dir, plots_dir) for p in d.glob("topGO_*")
+            if not p.name.startswith("topGO__")
+        ]
+        if not new and not legacy:
+            pytest.skip("GO analysis wrote no enrichment tables (no enriched terms)")
+        assert new, (
+            f"Only legacy GO file names without the analysis name found: "
+            f"{[p.name for p in legacy]}"
+        )
