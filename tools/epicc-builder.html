@@ -595,6 +595,20 @@
     opacity: 0.5;
   }
 
+  /* Commented-out sample (a '#' line in the TSV, issue #65): skipped by the
+     pipeline, so the whole row is greyed out, but it stays fully editable.
+     The '#' before the Sample_ID shows what will be written on export. */
+  .tabulator-row.row-commented .tabulator-cell {
+    color: var(--text-dim) !important;
+    opacity: 0.55;
+  }
+  .tabulator-row.row-commented .tabulator-cell.row-select-col,
+  .tabulator-row.row-commented .tabulator-cell.action-col { opacity: 1; }
+  .tabulator-row.row-commented .tabulator-cell[tabulator-field="Sample_ID"]::before {
+    content: "# ";
+    font-weight: 600;
+  }
+
   /* Action column */
   .row-action-btn {
     background: none;
@@ -808,6 +822,8 @@
     <div class="toolbar" id="ss-toolbar">
       <button id="btn-add-row" aria-label="Add a new empty row">+ Add Row</button>
       <button id="btn-dup-selected" aria-label="Duplicate selected rows" disabled>Duplicate Selected</button>
+      <button id="btn-comment-selected" aria-label="Comment out or uncomment selected rows" disabled
+              title="Commented samples are written with a leading '#' and skipped by the pipeline">Comment Selected</button>
       <button id="btn-del-selected" aria-label="Delete selected rows" disabled>Delete Selected</button>
       <button id="btn-undo" aria-label="Undo last change" title="Undo (Ctrl+Z)">&#8630; Undo</button>
       <button id="btn-redo" aria-label="Redo last undone change" title="Redo (Ctrl+Shift+Z)">Redo &#8631;</button>
@@ -980,7 +996,7 @@ function factorField(name) { return FACTOR_PREFIX + name; }
 function isFactorField(f) { return f.indexOf(FACTOR_PREFIX) === 0; }
 
 const COLUMN_DESCRIPTIONS = {
-  Sample_ID: "Unique identifier for each sample row. Used as a filesystem path component. Must not contain '__' or unsafe characters (/ \\ whitespace '\";&|<>$`!{}()[]?*~#). Concise descriptive IDs like 'WT_leaf_H3K9me2_rep1' are recommended.",
+  Sample_ID: "Unique identifier for each sample row. Used as a filesystem path component. Must not contain '__' or unsafe characters (/ \\ whitespace '\";&|<>$`!{}()[]?*~#). Concise descriptive IDs like 'WT_leaf_H3K9me2_rep1' are recommended. To park a sample without deleting it, use Comment Selected (or the row menu) rather than typing '#': it is written as a '#' line that the pipeline skips.",
   Assay: "Experimental assay type (the method, not the analysis). Determines pipeline routing: ChIP, CUT_RUN (CUT&RUN), CUT_TAG (CUT&Tag), ATAC, RNAseq, RAMPAGE, sRNA, WGBS (directional), WGBS_nd (non-directional, e.g. Zymo Pico), PBAT, EMseq (enzymatic), dmC (direct methylation from long reads). Peak-calling type (broad/narrow) is set separately in the Peak_type column.",
   Genome: "Reference genome name (e.g. Spombe, ColCEN, hg38). Used to locate genome files under genomes/{Genome}/. Tick several genomes to map the same sample to each reference (e.g. B73,W22): the reads are downloaded and trimmed once, then aligned to each, and post-alignment outputs are tagged with the genome.",
   Levels: "Comma-separated factor:level pairs (e.g. genotype:WT,tissue:root). All rows must have the same factors; '=' is not allowed. Level values form the 'levels_label' in analysis names.",
@@ -1812,6 +1828,8 @@ function showCtxMenu(e, row) {
   const items = [
     { label: "Add replicate", action: function() { addReplicate(row); } },
     { label: "Duplicate row", action: function() { duplicateRow(row); } },
+    { label: row.getData()._commented ? "Uncomment row" : "Comment out row",
+      action: function() { setRowsCommented([row], !row.getData()._commented); } },
     { sep: true },
     { label: "Move up", action: function() { moveRow(row, -1); } },
     { label: "Move down", action: function() { moveRow(row, 1); } },
@@ -1858,7 +1876,7 @@ function showCtxMenu(e, row) {
 // ===========================================================================
 
 function addReplicate(row) {
-  var data = Object.assign({}, row.getData());
+  var data = cloneRowData(row);
   // Increment replicate
   var rep = data.Replicate_ID || "";
   var m = rep.match(/^(.*?)(\d+)$/);
@@ -1869,16 +1887,14 @@ function addReplicate(row) {
   }
   data.Sample_ID = ""; // clear so suggestion kicks in
   data._sid_user_edited = false;
-  delete data.id; // new internal id
   table.addRow(data, false, row);
   refreshUI();
 }
 
 function duplicateRow(row) {
-  var data = Object.assign({}, row.getData());
+  var data = cloneRowData(row);
   data.Sample_ID = data.Sample_ID ? data.Sample_ID + "_copy" : "";
   data._sid_user_edited = !!data.Sample_ID;
-  delete data.id;
   table.addRow(data, false, row);
   refreshUI();
 }
@@ -1918,10 +1934,27 @@ function runValidation() {
   var sampleIds = new Set();
   var rows = table.getRows();
 
+  // Commented rows (issue #65) are invisible to the pipeline, so none of the
+  // checks below apply to them: they are skipped per-row and left out of every
+  // cross-row check (duplicate IDs, factor consistency, shared Read_files,
+  // Control references, PE/SE groups). Only two things involve them:
+  //   - an active row whose Control is a commented sample is an error, since
+  //     the pipeline rejects a Control that matches no (uncommented) Sample_ID;
+  //   - a commented row reusing an active row's Sample_ID is a warning, since
+  //     uncommenting it would create a duplicate.
+  var commentedIds = new Set();
+  for (var i = 0; i < data.length; i++) {
+    if (data[i]._commented) {
+      var csid = (data[i].Sample_ID || "").trim();
+      if (csid) commentedIds.add(csid);
+    }
+  }
+
   // --- Per-row validation ---
   for (var i = 0; i < data.length; i++) {
     var row = data[i];
     var rowNum = i + 1;
+    if (row._commented) continue;
     var sid = (row.Sample_ID || "").trim();
     var assay = (row.Assay || "").trim();
     var genome = (row.Genome || "").trim();
@@ -2114,7 +2147,7 @@ function runValidation() {
     var allRowFactors = [];
     for (var i = 0; i < data.length; i++) {
       var lvl = (data[i].Levels || "").trim();
-      if (!lvl) { allRowFactors.push(null); continue; }
+      if (!lvl || data[i]._commented) { allRowFactors.push(null); continue; }
       var parsed = parseLevels(lvl);
       allRowFactors.push(parsed ? parsed.map(function(p) { return p.factor; }) : null);
     }
@@ -2148,7 +2181,7 @@ function runValidation() {
     var sid = (data[i].Sample_ID || "").trim();
     var rowNum = i + 1;
     var rowKey = rows[i] ? rows[i].getIndex() : i;
-    if (!readFiles) continue;
+    if (!readFiles || data[i]._commented) continue;
     var components = readFiles.split("+").map(function(s) { return s.trim(); });
     for (var ci = 0; ci < components.length; ci++) {
       var files = components[ci].split(",").map(function(s) { return s.trim(); });
@@ -2170,16 +2203,19 @@ function runValidation() {
   var sidToRow = new Map();
   for (var i = 0; i < data.length; i++) {
     var s = (data[i].Sample_ID || "").trim();
-    if (s) sidToRow.set(s, data[i]);
+    if (s && !data[i]._commented) sidToRow.set(s, data[i]);
   }
   for (var i = 0; i < data.length; i++) {
     var control = (data[i].Control || "").trim();
     var sid = (data[i].Sample_ID || "").trim();
     var rowNum = i + 1;
     var rowKey = rows[i] ? rows[i].getIndex() : i;
-    if (!control) continue;
+    if (!control || data[i]._commented) continue;
 
-    if (!sampleIds.has(control)) {
+    if (!sampleIds.has(control) && commentedIds.has(control)) {
+      addIssue(cellIssues, errors, rowKey, "Control",
+        "[X] Row #" + rowNum + " '" + sid + "': Control '" + control + "' is commented out — the pipeline will not see it; uncomment it or comment this row too");
+    } else if (!sampleIds.has(control)) {
       addIssue(cellIssues, errors, rowKey, "Control",
         "[X] Row #" + rowNum + " '" + sid + "': Control '" + control + "' does not match any Sample_ID in the sheet");
     } else {
@@ -2204,7 +2240,7 @@ function runValidation() {
     var layout = (data[i].Read_layout || "").trim();
     var ipTarget = (data[i].IP_target || "").trim();
     var levels = (data[i].Levels || "").trim();
-    if (!sid || !assay || !genome) continue;
+    if (!sid || !assay || !genome || data[i]._commented) continue;
     // Skip control samples
     var ctrl = (data[i].Control || "").trim();
     if (IP_PEAK_ASSAYS.has(assay) && (!ipTarget || /^(WCE|Input|IgG)$/i.test(ipTarget))) continue;
@@ -2224,6 +2260,15 @@ function runValidation() {
           "warnings");
       }
     }
+  }
+
+  // Commented rows: only flag an ID that would collide once uncommented.
+  for (var i = 0; i < data.length; i++) {
+    if (!data[i]._commented) continue;
+    var sid = (data[i].Sample_ID || "").trim();
+    if (sid && sampleIds.has(sid))
+      addIssue(cellIssues, warnings, rows[i] ? rows[i].getIndex() : i, "Sample_ID",
+        "[!] Row #" + (i + 1) + " '" + sid + "' (commented): Sample_ID is also used by an active row — uncommenting it would create a duplicate", "warnings");
   }
 
   // --- Update UI ---
@@ -2373,11 +2418,75 @@ function readFileAsText(inputElement, callback) {
   inputElement.value = "";
 }
 
-function importTSV(text) {
-  var lines = text.split(/\r?\n/).filter(function(l) { return l.trim(); });
-  if (lines.length < 1) return;
+// --- Commented samples (issue #65) -----------------------------------------
+// read_sample_sheet() in sample_sheet.py drops every line whose first
+// non-whitespace character is '#' before parsing (wherever it sits, header
+// included), and pandas skips blank lines. The builder mirrors that, but keeps
+// what it skipped so an import -> export round trip writes the same lines:
+//   - a '#' line shaped like a data row (at least as many tab-separated fields
+//     as the required columns, and not a commented-out copy of the header) is
+//     a *commented sample*: the '#' prefix is stripped into _commentPrefix and
+//     the row is flagged _commented. It stays a full, editable row.
+//   - any other '#' line or blank line is a *note*. Notes before the header go
+//     to sheetPreamble; later ones ride on the next row (_notesBefore) so they
+//     move and are deleted with it; any after the last row go to sheetTrailer.
+var COMMENT_PREFIX_RE = /^\s*#+\s*/;
+var sheetPreamble = [];
+var sheetTrailer = [];
 
-  var header = lines[0].split("\t").map(function(s) { return s.trim(); });
+function isCommentLine(line) {
+  return /^\s*#/.test(line);
+}
+
+// Split a commented line into { prefix, fields } if it reads as a sample row,
+// or return null if it is a free-text comment. `required` is the number of
+// required columns, so a line of prose with a stray tab is not mistaken for a
+// sample.
+function parseCommentedRow(line, required) {
+  var m = line.match(COMMENT_PREFIX_RE);
+  if (!m) return null;
+  var fields = line.slice(m[0].length).split("\t");
+  if (fields.length < required) return null;
+  if (fields[0].trim() === "Sample_ID") return null; // commented-out header
+  return { prefix: m[0], fields: fields };
+}
+
+// Copy a row's data for a new row (duplicate / add replicate). Notes belong to
+// the line they precede in the original file, so a copy does not inherit them.
+function cloneRowData(row) {
+  var data = Object.assign({}, row.getData());
+  delete data.id;
+  delete data._notesBefore;
+  return data;
+}
+
+function setRowsCommented(rows, commented) {
+  for (var i = 0; i < rows.length; i++) {
+    if (!!rows[i].getData()._commented === commented) continue;
+    rows[i].update({ _commented: commented });
+    rows[i].reformat(); // re-run rowFormatter so the greying follows the flag
+  }
+  refreshUI();
+}
+
+function importTSV(text) {
+  var lines = text.split(/\r?\n/);
+  // A final newline leaves one empty string behind; it is not a blank line.
+  if (lines.length && lines[lines.length - 1] === "") lines.pop();
+
+  // The header is the first line that is neither blank nor a comment — the
+  // same line pandas ends up using once the comments are gone.
+  var headerIdx = -1;
+  for (var hi = 0; hi < lines.length; hi++) {
+    if (lines[hi].trim() && !isCommentLine(lines[hi])) { headerIdx = hi; break; }
+  }
+  if (headerIdx < 0) {
+    if (lines.some(function(l) { return l.trim(); }))
+      alert("Import error: no header line found (every line is blank or starts with '#').");
+    return;
+  }
+
+  var header = lines[headerIdx].split("\t").map(function(s) { return s.trim(); });
   // Validate header
   // Peak_type and Comments are optional on import: both apply to only some
   // rows (Peak_type to the pulldown assays, Comments to none), so a sheet may
@@ -2398,24 +2507,52 @@ function importTSV(text) {
     colIdx[COLUMNS[ci]] = header.indexOf(COLUMNS[ci]);
   }
 
+  var requiredCount = COLUMNS.length - OPTIONAL_ON_IMPORT.length;
   var rows = [];
-  for (var i = 1; i < lines.length; i++) {
-    var fields = lines[i].split("\t");
+  var pendingNotes = [];
+  for (var i = headerIdx + 1; i < lines.length; i++) {
+    var line = lines[i];
+    var fields, commented = null;
+    if (!line.trim()) { pendingNotes.push(line); continue; }
+    if (isCommentLine(line)) {
+      commented = parseCommentedRow(line, requiredCount);
+      if (!commented) { pendingNotes.push(line); continue; }
+      fields = commented.fields;
+    } else {
+      fields = line.split("\t");
+    }
     var row = {};
     for (var ci = 0; ci < COLUMNS.length; ci++) {
       var c = COLUMNS[ci];
       row[c] = (fields[colIdx[c]] || "").trim();
     }
+    if (commented) {
+      row._commented = true;
+      row._commentPrefix = commented.prefix;
+      // Kept verbatim: a commented row may predate the sheet's current factor
+      // set, and rebuilding its Levels from the factor columns would drop or
+      // blank the factors it does not share (see buildExportMatrix).
+      row._importedLevels = row.Levels;
+    }
+    if (pendingNotes.length) { row._notesBefore = pendingNotes; pendingNotes = []; }
     rows.push(row);
   }
+  sheetPreamble = lines.slice(0, headerIdx);
+  sheetTrailer = pendingNotes;
 
-  // Extract factors from the Levels column and set up factor columns
+  // Extract factors from the Levels column and set up factor columns. Active
+  // rows define the sheet's factors; a commented row is only consulted when no
+  // active row has Levels, since it may be a leftover from an older design.
   var importedFactors = [];
-  for (var i = 0; i < rows.length; i++) {
-    var parsed = parseLevels(rows[i].Levels || "");
-    if (parsed && parsed.length > 0) {
-      importedFactors = parsed.map(function(p) { return p.factor; });
-      break;
+  var factorPasses = [false, true];
+  for (var fp = 0; fp < factorPasses.length && !importedFactors.length; fp++) {
+    for (var i = 0; i < rows.length; i++) {
+      if (!!rows[i]._commented !== factorPasses[fp]) continue;
+      var parsed = parseLevels(rows[i].Levels || "");
+      if (parsed && parsed.length > 0) {
+        importedFactors = parsed.map(function(p) { return p.factor; });
+        break;
+      }
     }
   }
 
@@ -2458,22 +2595,42 @@ function sanitizeCell(v) {
 // row objects, so writing Levels/Sample_ID back onto them would mutate the
 // table itself — visibly rewriting cells just because the user previewed the
 // export command. Keep this function side-effect free.
+//
+// rows[i][0] already carries the '#' prefix of a commented row, so callers that
+// just join cells write it out correctly. meta[i] adds what only the TSV export
+// can carry: the note lines (comments/blank lines) that preceded the row.
 function buildExportMatrix() {
   var data = table.getData();
   if (data.length === 0) return null;
   var rows = [];
+  var meta = [];
   for (var i = 0; i < data.length; i++) {
     var row = Object.assign({}, data[i]);
     if (factors.length > 0) {
-      row.Levels = buildLevelsFromFactors(row);
+      row.Levels = commentedRowKeepsImportedLevels(row)
+        ? row._importedLevels : buildLevelsFromFactors(row);
     }
     if (!(row.Sample_ID || "").trim()) {
       var suggestion = suggestSampleId(row);
       if (suggestion) row.Sample_ID = suggestion;
     }
-    rows.push(COLUMNS.map(function(c) { return sanitizeCell(row[c]); }));
+    var cells = COLUMNS.map(function(c) { return sanitizeCell(row[c]); });
+    if (row._commented) cells[0] = (row._commentPrefix || "#") + cells[0];
+    rows.push(cells);
+    meta.push({ notesBefore: row._notesBefore || [] });
   }
-  return { header: COLUMNS.slice(), rows: rows };
+  return { header: COLUMNS.slice(), rows: rows, meta: meta };
+}
+
+// A commented row imported with Levels that do not fit the sheet's factor set
+// (e.g. parked from an earlier design with an extra factor) is written back
+// with its original Levels, as long as the user has not edited its factor
+// cells since. Rebuilding would silently drop the factors it does not share.
+function commentedRowKeepsImportedLevels(row) {
+  if (!row._commented || row._importedLevels == null) return false;
+  var probe = {};
+  populateFactorsFromLevels(Object.assign(probe, { Levels: row._importedLevels }));
+  return buildLevelsFromFactors(probe) === buildLevelsFromFactors(row);
 }
 
 // The sample-sheet filename chosen in the toolbar. Drives Export TSV and the
@@ -2507,10 +2664,12 @@ function syncSampleFilename(name, source) {
 function exportTSV() {
   var matrix = buildExportMatrix();
   if (!matrix) { alert("No data to export."); return; }
-  var lines = [matrix.header.join("\t")];
+  var lines = sheetPreamble.concat([matrix.header.join("\t")]);
   for (var i = 0; i < matrix.rows.length; i++) {
+    Array.prototype.push.apply(lines, matrix.meta[i].notesBefore);
     lines.push(matrix.rows[i].join("\t"));
   }
+  Array.prototype.push.apply(lines, sheetTrailer);
   // Browsers reduce the download name to a basename, so strip any directory.
   var fname = sheetFilename().split("/").pop() || "sample_sheet.tsv";
   downloadBlob(lines.join("\n") + "\n", "text/tab-separated-values", fname);
@@ -2525,6 +2684,10 @@ function shQuote(s) {
 // Uses printf with a recycled "%s\t...%s\n" format so real tabs come from the
 // format string (the pasted text carries literal "\t", avoiding tab-completion
 // mishaps in an interactive shell), and every cell is single-quoted.
+//
+// Commented rows come through with their '#' (it is part of the first cell).
+// Note lines (free-text comments, blank lines) do not: they have no columns to
+// fill the recycled format with, so only Export TSV writes them.
 function buildSheetCommand() {
   var matrix = buildExportMatrix();
   if (!matrix) return null;
@@ -2584,6 +2747,7 @@ function controlListValues(cell) {
   var rowData = cell.getRow().getData();
   var assay = (rowData.Assay || "").trim();
   var currentSid = (rowData.Sample_ID || "").trim();
+  var currentCommented = !!rowData._commented;
   var allData = table.getData();
 
   // Determine which assays are valid sources for controls
@@ -2597,6 +2761,9 @@ function controlListValues(cell) {
     var sid = (allData[i].Sample_ID || "").trim();
     var sAssay = (allData[i].Assay || "").trim();
     if (!sid || sid === currentSid) continue;
+    // An active row cannot use a commented sample as its Control: the pipeline
+    // never sees that sample. A commented row may point at either.
+    if (allData[i]._commented && !currentCommented) continue;
     if (validSourceAssays.has(sAssay)) {
       candidates.push(sid);
     }
@@ -2698,6 +2865,9 @@ table = new Tabulator("#table-container", {
   rowHeight: 32,
   index: "id",
   reactiveData: false,
+  rowFormatter: function(row) {
+    row.getElement().classList.toggle("row-commented", !!row.getData()._commented);
+  },
   // Keep Tab within the table: wrap from last cell to next row, last row to first
   navigatorNextCell: function(cell, direction) {
     var row = cell.getRow();
@@ -2886,6 +3056,7 @@ table.on("rowSelectionChanged", function(rows) {
   var hasSelection = rows.length > 0;
   document.getElementById("btn-dup-selected").disabled = !hasSelection;
   document.getElementById("btn-del-selected").disabled = !hasSelection;
+  updateCommentButton();
 });
 
 // Initial state
@@ -2956,6 +3127,24 @@ document.getElementById("btn-del-selected").addEventListener("click", function()
   refreshUI();
 });
 
+// One button toggles both ways: if every selected row is already commented it
+// uncomments them, otherwise it comments them all out.
+function updateCommentButton() {
+  var rows = table.getSelectedRows();
+  var btn = document.getElementById("btn-comment-selected");
+  btn.disabled = rows.length === 0;
+  var allCommented = rows.length > 0 && rows.every(function(r) { return !!r.getData()._commented; });
+  btn.textContent = allCommented ? "Uncomment Selected" : "Comment Selected";
+}
+
+document.getElementById("btn-comment-selected").addEventListener("click", function() {
+  var selected = table.getSelectedRows();
+  if (selected.length === 0) return;
+  var allCommented = selected.every(function(r) { return !!r.getData()._commented; });
+  setRowsCommented(selected, !allCommented);
+  updateCommentButton();
+});
+
 document.getElementById("btn-undo").addEventListener("click", function() {
   table.undo();
   refreshUI();
@@ -2976,10 +3165,9 @@ document.getElementById("btn-dup-selected").addEventListener("click", function()
   var allRows = table.getRows();
   selected.sort(function(a, b) { return allRows.indexOf(a) - allRows.indexOf(b); });
   for (var i = 0; i < selected.length; i++) {
-    var data = Object.assign({}, selected[i].getData());
+    var data = cloneRowData(selected[i]);
     data.Sample_ID = data.Sample_ID ? data.Sample_ID + "_copy" : "";
     data._sid_user_edited = !!data.Sample_ID;
-    delete data.id;
     table.addRow(data, false); // false = append at the bottom of the table
   }
   table.deselectRow();

@@ -77,7 +77,7 @@ Central sample-sheet logic lives in `workflow/scripts/sample_sheet.py`.
 
 ### Tools
 
-- `tools/epicc-builder.html` - Self-contained HTML5 app for building sample sheets and options files. Tabulator-based editor with validation, dynamic factor columns, per-cell examples, and YAML options export. Open directly in a browser.
+- `tools/epicc-builder.html` - Self-contained HTML5 app for building sample sheets and options files. Tabulator-based editor with validation, dynamic factor columns, per-cell examples, and YAML options export. Open directly in a browser. `#`-prefixed sample lines import as greyed-out *commented* rows (`_commented`, toggled by "Comment Selected"); they are skipped by validation except as a Control target (error) or an ID clashing with an active row (warning), and export with their original `#` prefix. Other `#` lines and blank lines are kept (`sheetPreamble`, per-row `_notesBefore`, `sheetTrailer`) so import→export is byte-identical. Tests: `tests/unit/test_builder_commented_rows.py`.
 - `dev/profile_snakemake_log.py` - Snakemake log profiler. Parses `.snakemake/log/*.snakemake.log` files and reports per-rule timing, phase summary, slowest jobs, and parallelism stats. Supports markdown (stdout) and self-contained HTML with Gantt timeline chart. Default mode auto-aggregates all logs from the same resumed run, identified by `output_dir` + `analysis_name` wildcards extracted from log content (not timestamps). The positional argument accepts either a single `.snakemake.log` file or a run's results directory (`output_dir`) — passing a directory aggregates every log matching that `output_dir` signature.
   ```bash
   python dev/profile_snakemake_log.py                       # aggregate latest run
