@@ -2832,12 +2832,17 @@ function controlListValues(cell) {
   return [""].concat(candidates);
 }
 
-// The pick-list label for a Control candidate: its ID, plus what it is.
+// The pick-list label for a Control candidate: its ID, plus what it is and
+// which row it is on — the row number (as in validation messages) is how an
+// off-screen candidate is found, since the table is never scrolled for it.
 function controlItemLabel(sid) {
   if (!sid) return "";
-  var d = table.getData().find(function(r) { return r.Sample_ID === sid; });
-  if (!d) return escapeHtml(sid);
-  var bits = [d.Assay, d.IP_target, d.Genome].filter(function(x) { return (x || "").trim(); });
+  var data = table.getData();
+  var idx = data.findIndex(function(r) { return r.Sample_ID === sid; });
+  if (idx < 0) return escapeHtml(sid);
+  var d = data[idx];
+  var bits = ["row " + (idx + 1)].concat(
+    [d.Assay, d.IP_target, d.Genome].filter(function(x) { return (x || "").trim(); }));
   return escapeHtml(sid) + ' <span class="ctrl-item-meta">' + escapeHtml(bits.join(" \u00b7 ")) + "</span>";
 }
 
@@ -2848,7 +2853,11 @@ function escapeHtml(v) {
 }
 
 // Highlight the table row a Control pick-list item refers to, while the item
-// is hovered or keyboard-focused, scrolling it into view if it is off-screen.
+// is hovered or keyboard-focused. Never scroll the table to it: the list editor
+// is anchored to the cell being edited, and scrolling that cell away closes
+// the editor mid-pick and drops the choice (only the first, already-visible
+// candidate could ever be picked). An off-screen row is identified by the row
+// number in the item's label instead.
 var _ctrlHighlighted = null;
 function highlightControlRow(sid) {
   if (_ctrlHighlighted) { _ctrlHighlighted.classList.remove("row-ref-highlight"); _ctrlHighlighted = null; }
@@ -2856,8 +2865,7 @@ function highlightControlRow(sid) {
   var row = table.getRows().find(function(r) { return r.getData().Sample_ID === sid; });
   if (!row) return;
   _ctrlHighlighted = row.getElement();
-  _ctrlHighlighted.classList.add("row-ref-highlight");
-  try { table.scrollToRow(row, "nearest", false); } catch (e) { /* not rendered */ }
+  if (_ctrlHighlighted) _ctrlHighlighted.classList.add("row-ref-highlight");
 }
 
 function wireControlRowHighlight() {
