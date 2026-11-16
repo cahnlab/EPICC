@@ -765,6 +765,35 @@ def _resolve_te_genome(args, config):
     return genome
 
 
+MERGED_CONFIG_MAX_AGE_H = 6.0
+
+
+def _prune_stale_merged_configs(merged_dir, max_age_h=MERGED_CONFIG_MAX_AGE_H):
+    """Remove merged options files left behind by a killed epicc.
+
+    Each run deletes its own merged file at exit, but a SIGKILL (an sbatch
+    hitting its time limit, scancel) skips atexit and the file stays. Cluster
+    jobs re-read the file every time one starts, so a live run's file must
+    never go: prune only while no snakemake lock is held in this run
+    directory (every real run holds one; a leftover lock just postpones the
+    sweep) and only files older than ``max_age_h``, which spares a concurrent
+    dry-run or validate, since those take no lock.
+    """
+    locks = merged_dir.parent / "locks"
+    try:
+        if locks.is_dir() and any(locks.iterdir()):
+            return
+        cutoff = time.time() - max_age_h * 3600
+        for f in merged_dir.glob("epicc_merged_*.yaml"):
+            try:
+                if f.stat().st_mtime < cutoff:
+                    f.unlink()
+            except OSError:
+                pass
+    except OSError:
+        pass
+
+
 def _prepare_options_file(args):
     """Return the options file path to use for snakemake.
 
@@ -816,6 +845,7 @@ def _prepare_options_file(args):
     # starts in another working directory still finds it.
     merged_dir = (Path.cwd() / ".snakemake" / "epicc").resolve()
     merged_dir.mkdir(parents=True, exist_ok=True)
+    _prune_stale_merged_configs(merged_dir)
     tmp = tempfile.NamedTemporaryFile(
         mode="w", suffix=".yaml", prefix="epicc_merged_", delete=False,
         dir=str(merged_dir),

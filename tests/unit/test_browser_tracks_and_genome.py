@@ -5,7 +5,9 @@ check_extra_output_files on browser_extra_tracks) and the epicc CLI plumbing
 that turns the new flags into config.
 """
 
+import os
 import sys
+import time
 import types
 from importlib.machinery import SourceFileLoader
 import importlib.util
@@ -173,6 +175,12 @@ def _merged(path):
 
 
 class TestRunGenomeFlags:
+    @pytest.fixture(autouse=True)
+    def _run_in_tmp(self, tmp_path, monkeypatch):
+        # _prepare_options_file writes under ./.snakemake/epicc; keep it out
+        # of whatever directory pytest was started from.
+        monkeypatch.chdir(tmp_path)
+
     def test_parser_accepts_flags(self, tmp_path):
         te = tmp_path / "te.bed"
         args = epicc.build_parser().parse_args(
@@ -263,6 +271,34 @@ class TestRunGenomeFlags:
         assert merged.parent == (run_dir / ".snakemake" / "epicc").resolve()
         assert _merged(merged)["genomes"]["B73"]["alt_te_file"] == str(te)
 
+    def _stale(self, merged_dir, name, age_h):
+        f = merged_dir / name
+        f.write_text("x: 1\n")
+        t = time.time() - age_h * 3600
+        os.utime(f, (t, t))
+        return f
+
+    def test_prunes_stale_merged_configs(self, tmp_path):
+        merged_dir = tmp_path / ".snakemake" / "epicc"
+        merged_dir.mkdir(parents=True)
+        old = self._stale(merged_dir, "epicc_merged_old.yaml", 7)
+        fresh = self._stale(merged_dir, "epicc_merged_new.yaml", 1)
+        other = self._stale(merged_dir, "keep_me.yaml", 7)
+        epicc._prune_stale_merged_configs(merged_dir)
+        assert not old.exists()
+        assert fresh.exists() and other.exists()
+
+    def test_prune_skipped_while_a_run_holds_the_lock(self, tmp_path):
+        # A live run's jobs re-read its merged file whenever one starts.
+        merged_dir = tmp_path / ".snakemake" / "epicc"
+        merged_dir.mkdir(parents=True)
+        locks = tmp_path / ".snakemake" / "locks"
+        locks.mkdir()
+        (locks / "0.input.lock").write_text("")
+        old = self._stale(merged_dir, "epicc_merged_old.yaml", 48)
+        epicc._prune_stale_merged_configs(merged_dir)
+        assert old.exists()
+
 
 # ---------------------------------------------------------------------------
 # epicc output: --extra-tracks[-labels|-colors]
@@ -276,6 +312,12 @@ def _output_args(tmp_path, *extra):
 
 
 class TestOutputExtraTracks:
+    @pytest.fixture(autouse=True)
+    def _run_in_tmp(self, tmp_path, monkeypatch):
+        # _prepare_options_file writes under ./.snakemake/epicc; keep it out
+        # of whatever directory pytest was started from.
+        monkeypatch.chdir(tmp_path)
+
     def test_parse_and_entries(self, tmp_path):
         a, b = tmp_path / "a.bed", tmp_path / "b.bed.gz"
         a.write_text("")
