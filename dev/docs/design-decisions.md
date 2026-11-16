@@ -211,6 +211,16 @@ A reference for architectural choices in the pipeline. Intended for contributors
 
 ---
 
+### Methylation heatmaps and metaplots are one context per plot
+
+**Decision**: The deeptools heatmaps and metaplots for mC are built per methylation context. The env wildcard of the matrix and plot rules takes `mCG`, `mCHG` or `mCHH` (one per entry of `methylation_contexts`), so `rule all` asks for `Heatmap__{matrix}__mCG__…`, `Profile__{matrix}__mCHH__…` and so on, and each gets its own matrix, scale files and PDF. The sorted mC heatmap (`Heatmap_sorted__`) is likewise one per context, each sorted by the same `most` heatmap order. Plain `mC` remains a valid env selecting every context; only the browser targets it. `epicc output --env mC` for a heatmap or metaplot expands to one target per configured context.
+
+**Rationale**: With every context in one matrix, `Profile_pergroup` drew all of a sample's contexts as lines in one panel, in one colour, because line colours are keyed on `levels_label` so a genotype keeps one colour across plots. CG, CHG and CHH sit at different levels and are read separately, so mixing them in one plot gave nothing to compare. Using the context as the env value reuses the names the per-context PCA already had (`PCA__mCG__…`) and the `epicc output --env` choices the CLI already listed, and it needs no new wildcard: every downstream rule, the scale calculation and the `matrix_region_labels.py` region labelling are unchanged. The per-sample colours remain consistent across the context plots. On the ColCEN test sheet the dry-run goes from 609 to 669 jobs. The 12 mC matrix/scale/profile jobs and 6 sort/sorted-heatmap jobs each become one per context. No non-mC output changes.
+
+**Alternatives considered**: (1) Keep one matrix and colour lines by context. Rejected: colour already identifies the sample, and a two-way colour/linestyle key on top of `--perGroup`'s legend does not scale past a few samples. (2) A separate `{context}` wildcard alongside `{env}`. Rejected: it would touch every combined rule and path pattern for one env, while `m<ctx>` fits the existing `env` slot. (3) Splitting only the per-group profile. Rejected: the per-sample profile and the heatmap then still put all three contexts in one PDF.
+
+---
+
 ## Configuration Naming
 
 ### "Options file" replaces "config file" for the pipeline YAML
