@@ -1,13 +1,13 @@
 Assay	Genome	Levels	Replicate_ID	Read_files	Read_layout	IP_target	Control	Peak_type
-ChIP	Spombe	genotype:WT	rep1	SRR20678305	PE	H3K9me2	WT_WCE_rep1	broad
-ChIP	Spombe	genotype:WT	rep2	SRR20678333	PE	H3K9me2	WT_WCE_rep1	broad
-ChIP	Spombe	genotype:WT	rep1	SRR20678311	PE	H3K9me3	WT_WCE_rep1	broad
-ChIP	Spombe	genotype:WT	rep2	SRR20678336	PE	H3K9me3	WT_WCE_rep1	broad
-ChIP	Spombe	genotype:dcr1	rep1	SRR20678308	PE	H3K9me2	WT_WCE_rep1	broad
-ChIP	Spombe	genotype:dcr1	rep1	SRR20678314	PE	H3K9me3	WT_WCE_rep1	broad
+ChIP	Spombe	genotype:WT	rep1	SRR20678305	PE	H3K9me2	WT_ChIP_WCE_rep1	broad
+ChIP	Spombe	genotype:WT	rep2	SRR20678333	PE	H3K9me2	WT_ChIP_WCE_rep1	broad
+ChIP	Spombe	genotype:WT	rep1	SRR20678311	PE	H3K9me3	WT_ChIP_WCE_rep1	broad
+ChIP	Spombe	genotype:WT	rep2	SRR20678336	PE	H3K9me3	WT_ChIP_WCE_rep1	broad
+ChIP	Spombe	genotype:dcr1	rep1	SRR20678308	PE	H3K9me2	WT_ChIP_WCE_rep1	broad
+ChIP	Spombe	genotype:dcr1	rep1	SRR20678314	PE	H3K9me3	WT_ChIP_WCE_rep1	broad
 ChIP	Spombe	genotype:WT	rep1	SRR5445712	PE	WCE		broad
-ChIP	Spombe	genotype:WT	rep1	SRR31073789	SE	H3K4me3	WT_Input_rep1	narrow
-ChIP	Spombe	genotype:WT	rep2	SRR31073812	SE	H3K4me3	WT_Input_rep1	narrow
+ChIP	Spombe	genotype:WT	rep1	SRR31073789	SE	H3K4me3	WT_ChIP_Input_rep1	narrow
+ChIP	Spombe	genotype:WT	rep2	SRR31073812	SE	H3K4me3	WT_ChIP_Input_rep1	narrow
 ChIP	Spombe	genotype:WT	rep1	SRR31073785	SE	Input		narrow
 RNAseq	Spombe	genotype:WT	rep1	SRR30889044	SE			
 RNAseq	Spombe	genotype:WT	rep2	SRR30889043	SE			

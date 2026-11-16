@@ -425,7 +425,7 @@ def check_table(tab, check_paths=True):
                 errors.append(
                     f"[X] Row #{i} '{sid}': Control '{control}' does not match "
                     f"any Sample_ID in the sheet{hint} (Sample_IDs are derived: "
-                    f"'{{level values}}_{{IP_target}}_{{Replicate_ID}}')"
+                    f"'{{level values}}_ChIP_{{IP_target}}_{{Replicate_ID}}' for ChIP)"
                 )
             # A sample cannot be its own control.
             if control == sid:

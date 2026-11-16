@@ -6,21 +6,21 @@ resolved for ChIP_broad and ChIP_narrow assay types without executing rules.
 
 Test samples (from test_samples_ChIP.tsv):
   ChIP_broad (H3K9me2):
-    WT_H3K9me2_rep1         ChIP_broad   PE   genotype:WT       (ctrl: WT_WCE_rep1)
-    WT_H3K9me2_rep2         ChIP_broad   PE   genotype:WT       (ctrl: WT_WCE_rep2)
-    mutant_H3K9me2_rep1     ChIP_broad   PE   genotype:mutant   (ctrl: mutant_WCE_rep1)
-    mutant_H3K9me2_rep2     ChIP_broad   PE   genotype:mutant   (ctrl: mutant_WCE_rep1)
-    WT_WCE_rep1             ChIP_broad   PE   genotype:WT       (control)
-    WT_WCE_rep2             ChIP_broad   PE   genotype:WT       (control)
-    mutant_WCE_rep1         ChIP_broad   PE   genotype:mutant   (control)
-    mutant_WCE_rep2         ChIP_broad   PE   genotype:mutant   (control)
+    WT_ChIP_H3K9me2_rep1        ChIP_broad   PE   genotype:WT       (ctrl: WT_ChIP_WCE_rep1)
+    WT_ChIP_H3K9me2_rep2        ChIP_broad   PE   genotype:WT       (ctrl: WT_ChIP_WCE_rep2)
+    mutant_ChIP_H3K9me2_rep1    ChIP_broad   PE   genotype:mutant   (ctrl: mutant_ChIP_WCE_rep1)
+    mutant_ChIP_H3K9me2_rep2    ChIP_broad   PE   genotype:mutant   (ctrl: mutant_ChIP_WCE_rep1)
+    WT_ChIP_WCE_rep1            ChIP_broad   PE   genotype:WT       (control)
+    WT_ChIP_WCE_rep2            ChIP_broad   PE   genotype:WT       (control)
+    mutant_ChIP_WCE_rep1        ChIP_broad   PE   genotype:mutant   (control)
+    mutant_ChIP_WCE_rep2        ChIP_broad   PE   genotype:mutant   (control)
   ChIP_narrow (H3K4me3):
-    WT_H3K4me3_rep1         ChIP_narrow  SE   genotype:WT       (ctrl: WT_Input_rep1)
-    WT_H3K4me3_rep2         ChIP_narrow  SE   genotype:WT       (ctrl: WT_Input_rep1)
-    mutant_H3K4me3_rep1     ChIP_narrow  SE   genotype:mutant   (ctrl: WT_Input_rep1)
-    mutant_H3K4me3_rep2     ChIP_narrow  SE   genotype:mutant   (ctrl: WT_Input_rep1)
-    WT_Input_rep1           ChIP_narrow  SE   genotype:WT       (control)
-    mutant_Input_rep1       ChIP_narrow  SE   genotype:mutant   (control)
+    WT_ChIP_H3K4me3_rep1        ChIP_narrow  SE   genotype:WT       (ctrl: WT_ChIP_Input_rep1)
+    WT_ChIP_H3K4me3_rep2        ChIP_narrow  SE   genotype:WT       (ctrl: WT_ChIP_Input_rep1)
+    mutant_ChIP_H3K4me3_rep1    ChIP_narrow  SE   genotype:mutant   (ctrl: WT_ChIP_Input_rep1)
+    mutant_ChIP_H3K4me3_rep2    ChIP_narrow  SE   genotype:mutant   (ctrl: WT_ChIP_Input_rep1)
+    WT_ChIP_Input_rep1          ChIP_narrow  SE   genotype:WT       (control)
+    mutant_ChIP_Input_rep1      ChIP_narrow  SE   genotype:mutant   (control)
 """
 
 import pytest
@@ -42,14 +42,14 @@ _OUTPUT_DIR = load_output_dir("test_options_ChIP.yaml")
 # ---------------------------------------------------------------------------
 
 # Per-replicate bigwig targets (FC__final__{sample_name}.bw)
-BROAD_PE_BIGWIG = f"{_OUTPUT_DIR}/ChIP/tracks/FC__final__WT_H3K9me2_rep1.bw"
-BROAD_PE_REP2_BIGWIG = f"{_OUTPUT_DIR}/ChIP/tracks/FC__final__WT_H3K9me2_rep2.bw"
-NARROW_SE_BIGWIG = f"{_OUTPUT_DIR}/ChIP/tracks/FC__final__WT_H3K4me3_rep1.bw"
-MUTANT_BROAD_BIGWIG = f"{_OUTPUT_DIR}/ChIP/tracks/FC__final__mutant_H3K9me2_rep1.bw"
+BROAD_PE_BIGWIG = f"{_OUTPUT_DIR}/ChIP/tracks/FC__final__WT_ChIP_H3K9me2_rep1.bw"
+BROAD_PE_REP2_BIGWIG = f"{_OUTPUT_DIR}/ChIP/tracks/FC__final__WT_ChIP_H3K9me2_rep2.bw"
+NARROW_SE_BIGWIG = f"{_OUTPUT_DIR}/ChIP/tracks/FC__final__WT_ChIP_H3K4me3_rep1.bw"
+MUTANT_BROAD_BIGWIG = f"{_OUTPUT_DIR}/ChIP/tracks/FC__final__mutant_ChIP_H3K9me2_rep1.bw"
 
 # Per-replicate peak targets
-BROAD_PE_PEAKS = f"{_OUTPUT_DIR}/ChIP/peaks/peaks_pe__final__WT_H3K9me2_rep1_peaks.broadPeak"
-NARROW_SE_PEAKS = f"{_OUTPUT_DIR}/ChIP/peaks/peaks_se__final__WT_H3K4me3_rep1_peaks.narrowPeak"
+BROAD_PE_PEAKS = f"{_OUTPUT_DIR}/ChIP/peaks/peaks_pe__final__WT_ChIP_H3K9me2_rep1_peaks.broadPeak"
+NARROW_SE_PEAKS = f"{_OUTPUT_DIR}/ChIP/peaks/peaks_se__final__WT_ChIP_H3K4me3_rep1_peaks.narrowPeak"
 
 # Analysis-level names (Assay__levels_label__IP_target__Genome)
 BROAD_WT_ANALYSIS = "ChIP_broad__WT__H3K9me2__test_genome"
@@ -226,9 +226,9 @@ class TestWildcardResolution:
         if not snakemake_available:
             pytest.skip("Snakemake not installed")
         targets = [
-            f"{_OUTPUT_DIR}/ChIP/tracks/FC__final__WT_H3K9me2_rep1.bw",
-            f"{_OUTPUT_DIR}/ChIP/tracks/FC__final__WT_H3K9me2_rep2.bw",
-            f"{_OUTPUT_DIR}/ChIP/tracks/FC__final__mutant_H3K9me2_rep1.bw",
+            f"{_OUTPUT_DIR}/ChIP/tracks/FC__final__WT_ChIP_H3K9me2_rep1.bw",
+            f"{_OUTPUT_DIR}/ChIP/tracks/FC__final__WT_ChIP_H3K9me2_rep2.bw",
+            f"{_OUTPUT_DIR}/ChIP/tracks/FC__final__mutant_ChIP_H3K9me2_rep1.bw",
         ]
         for target in targets:
             result = run_snakemake_dryrun(repo_root, test_options, target)
@@ -239,8 +239,8 @@ class TestWildcardResolution:
         if not snakemake_available:
             pytest.skip("Snakemake not installed")
         targets = [
-            f"{_OUTPUT_DIR}/ChIP/tracks/FC__final__WT_H3K4me3_rep1.bw",
-            f"{_OUTPUT_DIR}/ChIP/tracks/FC__final__WT_H3K4me3_rep2.bw",
+            f"{_OUTPUT_DIR}/ChIP/tracks/FC__final__WT_ChIP_H3K4me3_rep1.bw",
+            f"{_OUTPUT_DIR}/ChIP/tracks/FC__final__WT_ChIP_H3K4me3_rep2.bw",
         ]
         for target in targets:
             result = run_snakemake_dryrun(repo_root, test_options, target)
@@ -251,8 +251,8 @@ class TestWildcardResolution:
         if not snakemake_available:
             pytest.skip("Snakemake not installed")
         targets = [
-            f"{_OUTPUT_DIR}/ChIP/peaks/peaks_pe__final__WT_H3K9me2_rep1_peaks.broadPeak",
-            f"{_OUTPUT_DIR}/ChIP/peaks/peaks_se__final__WT_H3K4me3_rep1_peaks.narrowPeak",
+            f"{_OUTPUT_DIR}/ChIP/peaks/peaks_pe__final__WT_ChIP_H3K9me2_rep1_peaks.broadPeak",
+            f"{_OUTPUT_DIR}/ChIP/peaks/peaks_se__final__WT_ChIP_H3K4me3_rep1_peaks.narrowPeak",
         ]
         for target in targets:
             result = run_snakemake_dryrun(repo_root, test_options, target)

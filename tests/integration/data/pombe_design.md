@@ -39,13 +39,13 @@ transitions." PubMed: 39477922.
 
 | Sample_ID | Genotype | Mark | SRR |
 |-----------|----------|------|-----|
-| WT_H3K9me2_rep1 | WT | H3K9me2 | SRR20678305 |
-| WT_H3K9me2_rep2 | WT | H3K9me2 | SRR20678333 |
-| WT_H3K9me3_rep1 | WT | H3K9me3 | SRR20678311 |
-| WT_H3K9me3_rep2 | WT | H3K9me3 | SRR20678336 |
-| dcr1_H3K9me2_rep1 | dcr1 | H3K9me2 | SRR20678308 |
-| dcr1_H3K9me3_rep1 | dcr1 | H3K9me3 | SRR20678314 |
-| WT_WCE_rep1 | WT | WCE (control) | SRR5445712 |
+| WT_ChIP_H3K9me2_rep1 | WT | H3K9me2 | SRR20678305 |
+| WT_ChIP_H3K9me2_rep2 | WT | H3K9me2 | SRR20678333 |
+| WT_ChIP_H3K9me3_rep1 | WT | H3K9me3 | SRR20678311 |
+| WT_ChIP_H3K9me3_rep2 | WT | H3K9me3 | SRR20678336 |
+| dcr1_ChIP_H3K9me2_rep1 | dcr1 | H3K9me2 | SRR20678308 |
+| dcr1_ChIP_H3K9me3_rep1 | dcr1 | H3K9me3 | SRR20678314 |
+| WT_ChIP_WCE_rep1 | WT | WCE (control) | SRR5445712 |
 
 ### Design note
 
@@ -72,9 +72,9 @@ PubMed: 39449363.
 
 | Sample_ID | Mark | SRR |
 |-----------|------|-----|
-| WT_H3K4me3_rep1 | H3K4me3 | SRR31073789 |
-| WT_H3K4me3_rep2 | H3K4me3 | SRR31073812 |
-| WT_Input_rep1 | Input (control) | SRR31073785 |
+| WT_ChIP_H3K4me3_rep1 | H3K4me3 | SRR31073789 |
+| WT_ChIP_H3K4me3_rep2 | H3K4me3 | SRR31073812 |
+| WT_ChIP_Input_rep1 | Input (control) | SRR31073785 |
 
 ### Design rationale
 

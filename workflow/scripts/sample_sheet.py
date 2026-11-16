@@ -190,10 +190,11 @@ ASSAY_SHORT = {
     "dmC": "dmC",
 }
 
-# Pulldown assays other than ChIP prefix their IP_target, so a CUT&RUN, a
-# CUT&Tag and a ChIP of the same target in the same condition stay distinct.
-# ChIP carries no prefix, which keeps the long-standing '{levels}_{IP}_{rep}'.
-ASSAY_ID_PREFIX = {"CUT_RUN": "CR", "CUT_TAG": "CT"}
+# Every pulldown assay prefixes its IP_target with an assay tag, so a ChIP, a
+# CUT&RUN and a CUT&Tag of the same target in the same condition stay distinct
+# and each name says which method produced it. This covers control rows too
+# (WT_ChIP_Input_rep1).
+ASSAY_ID_PREFIX = {"ChIP": "ChIP", "CUT_RUN": "CR", "CUT_TAG": "CT"}
 
 
 def sample_id_parts(row):
@@ -242,12 +243,12 @@ def sample_id_parts(row):
 def derive_sample_id(row):
     """Sample_ID for a sheet row: '{level values}_{tag}_{Replicate_ID}'.
 
-    The tag is IP_target for ChIP, 'CR_'/'CT_' + IP_target for CUT&RUN /
-    CUT&Tag, and the ASSAY_SHORT token otherwise:
+    The tag is 'ChIP_'/'CR_'/'CT_' + IP_target for ChIP / CUT&RUN / CUT&Tag,
+    and the ASSAY_SHORT token otherwise:
 
     >>> derive_sample_id({"Assay": "ChIP", "Levels": "genotype:WT",
     ...                   "IP_target": "H3K9me2", "Replicate_ID": "rep1"})
-    'WT_H3K9me2_rep1'
+    'WT_ChIP_H3K9me2_rep1'
     >>> derive_sample_id({"Assay": "RNAseq", "Levels": "genotype:WT,tissue:leaf",
     ...                   "Replicate_ID": "rep2"})
     'WT_leaf_RNA_rep2'

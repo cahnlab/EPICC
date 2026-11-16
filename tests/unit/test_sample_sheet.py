@@ -493,7 +493,7 @@ class TestCombinedAssayTokensRejectedOnInput:
         f.write_text("\n".join([
             self.HEADER,
             f"{assay}\tG\tgenotype:WT\trep1\tSRR1\tSE\tInput\t\t{peak_type}",
-            f"{assay}\tG\tgenotype:WT\trep1\tSRR2\tSE\tH3K9me2\tWT_Input_rep1\t{peak_type}",
+            f"{assay}\tG\tgenotype:WT\trep1\tSRR2\tSE\tH3K9me2\tWT_ChIP_Input_rep1\t{peak_type}",
         ]) + "\n")
         return read_sample_sheet(f)
 
@@ -614,8 +614,8 @@ class TestAddCompatColumns:
 
 class TestReadSampleSheet:
     HEADER = "Assay\tGenome\tLevels\tReplicate_ID\tRead_files\tRead_layout\tIP_target\tControl"
-    ROW_A = "ChIP_broad\tColCEN\tgenotype:WT\trep1\tSRR000001\tSE\tH3K9me2\tWT_Input_rep1"
-    ROW_B = "ChIP_broad\tColCEN\tgenotype:WT\trep2\tSRR000002\tSE\tH3K9me2\tWT_Input_rep1"
+    ROW_A = "ChIP_broad\tColCEN\tgenotype:WT\trep1\tSRR000001\tSE\tH3K9me2\tWT_ChIP_Input_rep1"
+    ROW_B = "ChIP_broad\tColCEN\tgenotype:WT\trep2\tSRR000002\tSE\tH3K9me2\tWT_ChIP_Input_rep1"
     ROW_C = "ChIP_broad\tColCEN\tgenotype:WT\trep1\tSRR000003\tSE\tInput\t"
 
     def test_full_line_comments_skipped(self, tmp_path):
@@ -630,14 +630,14 @@ class TestReadSampleSheet:
             ]) + "\n"
         )
         df = read_sample_sheet(f)
-        assert sorted(df["Sample_ID"]) == ["WT_H3K9me2_rep1", "WT_Input_rep1"]
+        assert sorted(df["Sample_ID"]) == ["WT_ChIP_H3K9me2_rep1", "WT_ChIP_Input_rep1"]
 
     def test_no_comments_unaffected(self, tmp_path):
         f = tmp_path / "samples.tsv"
         f.write_text("\n".join([self.HEADER, self.ROW_A, self.ROW_B, self.ROW_C]) + "\n")
         df = read_sample_sheet(f)
         assert sorted(df["Sample_ID"]) == [
-            "WT_H3K9me2_rep1", "WT_H3K9me2_rep2", "WT_Input_rep1"]
+            "WT_ChIP_H3K9me2_rep1", "WT_ChIP_H3K9me2_rep2", "WT_ChIP_Input_rep1"]
 
 
 class TestPeakTypeSeparation:
@@ -667,13 +667,13 @@ class TestPeakTypeSeparation:
 
     def test_separated_form_combines_and_keeps_peak_in_name(self, tmp_path):
         df = self._read(tmp_path, [
-            "ChIP\tbroad\tG\tgenotype:WT\trep1\tSRR1\tSE\tH3K9me2\tWT_Input_rep1",
+            "ChIP\tbroad\tG\tgenotype:WT\trep1\tSRR1\tSE\tH3K9me2\tWT_ChIP_Input_rep1",
             "ChIP\tbroad\tG\tgenotype:WT\trep1\tSRR2\tSE\tInput\t",
         ])
         c = add_compat_columns(df)
         assert list(c["Assay"]) == ["ChIP_broad", "ChIP_broad"]
         assert set(c["env"]) == {"ChIP"}
-        ip = c[c["Sample_ID"] == "WT_H3K9me2_rep1"].iloc[0]
+        ip = c[c["Sample_ID"] == "WT_ChIP_H3K9me2_rep1"].iloc[0]
         assert build_analysis_name(ip) == "ChIP_broad__WT__H3K9me2__G"
 
     def test_legacy_combined_still_works(self, tmp_path):
@@ -682,7 +682,7 @@ class TestPeakTypeSeparation:
         f.write_text(
             "Assay\tGenome\tLevels\tReplicate_ID\tRead_files\t"
             "Read_layout\tIP_target\tControl\n"
-            "ChIP_narrow\tG\tgenotype:WT\trep1\tSRR1\tSE\tH3K4me3\tWT_Input_rep1\n"
+            "ChIP_narrow\tG\tgenotype:WT\trep1\tSRR1\tSE\tH3K4me3\tWT_ChIP_Input_rep1\n"
             "ChIP_narrow\tG\tgenotype:WT\trep1\tSRR2\tSE\tInput\t\n"
         )
         c = add_compat_columns(read_sample_sheet(f))

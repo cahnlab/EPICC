@@ -48,9 +48,9 @@ def _read(tmp_path, rows, header=HEADER, name="s.tsv"):
 class TestDerivation:
     @pytest.mark.parametrize("row,expected", [
         ({"Assay": "ChIP", "Levels": "genotype:WT", "IP_target": "H3K9me2",
-          "Replicate_ID": "rep1"}, "WT_H3K9me2_rep1"),
+          "Replicate_ID": "rep1"}, "WT_ChIP_H3K9me2_rep1"),
         ({"Assay": "ChIP", "Levels": "genotype:WT,tissue:leaf", "IP_target": "Input",
-          "Replicate_ID": "rep2"}, "WT_leaf_Input_rep2"),
+          "Replicate_ID": "rep2"}, "WT_leaf_ChIP_Input_rep2"),
         ({"Assay": "CUT_RUN", "Levels": "genotype:WT", "IP_target": "H3K27me3",
           "Replicate_ID": "rep1"}, "WT_CR_H3K27me3_rep1"),
         ({"Assay": "CUT_TAG", "Levels": "genotype:WT", "IP_target": "IgG",
@@ -61,7 +61,7 @@ class TestDerivation:
          "cell_line_dmC_HG002"),
         # The combined internal token names the library the same way.
         ({"Assay": "ChIP_narrow", "Levels": "genotype:WT", "IP_target": "CTCF",
-          "Replicate_ID": "rep1"}, "WT_CTCF_rep1"),
+          "Replicate_ID": "rep1"}, "WT_ChIP_CTCF_rep1"),
     ])
     def test_forms(self, row, expected):
         assert derive_sample_id(row) == expected
@@ -152,10 +152,10 @@ class TestValidation:
     def test_unknown_control_suggests_close_match(self, tmp_path):
         df = _read(tmp_path, [
             _r("ChIP", "genotype:WT", "rep1", ip="Input", reads="SRR1"),
-            _r("ChIP", "genotype:WT", "rep1", ip="H3", control="WT_Input_rep2x",
+            _r("ChIP", "genotype:WT", "rep1", ip="H3", control="WT_ChIP_Input_rep2x",
                peak="broad", reads="SRR2"),
         ])
-        with pytest.raises(ValueError, match="did you mean 'WT_Input_rep1'"):
+        with pytest.raises(ValueError, match="did you mean 'WT_ChIP_Input_rep1'"):
             check_table(df, check_paths=False)
 
 

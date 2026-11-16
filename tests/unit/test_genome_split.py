@@ -127,8 +127,8 @@ class TestControlMergeAcceptsQualifiedNames:
     """
 
     ROWS = [
-        "ChIP\tB73,W22\tgenotype:WT\trep1\tSRR0000001\tSE\tH3K9me2\tWT_Input_rep1",
-        "ChIP\tB73,W22\tgenotype:WT\trep2\tSRR0000002\tSE\tH3K9me2\tWT_Input_rep2",
+        "ChIP\tB73,W22\tgenotype:WT\trep1\tSRR0000001\tSE\tH3K9me2\tWT_ChIP_Input_rep1",
+        "ChIP\tB73,W22\tgenotype:WT\trep2\tSRR0000002\tSE\tH3K9me2\tWT_ChIP_Input_rep2",
         "ChIP\tB73,W22\tgenotype:WT\trep1\tSRR0000003\tSE\tInput\t",
         "ChIP\tB73,W22\tgenotype:WT\trep2\tSRR0000004\tSE\tInput\t",
     ]
@@ -138,24 +138,24 @@ class TestControlMergeAcceptsQualifiedNames:
 
     def test_qualified_control_name_resolves(self, tmp_path):
         df = self._df(tmp_path)
-        assert get_replicate_sample_ids("WT_Input_rep1__B73", df) == [
-            "WT_Input_rep1__B73", "WT_Input_rep2__B73"]
+        assert get_replicate_sample_ids("WT_ChIP_Input_rep1__B73", df) == [
+            "WT_ChIP_Input_rep1__B73", "WT_ChIP_Input_rep2__B73"]
 
     def test_bare_control_name_still_resolves(self, tmp_path):
         df = self._df(tmp_path)
-        assert get_replicate_sample_ids("WT_Input_rep1", df) != []
+        assert get_replicate_sample_ids("WT_ChIP_Input_rep1", df) != []
 
     def test_replicates_never_mix_genomes(self, tmp_path):
         df = self._df(tmp_path)
         for genome in ("B73", "W22"):
-            got = get_replicate_sample_ids("WT_Input_rep1__" + genome, df)
-            assert got, f"no replicates for WT_Input_rep1__{genome}"
+            got = get_replicate_sample_ids("WT_ChIP_Input_rep1__" + genome, df)
+            assert got, f"no replicates for WT_ChIP_Input_rep1__{genome}"
             assert {g.rsplit("__", 1)[1] for g in got} == {genome}
 
     def test_either_replicate_names_the_same_group(self, tmp_path):
         df = self._df(tmp_path)
-        assert (get_replicate_sample_ids("WT_Input_rep1__B73", df)
-                == get_replicate_sample_ids("WT_Input_rep2__B73", df))
+        assert (get_replicate_sample_ids("WT_ChIP_Input_rep1__B73", df)
+                == get_replicate_sample_ids("WT_ChIP_Input_rep2__B73", df))
 
     def test_unknown_name_still_returns_empty(self, tmp_path):
         df = self._df(tmp_path)

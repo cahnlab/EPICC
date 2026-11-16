@@ -92,10 +92,10 @@ const SHEET = [
   "",
   H,
   row("ChIP", "ColCEN", "genotype:WT,tissue:leaf", "rep1", "SRR1", "SE", "Input", "", "", ""),
-  row("ChIP", "ColCEN", "genotype:WT,tissue:leaf", "rep1", "SRR2", "SE", "H3K9me2", "WT_leaf_Input_rep1", "broad", "a # in a comment"),
+  row("ChIP", "ColCEN", "genotype:WT,tissue:leaf", "rep1", "SRR2", "SE", "H3K9me2", "WT_leaf_ChIP_Input_rep1", "broad", "a # in a comment"),
   "",
   "# --- parked samples ---",
-  "#" + row("ChIP", "ColCEN", "genotype:WT,tissue:leaf", "rep2", "SRR3", "SE", "H3K9me2", "WT_leaf_Input_rep1", "broad", ""),
+  "#" + row("ChIP", "ColCEN", "genotype:WT,tissue:leaf", "rep2", "SRR3", "SE", "H3K9me2", "WT_leaf_ChIP_Input_rep1", "broad", ""),
   "  ## " + row("ChIP", "ColCEN", "genotype:WT,tissue:leaf,time:0h", "rep1", "SRR4", "SE", "H3K9me2", "", "broad", "old design"),
   "#" + H,
   "# prose\twith a stray tab",
@@ -109,8 +109,8 @@ const ids = ctx.tableRows.map((r) => r.Sample_ID);
 const commented = ctx.tableRows.map((r) => !!r._commented);
 check("no import alerts: " + ctx.alerts.join("; "), ctx.alerts.length === 0);
 check("five sample rows with derived IDs, got " + JSON.stringify(ids),
-  JSON.stringify(ids) === JSON.stringify(["WT_leaf_Input_rep1", "WT_leaf_H3K9me2_rep1",
-    "WT_leaf_H3K9me2_rep2", "WT_leaf_0h_H3K9me2_rep1", "WT_leaf_ATAC_rep1"]));
+  JSON.stringify(ids) === JSON.stringify(["WT_leaf_ChIP_Input_rep1", "WT_leaf_ChIP_H3K9me2_rep1",
+    "WT_leaf_ChIP_H3K9me2_rep2", "WT_leaf_0h_ChIP_H3K9me2_rep1", "WT_leaf_ATAC_rep1"]));
 check("'#' stripped and rows flagged commented",
   JSON.stringify(commented) === JSON.stringify([false, false, true, true, false]));
 check("factors come from active rows, not the parked 3-factor row",
@@ -135,7 +135,7 @@ const out = ctx.downloads[0].split("\n");
 check("newly commented row gets a plain '#'", out.indexOf("#" + row("ChIP", "ColCEN",
   "genotype:WT,tissue:leaf", "rep1", "SRR1", "SE", "Input", "", "", "")) !== -1);
 check("uncommented row loses its '#'", out.indexOf(row("ChIP", "ColCEN",
-  "genotype:WT,tissue:leaf", "rep2", "SRR3", "SE", "H3K9me2", "WT_leaf_Input_rep1", "broad", "")) !== -1);
+  "genotype:WT,tissue:leaf", "rep2", "SRR3", "SE", "H3K9me2", "WT_leaf_ChIP_Input_rep1", "broad", "")) !== -1);
 
 // Editing a parked row's factor cell rebuilds its Levels from the factor set.
 ctx = builderView(SHEET);
@@ -148,15 +148,15 @@ check("edited parked row's Levels rebuilt",
 ctx = builderView(SHEET);
 ctx.tableRows[0]._factor_genotype = "Col0";          // the Input's ID changes
 ctx.adoptDerivedIds(ctx.tableRows);
-check("edited row re-derives its ID", ctx.tableRows[0].Sample_ID === "Col0_leaf_Input_rep1");
+check("edited row re-derives its ID", ctx.tableRows[0].Sample_ID === "Col0_leaf_ChIP_Input_rep1");
 check("Control follows the renamed control row",
-  ctx.tableRows[1].Control === "Col0_leaf_Input_rep1" && ctx.tableRows[2].Control === "Col0_leaf_Input_rep1");
+  ctx.tableRows[1].Control === "Col0_leaf_ChIP_Input_rep1" && ctx.tableRows[2].Control === "Col0_leaf_ChIP_Input_rep1");
 ctx = builderView(SHEET);
 ctx.tableRows.push(Object.assign({}, ctx.tableRows[0], { Read_files: "SRR9" }));  // duplicate row
 ctx.tableRows[0].Replicate_ID = "rep9";
 ctx.adoptDerivedIds(ctx.tableRows);
 check("Control stays put while another row still derives the old ID",
-  ctx.tableRows[1].Control === "WT_leaf_Input_rep1");
+  ctx.tableRows[1].Control === "WT_leaf_ChIP_Input_rep1");
 
 // --- a column outside COLUMNS is not read -------------------------------
 // No compatibility layer: an old Sample_ID column is neither honoured nor used
@@ -169,7 +169,7 @@ ctx = builderView([
 ].join("\n") + "\n");
 check("extra column: no alert", ctx.alerts.length === 0);
 check("extra column: IDs derived, not read",
-  ctx.tableRows[0].Sample_ID === "WT_leaf_Input_rep1" && ctx.tableRows[1].Control === "in1");
+  ctx.tableRows[0].Sample_ID === "WT_leaf_ChIP_Input_rep1" && ctx.tableRows[1].Control === "in1");
 ctx.exportTSV();
 check("extra column not exported", ctx.downloads[0].split("\n")[0] === H);
 

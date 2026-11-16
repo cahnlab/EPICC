@@ -188,26 +188,27 @@ The chr21-subsetted FASTQs and modBAM will be the test inputs stored in
 ## Sample Sheet Preview
 
 The Sample_ID column is shown for reference only: sheets no longer carry it, and the
-pipeline derives each name as `{levels_label}_{IP_target|assay_short}_{Replicate_ID}` (#91).
+pipeline derives each name as `{levels_label}_ChIP_{IP_target}_{Replicate_ID}` for ChIP and
+`{levels_label}_{assay_short}_{Replicate_ID}` otherwise (#91).
 The PE CTCF controls take IP_target `CTCFInput` so they derive a name distinct from the
 SE Input of the same donor, and form their own control merge group.
 
 ```
 Sample_ID	Assay	Genome	Levels	Replicate_ID	Read_files	Read_layout	IP_target	Control
-stomach_H3K27ac_D1	ChIP_broad	hg38_chr21	tissue:stomach	D1	...	SE	H3K27ac	stomach_Input_D1
-stomach_H3K27ac_D2	ChIP_broad	hg38_chr21	tissue:stomach	D2	...	SE	H3K27ac	stomach_Input_D2
-colon_H3K27ac_D1	ChIP_broad	hg38_chr21	tissue:colon	D1	...	SE	H3K27ac	colon_Input_D1
-colon_H3K27ac_D2	ChIP_broad	hg38_chr21	tissue:colon	D2	...	SE	H3K27ac	colon_Input_D2
-stomach_CTCF_D1	ChIP_narrow	hg38_chr21	tissue:stomach	D1	...	PE	CTCF	stomach_CTCFInput_D1
-stomach_CTCF_D2	ChIP_narrow	hg38_chr21	tissue:stomach	D2	...	SE	CTCF	stomach_Input_D2
-colon_CTCF_D1	ChIP_narrow	hg38_chr21	tissue:colon	D1	...	PE	CTCF	colon_CTCFInput_D1
-colon_CTCF_D2	ChIP_narrow	hg38_chr21	tissue:colon	D2	...	SE	CTCF	colon_Input_D2
-stomach_Input_D1	ChIP_broad	hg38_chr21	tissue:stomach	D1	...	SE	Input
-stomach_Input_D2	ChIP_broad	hg38_chr21	tissue:stomach	D2	...	SE	Input
-stomach_CTCFInput_D1	ChIP_narrow	hg38_chr21	tissue:stomach	D1	...	PE	CTCFInput
-colon_Input_D1	ChIP_broad	hg38_chr21	tissue:colon	D1	...	SE	Input
-colon_Input_D2	ChIP_broad	hg38_chr21	tissue:colon	D2	...	SE	Input
-colon_CTCFInput_D1	ChIP_narrow	hg38_chr21	tissue:colon	D1	...	PE	CTCFInput
+stomach_ChIP_H3K27ac_D1	ChIP_broad	hg38_chr21	tissue:stomach	D1	...	SE	H3K27ac	stomach_ChIP_Input_D1
+stomach_ChIP_H3K27ac_D2	ChIP_broad	hg38_chr21	tissue:stomach	D2	...	SE	H3K27ac	stomach_ChIP_Input_D2
+colon_ChIP_H3K27ac_D1	ChIP_broad	hg38_chr21	tissue:colon	D1	...	SE	H3K27ac	colon_ChIP_Input_D1
+colon_ChIP_H3K27ac_D2	ChIP_broad	hg38_chr21	tissue:colon	D2	...	SE	H3K27ac	colon_ChIP_Input_D2
+stomach_ChIP_CTCF_D1	ChIP_narrow	hg38_chr21	tissue:stomach	D1	...	PE	CTCF	stomach_ChIP_CTCFInput_D1
+stomach_ChIP_CTCF_D2	ChIP_narrow	hg38_chr21	tissue:stomach	D2	...	SE	CTCF	stomach_ChIP_Input_D2
+colon_ChIP_CTCF_D1	ChIP_narrow	hg38_chr21	tissue:colon	D1	...	PE	CTCF	colon_ChIP_CTCFInput_D1
+colon_ChIP_CTCF_D2	ChIP_narrow	hg38_chr21	tissue:colon	D2	...	SE	CTCF	colon_ChIP_Input_D2
+stomach_ChIP_Input_D1	ChIP_broad	hg38_chr21	tissue:stomach	D1	...	SE	Input
+stomach_ChIP_Input_D2	ChIP_broad	hg38_chr21	tissue:stomach	D2	...	SE	Input
+stomach_ChIP_CTCFInput_D1	ChIP_narrow	hg38_chr21	tissue:stomach	D1	...	PE	CTCFInput
+colon_ChIP_Input_D1	ChIP_broad	hg38_chr21	tissue:colon	D1	...	SE	Input
+colon_ChIP_Input_D2	ChIP_broad	hg38_chr21	tissue:colon	D2	...	SE	Input
+colon_ChIP_CTCFInput_D1	ChIP_narrow	hg38_chr21	tissue:colon	D1	...	PE	CTCFInput
 stomach_RNA_D1	RNAseq	hg38_chr21	tissue:stomach	D1	...	PE
 stomach_RNA_D2	RNAseq	hg38_chr21	tissue:stomach	D2	...	PE
 stomach_RNA_D3	RNAseq	hg38_chr21	tissue:stomach	D3	...	PE

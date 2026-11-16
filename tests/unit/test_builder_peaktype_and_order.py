@@ -138,7 +138,7 @@ class TestPeakTypeRuleMatchesValidator:
 class TestShippedExamplesFollowTheRule:
     def test_builder_example_control_rows_have_no_peak_type(self, html):
         # The shipped example is how most users learn the format.
-        for sid in ("WT_leaf_Input_rep1", "WT_leaf_Input_rep2"):
+        for sid in ("WT_leaf_ChIP_Input_rep1", "WT_leaf_ChIP_Input_rep2"):
             m = re.search(r'Sample_ID: "%s", Assay: "ChIP", Peak_type: "([^"]*)"' % sid, html)
             assert m, f"example row {sid} not found"
             assert m.group(1) == "", f"{sid} is control-only; Peak_type should be blank"

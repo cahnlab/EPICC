@@ -40,7 +40,7 @@ builder (`deriveSampleId`) build it from the row, joined with `_`:
 
 | Assay | Sample_ID | Example |
 |-------|-----------|---------|
-| `ChIP` | `{level values}_{IP_target}_{Replicate_ID}` | `WT_leaf_H3K9me2_rep1` |
+| `ChIP` | `{level values}_ChIP_{IP_target}_{Replicate_ID}` | `WT_leaf_ChIP_H3K9me2_rep1` |
 | `CUT_RUN` | `{level values}_CR_{IP_target}_{Replicate_ID}` | `WT_leaf_CR_H3K27me3_rep1` |
 | `CUT_TAG` | `{level values}_CT_{IP_target}_{Replicate_ID}` | `WT_leaf_CT_IgG_rep1` |
 | others | `{level values}_{short}_{Replicate_ID}`, short = `ATAC`, `RNA`, `RAMPAGE`, `sRNA`, `WGBS`, `WGBS_nd`, `PBAT`, `EMseq`, `dmC` | `WT_leaf_RNA_rep1` |
@@ -246,13 +246,13 @@ an edit changes its ID.
 | Optional | Blank/absent is valid (sample has no associated control) |
 
 **Examples**:
-- ChIP: `WT_leaf_Input_rep1` (`Assay: ChIP`, `IP_target: Input`)
+- ChIP: `WT_leaf_ChIP_Input_rep1` (`Assay: ChIP`, `IP_target: Input`)
   referenced as `Control` by H3K9me2 IP samples.
-- CUT&RUN: `WT_endosperm_IgG_rep1` (`Assay: CUT_RUN`, `IP_target: IgG`)
+- CUT&RUN: `WT_endosperm_CR_IgG_rep1` (`Assay: CUT_RUN`, `IP_target: IgG`)
   shared as `Control` by both H3K27me3 replicates in the same family. The
-  builder constrains the Control dropdown to same-family assays
-  (`ChIP`, `CUT_RUN`, or `CUT_TAG`), but freetext entry is allowed
-  for cross-family controls if a study uses one.
+  builder's Control pick list offers only same-family assays (`ChIP`,
+  `CUT_RUN`, or `CUT_TAG`); a cross-family control has to be written into
+  the TSV by hand, where the pipeline accepts it.
 
 **Dual-role samples.** A sample can serve as another row's control *and* be
 analysed in its own right, as long as it declares a `Control` of its own. The

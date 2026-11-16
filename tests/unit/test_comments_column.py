@@ -108,7 +108,7 @@ class TestOptionalAndRoundTrip:
 class TestInertness:
     """Comments must not influence any derived identity."""
 
-    BASE = "ChIP\tG\tgenotype:WT\trep1\tSRR1\tSE\tH3K9me2\tWT_Input_rep1\tbroad"
+    BASE = "ChIP\tG\tgenotype:WT\trep1\tSRR1\tSE\tH3K9me2\tWT_ChIP_Input_rep1\tbroad"
 
     def _row(self, tmp_path, comment, name):
         df = _sheet(tmp_path, _FULL_HEADER, [self.BASE + "\t" + comment], name)
@@ -124,7 +124,7 @@ class TestInertness:
         # Sample_ID is derived from the row (#91); Comments must not feed it.
         a = self._row(tmp_path, "", "a.tsv")
         b = self._row(tmp_path, "some note about the batch", "b.tsv")
-        assert a["Sample_ID"] == b["Sample_ID"] == "WT_H3K9me2_rep1"
+        assert a["Sample_ID"] == b["Sample_ID"] == "WT_ChIP_H3K9me2_rep1"
 
     def test_analysis_key_unaffected(self, tmp_path):
         a = self._row(tmp_path, "", "a.tsv")

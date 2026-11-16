@@ -87,7 +87,7 @@ class TestChipSheetPeakTargets:
             df["IP_target"].str.strip().str.lower().isin(["input", "wce", "igg"])
         ]["Sample_ID"]
         orphans = sorted(s for s in control_like if s not in referenced)
-        assert orphans == ["mutant_Input_rep1", "mutant_WCE_rep2"]
+        assert orphans == ["mutant_ChIP_Input_rep1", "mutant_ChIP_WCE_rep2"]
 
     def test_orphan_controls_excluded_from_peak_targets(self, df):
         controls = identify_control_samples(df)
@@ -95,8 +95,8 @@ class TestChipSheetPeakTargets:
             is_peak_call_target, axis=1
         )
         targets = set(df[mask]["Sample_ID"])
-        assert "mutant_Input_rep1" not in targets
-        assert "mutant_WCE_rep2" not in targets
+        assert "mutant_ChIP_Input_rep1" not in targets
+        assert "mutant_ChIP_WCE_rep2" not in targets
 
     def test_real_ips_still_peak_targets(self, df):
         controls = identify_control_samples(df)
@@ -105,20 +105,20 @@ class TestChipSheetPeakTargets:
         )
         targets = set(df[mask]["Sample_ID"])
         for sid in (
-            "WT_H3K9me2_rep1",
-            "WT_H3K9me2_rep2",
-            "WT_H3K4me3_rep1",
-            "mutant_H3K9me2_rep1",
-            "mutant_H3K4me3_rep1",
+            "WT_ChIP_H3K9me2_rep1",
+            "WT_ChIP_H3K9me2_rep2",
+            "WT_ChIP_H3K4me3_rep1",
+            "mutant_ChIP_H3K9me2_rep1",
+            "mutant_ChIP_H3K4me3_rep1",
         ):
             assert sid in targets, f"{sid} must remain a peak target"
 
     def test_orphan_controls_excluded_from_analysis_samples(self, df):
         # They also leaked in here, producing selected_peaks/IDR targets.
         names = set(get_analysis_samples(df)["sample_name"])
-        assert "mutant_Input_rep1" not in names
-        assert "mutant_WCE_rep2" not in names
-        assert "WT_H3K9me2_rep1" in names
+        assert "mutant_ChIP_Input_rep1" not in names
+        assert "mutant_ChIP_WCE_rep2" not in names
+        assert "WT_ChIP_H3K9me2_rep1" in names
 
 
 class TestNonPulldownAnalysisSamplesUnaffected:
@@ -240,10 +240,10 @@ class TestDualRoleControlAndTarget:
         # Input: no Control of its own -> not analysable
         "ChIP_broad\tG\tgenotype:WT\trep1\tSRR1\tSE\tInput\t",
         # H3: dual role -> control for H3K9me2, but has its own Control (Input)
-        "ChIP_broad\tG\tgenotype:WT\trep1\tSRR2\tSE\tH3\tWT_Input_rep1",
-        "ChIP_broad\tG\tgenotype:WT\trep2\tSRR3\tSE\tH3\tWT_Input_rep1",
+        "ChIP_broad\tG\tgenotype:WT\trep1\tSRR2\tSE\tH3\tWT_ChIP_Input_rep1",
+        "ChIP_broad\tG\tgenotype:WT\trep2\tSRR3\tSE\tH3\tWT_ChIP_Input_rep1",
         # the IP that uses H3 as its control
-        "ChIP_broad\tG\tgenotype:WT\trep1\tSRR4\tSE\tH3K9me2\tWT_H3_rep1",
+        "ChIP_broad\tG\tgenotype:WT\trep1\tSRR4\tSE\tH3K9me2\tWT_ChIP_H3_rep1",
         # orphan control (regression guard for the #53 fix)
         "ChIP_broad\tG\tgenotype:WT\trep1\tSRR5\tSE\tWCE\t",
     ]
@@ -255,21 +255,21 @@ class TestDualRoleControlAndTarget:
         return add_compat_columns(read_sample_sheet(f))
 
     def test_dual_role_sample_is_referenced_as_a_control(self, df):
-        # Precondition: WT_H3_rep1 really is someone's control.
-        assert "WT_H3_rep1" in identify_control_samples(df)
+        # Precondition: WT_ChIP_H3_rep1 really is someone's control.
+        assert "WT_ChIP_H3_rep1" in identify_control_samples(df)
 
     def test_dual_role_reps_get_peak_targets(self, df):
         targets = set(peak_callable_rows(df)["Sample_ID"])
-        assert {"WT_H3_rep1", "WT_H3_rep2"} <= targets, \
+        assert {"WT_ChIP_H3_rep1", "WT_ChIP_H3_rep2"} <= targets, \
             "dual-role sample must get its own peak/FC targets"
-        assert "WT_H3K9me2_rep1" in targets
+        assert "WT_ChIP_H3K9me2_rep1" in targets
 
     def test_unanalysable_rows_still_excluded(self, df):
         targets = set(peak_callable_rows(df)["Sample_ID"])
         # Input has no Control; the orphan WCE is referenced by nobody and has
         # no Control -- neither can be peak-called.
-        assert "WT_Input_rep1" not in targets
-        assert "WT_WCE_rep1" not in targets
+        assert "WT_ChIP_Input_rep1" not in targets
+        assert "WT_ChIP_WCE_rep1" not in targets
 
     def test_dual_role_gets_analysis_level_treatment(self, df):
         analysis = get_analysis_samples(df)
@@ -284,7 +284,7 @@ class TestDualRoleControlAndTarget:
         # uses them to build post-alignment paths, where the reference is part
         # of the file's identity.
         assert sorted(get_replicate_sample_ids("ChIP_broad__WT__H3__G", df)) == \
-            ["WT_H3_rep1__G", "WT_H3_rep2__G"]
+            ["WT_ChIP_H3_rep1__G", "WT_ChIP_H3_rep2__G"]
 
     def test_dual_role_still_resolvable_as_a_control(self, df):
         # Looking the sample up by Sample_ID must still hit the control-merge
@@ -292,11 +292,11 @@ class TestDualRoleControlAndTarget:
         # contain '__' while analysis names always do, so the two lookup key
         # formats can never collide. The *key* stays bare; the returned names
         # are genome-qualified.
-        assert get_replicate_sample_ids("WT_H3_rep1", df) == ["WT_H3_rep1__G"]
+        assert get_replicate_sample_ids("WT_ChIP_H3_rep1", df) == ["WT_ChIP_H3_rep1__G"]
 
     def test_dual_role_control_resolution_stays_genome_matched(self, df):
         # The qualified name a caller got from get_replicate_sample_ids must
         # round-trip through control lookup with the genome preserved — a
         # control aligned to a different reference would be the wrong BAM.
-        assert get_control_sample_id("WT_H3K9me2_rep1__G", df) == "WT_H3_rep1__G"
-        assert get_control_sample_id("WT_H3_rep1__G", df) == "WT_Input_rep1__G"
+        assert get_control_sample_id("WT_ChIP_H3K9me2_rep1__G", df) == "WT_ChIP_H3_rep1__G"
+        assert get_control_sample_id("WT_ChIP_H3_rep1__G", df) == "WT_ChIP_Input_rep1__G"

@@ -1005,7 +1005,7 @@ function factorField(name) { return FACTOR_PREFIX + name; }
 function isFactorField(f) { return f.indexOf(FACTOR_PREFIX) === 0; }
 
 const COLUMN_DESCRIPTIONS = {
-  Sample_ID: "Read-only: derived from the row and not written to the sample sheet — the pipeline derives the same name. Built as {level values}_{IP_target}_{Replicate_ID} for ChIP (e.g. WT_leaf_H3K9me2_rep1), with CR_/CT_ before the IP_target for CUT&RUN/CUT&Tag, and {level values}_{assay}_{Replicate_ID} otherwise (e.g. WT_leaf_RNA_rep1). It names the sample's files, and is what the Control column refers to. Two rows must not derive the same name: give distinct libraries different Replicate_IDs, and put several sequencing runs of one library in one row with their Read_files joined by '+'.",
+  Sample_ID: "Read-only: derived from the row and not written to the sample sheet — the pipeline derives the same name. Built as {level values}_{tag}_{IP_target}_{Replicate_ID} for pulldown assays, the tag being ChIP, CR (CUT&RUN) or CT (CUT&Tag) (e.g. WT_leaf_ChIP_H3K9me2_rep1, WT_leaf_ChIP_Input_rep1), and {level values}_{assay}_{Replicate_ID} otherwise (e.g. WT_leaf_RNA_rep1). It names the sample's files, and is what the Control column refers to. Two rows must not derive the same name: give distinct libraries different Replicate_IDs, and put several sequencing runs of one library in one row with their Read_files joined by '+'.",
   Assay: "Experimental assay type (the method, not the analysis). Determines pipeline routing: ChIP, CUT_RUN (CUT&RUN), CUT_TAG (CUT&Tag), ATAC, RNAseq, RAMPAGE, sRNA, WGBS (directional), WGBS_nd (non-directional, e.g. Zymo Pico), PBAT, EMseq (enzymatic), dmC (direct methylation from long reads). Peak-calling type (broad/narrow) is set separately in the Peak_type column.",
   Genome: "Reference genome name (e.g. Spombe, ColCEN, hg38). Used to locate genome files under genomes/{Genome}/. Tick several genomes to map the same sample to each reference (e.g. B73,W22): the reads are downloaded and trimmed once, then aligned to each, and post-alignment outputs are tagged with the genome.",
   Levels: "Comma-separated factor:level pairs (e.g. genotype:WT,tissue:root). All rows must have the same factors; '=' is not allowed. Level values form the 'levels_label' in analysis names.",
@@ -1025,8 +1025,9 @@ const ASSAY_SHORT = {
   ATAC: "ATAC", RNAseq: "RNA", RAMPAGE: "RAMPAGE",
   sRNA: "sRNA", WGBS: "WGBS", WGBS_nd: "WGBS_nd", PBAT: "PBAT", EMseq: "EMseq", dmC: "dmC"
 };
-// Prefixed to IP_target so CUT&RUN, CUT&Tag and ChIP of one target stay apart.
-const ASSAY_ID_PREFIX = { CUT_RUN: "CR", CUT_TAG: "CT" };
+// Prefixed to IP_target so ChIP, CUT&RUN and CUT&Tag of one target stay apart
+// (control rows included: WT_ChIP_Input_rep1).
+const ASSAY_ID_PREFIX = { ChIP: "ChIP", CUT_RUN: "CR", CUT_TAG: "CT" };
 
 // ===========================================================================
 // State
@@ -2880,9 +2881,9 @@ function wireControlRowHighlight() {
 // Example rows — valid data shown dimmed per-row until that row is edited.
 // The _example flag marks rows as examples; removed when the row is first edited.
 var EXAMPLE_DATA = [
-  { _example: true, Sample_ID: "WT_leaf_Input_rep1", Assay: "ChIP", Peak_type: "", Genome: "ColCEN", Levels: "genotype:WT,tissue:leaf", Replicate_ID: "rep1", Read_files: "/path/to/fastqs/WT_Input_Rep1_R1.fq.gz,/path/to/fastqs/WT_Input_Rep1_R2.fq.gz", Read_layout: "PE", IP_target: "Input", Control: "" },
-  { _example: true, Sample_ID: "WT_leaf_Input_rep2", Assay: "ChIP", Peak_type: "", Genome: "ColCEN", Levels: "genotype:WT,tissue:leaf", Replicate_ID: "rep2", Read_files: "/path/to/fastqs/WT_Input_Rep2_R1.fq.gz,/path/to/fastqs/WT_Input_Rep2_R2.fq.gz", Read_layout: "PE", IP_target: "Input", Control: "" },
-  { _example: true, Sample_ID: "rdr126ddm1_leaf_CenH3_rep1", Assay: "ChIP", Peak_type: "broad", Genome: "ColCEN", Levels: "genotype:rdr126ddm1,tissue:leaf", Replicate_ID: "rep1", Read_files: "/path/to/fastqs/ddm1rdr126_CenH3_IP_Rep1_R1.fq.gz,/path/to/fastqs/ddm1rdr126_CenH3_IP_Rep1_R2.fq.gz", Read_layout: "PE", IP_target: "CenH3", Control: "WT_leaf_Input_rep1" },
+  { _example: true, Sample_ID: "WT_leaf_ChIP_Input_rep1", Assay: "ChIP", Peak_type: "", Genome: "ColCEN", Levels: "genotype:WT,tissue:leaf", Replicate_ID: "rep1", Read_files: "/path/to/fastqs/WT_Input_Rep1_R1.fq.gz,/path/to/fastqs/WT_Input_Rep1_R2.fq.gz", Read_layout: "PE", IP_target: "Input", Control: "" },
+  { _example: true, Sample_ID: "WT_leaf_ChIP_Input_rep2", Assay: "ChIP", Peak_type: "", Genome: "ColCEN", Levels: "genotype:WT,tissue:leaf", Replicate_ID: "rep2", Read_files: "/path/to/fastqs/WT_Input_Rep2_R1.fq.gz,/path/to/fastqs/WT_Input_Rep2_R2.fq.gz", Read_layout: "PE", IP_target: "Input", Control: "" },
+  { _example: true, Sample_ID: "rdr126ddm1_leaf_ChIP_CenH3_rep1", Assay: "ChIP", Peak_type: "broad", Genome: "ColCEN", Levels: "genotype:rdr126ddm1,tissue:leaf", Replicate_ID: "rep1", Read_files: "/path/to/fastqs/ddm1rdr126_CenH3_IP_Rep1_R1.fq.gz,/path/to/fastqs/ddm1rdr126_CenH3_IP_Rep1_R2.fq.gz", Read_layout: "PE", IP_target: "CenH3", Control: "WT_leaf_ChIP_Input_rep1" },
   { _example: true, Sample_ID: "ddm1_leaf_ATAC_Rep1", Assay: "ATAC", Genome: "ColCEN", Levels: "genotype:ddm1,tissue:leaf", Replicate_ID: "Rep1", Read_files: "SRR12362026", Read_layout: "PE", IP_target: "", Control: "" },
   { _example: true, Sample_ID: "ddm1_leaf_ATAC_Rep2", Assay: "ATAC", Genome: "ColCEN", Levels: "genotype:ddm1,tissue:leaf", Replicate_ID: "Rep2", Read_files: "SRR12362027", Read_layout: "PE", IP_target: "", Control: "" },
 ];
