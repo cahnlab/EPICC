@@ -68,10 +68,17 @@ profile$context <- factor(profile$context, levels = contexts)
 profile$series <- factor(profile$series, levels = series)
 profile$group <- factor(profile$group, levels = groups)
 palette <- setNames(samples$color[match(series, samples$series)], series)
+# Colours are keyed on levels_label, so samples that differ only in assay or
+# replicate share one. Those get distinct dash patterns, in series order, so
+# the lines stay apart; a sample with a colour to itself stays solid.
+dash_cycle <- c("solid", "dashed", "dotted", "dotdash", "longdash", "twodash")
+dash_rank <- ave(seq_along(series), palette, FUN = seq_along)
+dashes <- setNames(dash_cycle[(dash_rank - 1) %% length(dash_cycle) + 1], series)
 
-p <- ggplot(profile, aes(x = bin, y = value, colour = series)) +
+p <- ggplot(profile, aes(x = bin, y = value, colour = series, linetype = series)) +
   geom_line(linewidth = 0.6, na.rm = TRUE) +
   scale_colour_manual(values = palette, name = NULL) +
+  scale_linetype_manual(values = dashes, name = NULL) +
   scale_x_continuous(breaks = tick_at, labels = tick_label, expand = c(0.02, 0)) +
   labs(x = NULL, y = y_label) +
   theme_bw(base_size = 11) +
@@ -79,8 +86,9 @@ p <- ggplot(profile, aes(x = bin, y = value, colour = series)) +
         panel.spacing.x = unit(1.4, "lines"),
         strip.background = element_rect(fill = "grey92", colour = NA),
         strip.text = element_text(face = "bold"),
-        legend.key.width = unit(1.2, "lines")) +
-  guides(colour = guide_legend(ncol = ceiling(length(series) / 25)))
+        legend.key.width = unit(2.2, "lines")) +
+  guides(colour = guide_legend(ncol = ceiling(length(series) / 25)),
+         linetype = guide_legend(ncol = ceiling(length(series) / 25)))
 
 # Contexts sit at very different levels (CG tens of percent, CHH a few), so
 # each panel gets its own y-axis.
