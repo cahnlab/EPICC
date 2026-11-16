@@ -3,15 +3,17 @@
 Implements the rules defined in dev/docs/sample-sheet-spec.md.
 """
 
+import difflib
 import os
 import re
 from scripts.browser_extra_tracks import normalize_extra_tracks
 from scripts.sample_sheet import (
     VALID_ASSAYS, ASSAY_TO_ENV, IP_PEAK_ASSAYS,
-    PEAK_TYPE_ASSAYS, VALID_PEAK_TYPES,
+    PEAK_TYPE_ASSAYS, VALID_PEAK_TYPES, sample_id_parts,
 )
 
-# Characters that are unsafe for filesystem use in Sample_ID
+# Characters that are unsafe for filesystem use in Sample_ID, and so in every
+# field it is derived from (level values, IP_target, Replicate_ID).
 _UNSAFE_CHARS = re.compile(r'[/\\\s\'\";&|<>$`!{}()\[\]?*~#]')
 _DOUBLE_UNDERSCORE = re.compile(r'__')
 _SRA_REGEX = re.compile(r'^[SDE]RR\d+$')
@@ -110,28 +112,57 @@ def check_table(tab, check_paths=True):
     errors = []
     warnings = []
 
-    # --- Sample_ID: required, unique, filesystem-safe ---
+    # --- Sample_ID: derived, unique, filesystem-safe ---
+    # read_sample_sheet derives Sample_ID from Levels/Assay/IP_target/
+    # Replicate_ID (derive_sample_id), so every problem with it is really a
+    # problem with one of those fields, and is reported against that field.
+    # The checks on the joined ID stay as a backstop for frames built in code.
     sample_ids = set()
-    sample_id_genome_pairs = set()
+    first_row_for = {}  # (Sample_ID, Genome) -> row number
     for i, (_, row) in enumerate(tab.iterrows(), start=1):
         sid = str(row.get("Sample_ID", "")).strip()
         if not sid or sid == "nan":
-            errors.append(f"[X] Row #{i}: Sample_ID is required")
+            errors.append(
+                f"[X] Row #{i}: Sample_ID could not be derived — it needs "
+                f"Levels, Replicate_ID, a known Assay and, for "
+                f"{'/'.join(sorted(PEAK_TYPE_ASSAYS))}, IP_target"
+            )
             continue
-        if _UNSAFE_CHARS.search(sid):
-            errors.append(f"[X] Row #{i} '{sid}': Sample_ID contains unsafe characters")
-        if _DOUBLE_UNDERSCORE.search(sid):
-            errors.append(f"[X] Row #{i} '{sid}': Sample_ID must not contain '__'")
+        part_errors = []
+        for col, val in sample_id_parts(row) or []:
+            if _UNSAFE_CHARS.search(val):
+                part_errors.append(
+                    f"[X] Row #{i} '{sid}': {col} value '{val}' contains unsafe "
+                    f"characters (it becomes part of the Sample_ID)"
+                )
+            elif "__" in val or val.startswith("_") or val.endswith("_"):
+                part_errors.append(
+                    f"[X] Row #{i} '{sid}': {col} value '{val}' must not contain "
+                    f"'__' or start/end with '_' (parts of the Sample_ID are "
+                    f"joined with '_', and '__' is a reserved delimiter)"
+                )
+        errors.extend(part_errors)
+        if not part_errors:
+            if _UNSAFE_CHARS.search(sid):
+                errors.append(f"[X] Row #{i} '{sid}': Sample_ID contains unsafe characters")
+            if _DOUBLE_UNDERSCORE.search(sid):
+                errors.append(f"[X] Row #{i} '{sid}': Sample_ID must not contain '__'")
         # Keyed on (Sample_ID, Genome): one sheet row mapped to several
         # references is exploded into one row per reference upstream, and those
         # legitimately share a Sample_ID. Two rows with the same ID AND the same
         # genome are still a genuine duplicate.
         genome_key = str(row.get("Genome", "")).strip()
-        if (sid, genome_key) in sample_id_genome_pairs:
+        if (sid, genome_key) in first_row_for:
             errors.append(
-                f"[X] Row #{i} '{sid}': duplicate Sample_ID for genome '{genome_key}'"
+                f"[X] Row #{i} '{sid}': same Sample_ID as row "
+                f"#{first_row_for[(sid, genome_key)]} for genome '{genome_key}'. "
+                f"Sample_ID is derived from Levels, Assay, IP_target and "
+                f"Replicate_ID, so the two rows must differ in one of them. "
+                f"Several sequencing runs of one library belong in a single "
+                f"row, their Read_files joined with '+'."
             )
-        sample_id_genome_pairs.add((sid, genome_key))
+        else:
+            first_row_for[(sid, genome_key)] = i
         sample_ids.add(sid)
 
     # --- Assay: controlled vocabulary ---
@@ -371,7 +402,7 @@ def check_table(tab, check_paths=True):
             warnings.append(
                 f"[!] Row #{i} '{sid}': {assay} sample with IP_target "
                 f"'{ip_target}' has no Control — it will not be peak-called. "
-                f"Set Control to the Sample_ID of its Input/WCE/IgG, or leave "
+                f"Set Control to the (derived) Sample_ID of its Input/WCE/IgG, or leave "
                 f"it out if this row is itself a control."
             )
 
@@ -388,9 +419,13 @@ def check_table(tab, check_paths=True):
                     f"[X] Row #{i} '{sid}': Control is not allowed for {assay}"
                 )
             if control not in sample_ids:
+                close = difflib.get_close_matches(control, sorted(sample_ids), n=3)
+                hint = (f" — did you mean {', '.join(repr(c) for c in close)}?"
+                        if close else "")
                 errors.append(
                     f"[X] Row #{i} '{sid}': Control '{control}' does not match "
-                    f"any Sample_ID in the sheet"
+                    f"any Sample_ID in the sheet{hint} (Sample_IDs are derived: "
+                    f"'{{level values}}_{{IP_target}}_{{Replicate_ID}}')"
                 )
             # A sample cannot be its own control.
             if control == sid:

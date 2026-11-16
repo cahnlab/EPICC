@@ -542,11 +542,16 @@
   .tabulator-row.tabulator-selected { background: var(--surface2) !important; }
   .tabulator-row.tabulator-selected:hover { background: #1a4a70 !important; }
 
-  /* Placeholder styling for suggested Sample_ID */
-  .cell-suggestion {
-    color: var(--text-dim) !important;
+  /* Sample_ID is derived from the row (#91): shown read-only, never exported */
+  .tabulator-row .tabulator-cell.cell-derived {
+    color: var(--text-dim);
     font-style: italic;
+    cursor: default;
   }
+
+  /* Row a hovered Control pick-list item refers to */
+  .tabulator-row.row-ref-highlight { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .ctrl-item-meta { color: var(--text-dim); font-size: 0.85em; margin-left: 0.4em; }
 
   /* Example cell — dimmed until user edits it */
   .tabulator-row .tabulator-cell.cell-example {
@@ -597,14 +602,15 @@
 
   /* Commented-out sample (a '#' line in the TSV, issue #65): skipped by the
      pipeline, so the whole row is greyed out, but it stays fully editable.
-     The '#' before the Sample_ID shows what will be written on export. */
+     The '#' before the Assay (the first exported column) shows what will be
+     written on export. */
   .tabulator-row.row-commented .tabulator-cell {
     color: var(--text-dim) !important;
     opacity: 0.55;
   }
   .tabulator-row.row-commented .tabulator-cell.row-select-col,
   .tabulator-row.row-commented .tabulator-cell.action-col { opacity: 1; }
-  .tabulator-row.row-commented .tabulator-cell[tabulator-field="Sample_ID"]::before {
+  .tabulator-row.row-commented .tabulator-cell[tabulator-field="Assay"]::before {
     content: "# ";
     font-weight: 600;
   }
@@ -887,12 +893,15 @@
 // Constants (mirroring workflow/scripts/sample_sheet.py & samplefile_validation.py)
 // ===========================================================================
 
-// Peak_type sits last: it applies to only three assays, so it stays out of the
-// way of the fields every row needs. Column lookup is by header name on both
-// sides (importTSV here, pandas in read_sample_sheet), so the order is purely
-// ergonomic — but keep it in step with NEW_COLNAMES in sample_sheet.py.
+// The exported columns. Sample_ID is not one of them: it is derived from the
+// row (deriveSampleId) and only shown, so it can never disagree with the
+// metadata it names (#91). Peak_type sits late: it applies to only three
+// assays, so it stays out of the way of the fields every row needs. Column
+// lookup is by header name on both sides (importTSV here, pandas in
+// read_sample_sheet), so the order is purely ergonomic — but keep it in step
+// with SHEET_COLNAMES in sample_sheet.py.
 const COLUMNS = [
-  "Sample_ID", "Assay", "Genome", "Levels", "Replicate_ID",
+  "Assay", "Genome", "Levels", "Replicate_ID",
   "Read_files", "Read_layout", "IP_target", "Control", "Peak_type", "Comments"
 ];
 
@@ -996,7 +1005,7 @@ function factorField(name) { return FACTOR_PREFIX + name; }
 function isFactorField(f) { return f.indexOf(FACTOR_PREFIX) === 0; }
 
 const COLUMN_DESCRIPTIONS = {
-  Sample_ID: "Unique identifier for each sample row. Used as a filesystem path component. Must not contain '__' or unsafe characters (/ \\ whitespace '\";&|<>$`!{}()[]?*~#). Concise descriptive IDs like 'WT_leaf_H3K9me2_rep1' are recommended. To park a sample without deleting it, use Comment Selected (or the row menu) rather than typing '#': it is written as a '#' line that the pipeline skips.",
+  Sample_ID: "Read-only: derived from the row and not written to the sample sheet — the pipeline derives the same name. Built as {level values}_{IP_target}_{Replicate_ID} for ChIP (e.g. WT_leaf_H3K9me2_rep1), with CR_/CT_ before the IP_target for CUT&RUN/CUT&Tag, and {level values}_{assay}_{Replicate_ID} otherwise (e.g. WT_leaf_RNA_rep1). It names the sample's files, and is what the Control column refers to. Two rows must not derive the same name: give distinct libraries different Replicate_IDs, and put several sequencing runs of one library in one row with their Read_files joined by '+'.",
   Assay: "Experimental assay type (the method, not the analysis). Determines pipeline routing: ChIP, CUT_RUN (CUT&RUN), CUT_TAG (CUT&Tag), ATAC, RNAseq, RAMPAGE, sRNA, WGBS (directional), WGBS_nd (non-directional, e.g. Zymo Pico), PBAT, EMseq (enzymatic), dmC (direct methylation from long reads). Peak-calling type (broad/narrow) is set separately in the Peak_type column.",
   Genome: "Reference genome name (e.g. Spombe, ColCEN, hg38). Used to locate genome files under genomes/{Genome}/. Tick several genomes to map the same sample to each reference (e.g. B73,W22): the reads are downloaded and trimmed once, then aligned to each, and post-alignment outputs are tagged with the genome.",
   Levels: "Comma-separated factor:level pairs (e.g. genotype:WT,tissue:root). All rows must have the same factors; '=' is not allowed. Level values form the 'levels_label' in analysis names.",
@@ -1004,16 +1013,20 @@ const COLUMN_DESCRIPTIONS = {
   Read_files: "SRA accession (SRR12345678), local path, URL (https://...), or '+'-separated SRA accessions for merging (SRA only). PE: comma-separated R1,R2 pair.",
   Read_layout: "Sequencing layout: SE (single-end) or PE (paired-end).",
   IP_target: "What was immunoprecipitated. Required for ChIP and CUT&RUN/CUT&Tag assays (e.g. H3K9me2, Input, WCE, IgG). Must be blank for non-IP assays.",
-  Control: "Sample_ID of the control sample (e.g. Input/WCE for ChIP, IgG for CUT&RUN/CUT&Tag, RNAseq for RAMPAGE). The referenced control **may** declare its own Control (*dual-role* case), but that one must not.",
+  Control: "Derived Sample_ID of the control sample, picked from the list (e.g. Input/WCE for ChIP, IgG for CUT&RUN/CUT&Tag, RNAseq for RAMPAGE). The referenced control **may** declare its own Control (*dual-role* case), but that one must not. If the control row is edited so its Sample_ID changes, Controls that pointed at it follow.",
   Peak_type: "Peak-calling type for pulldown assays (ChIP / CUT_RUN / CUT_TAG): 'broad' for histone-domain marks (H3K9me2, H3K27me3, ...), 'narrow' for TFs and sharp marks (H3K4me3, H3K27ac, ...). Required only on rows that call peaks, i.e. those with a Control set; leave it blank on a control-only row (an Input/WCE/IgG nothing points at), and on all non-pulldown assays (ATAC's type is fixed; the rest have no peaks).",
   Comments: "Free-text notes for your own use — batch, library prep, sequencing run, anything. Optional, unconstrained, and completely ignored by the pipeline: it never affects analysis names or outputs. Tabs and newlines are stripped on export so the TSV stays intact."
 };
 
-// Assay short names for Sample_ID suggestion (non-ChIP assays)
+// Sample_ID derivation (mirrors derive_sample_id in sample_sheet.py; keep the
+// two in step — tests/unit/test_builder_sample_id.py checks they agree).
+// The middle token for assays with no IP_target:
 const ASSAY_SHORT = {
   ATAC: "ATAC", RNAseq: "RNA", RAMPAGE: "RAMPAGE",
   sRNA: "sRNA", WGBS: "WGBS", WGBS_nd: "WGBS_nd", PBAT: "PBAT", EMseq: "EMseq", dmC: "dmC"
 };
+// Prefixed to IP_target so CUT&RUN, CUT&Tag and ChIP of one target stay apart.
+const ASSAY_ID_PREFIX = { CUT_RUN: "CR", CUT_TAG: "CT" };
 
 // ===========================================================================
 // State
@@ -1076,28 +1089,65 @@ function populateFactorsFromLevels(rowData) {
   }
 }
 
-function suggestSampleId(rowData) {
+// The [column, value] pairs a row's Sample_ID is built from, in order, or
+// null when a field it needs is missing. Genome, Peak_type, Read_files,
+// Read_layout, Control and Comments never contribute.
+function sampleIdParts(rowData) {
   const assay = (rowData.Assay || "").trim();
   const rep = (rowData.Replicate_ID || "").trim();
   const ip = (rowData.IP_target || "").trim();
-  var levels = factors.length > 0 ? buildLevelsFromFactors(rowData) : (rowData.Levels || "").trim();
-  if (!levels) return "";
-  var label = levelsToLabel(levels);
-  if (!label || !rep) return "";
+  var levels = factors.length > 0 && !commentedRowKeepsImportedLevels(rowData)
+    ? buildLevelsFromFactors(rowData) : (rowData.Levels || "").trim();
+  var parsed = parseLevels(levels);
+  if (!parsed || !parsed.length || !rep) return null;
+  if (parsed.some(function(p) { return !p.level; })) return null;
+  var middle;
   if (IP_PEAK_ASSAYS.has(assay)) {
-    if (!ip) return "";
-    return label + "_" + ip + "_" + rep;
+    if (!ip) return null;
+    middle = [["IP_target", ip]];
+    if (ASSAY_ID_PREFIX[assay]) middle.unshift(["Assay", ASSAY_ID_PREFIX[assay]]);
+  } else if (ASSAY_SHORT[assay]) {
+    middle = [["Assay", ASSAY_SHORT[assay]]];
+  } else {
+    return null;
   }
-  const short = ASSAY_SHORT[assay];
-  if (!short) return "";
-  return label + "_" + short + "_" + rep;
+  return parsed.map(function(p) { return ["Levels", p.level]; })
+    .concat(middle, [["Replicate_ID", rep]]);
+}
+
+function deriveSampleId(rowData) {
+  var parts = sampleIdParts(rowData);
+  return parts ? parts.map(function(p) { return p[1]; }).join("_") : "";
+}
+
+// Give every row its derived Sample_ID. When a row's ID changes, Controls that
+// named the old ID follow it — unless another row still derives the old one,
+// in which case the reference is not unambiguously this row's. Returns the
+// list of [old, new] renames that were applied.
+function adoptDerivedIds(rows) {
+  var renames = [];
+  var newIds = rows.map(function(r) { return deriveSampleId(r); });
+  var stillUsed = new Set(newIds.filter(Boolean));
+  var map = {};
+  for (var i = 0; i < rows.length; i++) {
+    var old = rows[i].Sample_ID || "";
+    if (old && newIds[i] && old !== newIds[i] && !stillUsed.has(old) && !(old in map)) {
+      map[old] = newIds[i];
+      renames.push([old, newIds[i]]);
+    }
+  }
+  for (var i = 0; i < rows.length; i++) {
+    rows[i].Sample_ID = newIds[i];
+    var c = (rows[i].Control || "").trim();
+    if (c && map[c]) rows[i].Control = map[c];
+  }
+  return renames;
 }
 
 function emptyRow() {
   var row = {
     Sample_ID: "", Assay: "", Peak_type: "", Genome: "", Replicate_ID: "",
-    Read_files: "", Read_layout: "", IP_target: "", Control: "", Comments: "",
-    _sid_user_edited: false
+    Read_files: "", Read_layout: "", IP_target: "", Control: "", Comments: ""
   };
   for (var i = 0; i < factors.length; i++) {
     row[factorField(factors[i])] = "";
@@ -1167,7 +1217,7 @@ function removeFactor(name) {
 // Reordering the `factors` array is the WHOLE data change: per-row factor
 // values live in _factor_* fields keyed by factor NAME, and the Levels string
 // is never stored authoritatively — it is derived from `factors` on demand
-// (buildExportMatrix, suggestSampleId) and validated field-by-field against
+// (buildExportMatrix, deriveSampleId) and validated field-by-field against
 // `factors`. So nothing per-row needs rewriting, and every row stays
 // consistent by construction, including example rows.
 //
@@ -1624,9 +1674,10 @@ function buildColumnDefs() {
         showCtxMenu(e, cell.getRow());
       }
     },
+    // Read-only: derived from the row by adoptDerivedIds, never exported (#91).
     Object.assign({
-      title: "Sample ID", field: "Sample_ID", editor: "input", width: 160,
-      editorParams: { elementAttributes: { placeholder: "auto-suggested or type your own" } },
+      title: "Sample ID", field: "Sample_ID", width: 180, cssClass: "cell-derived",
+      headerTooltip: "Derived from Levels, Assay, IP_target and Replicate_ID — not editable, not exported",
     }, descHooks("Sample_ID")),
     Object.assign({
       title: "Assay", field: "Assay", width: 140,
@@ -1692,8 +1743,18 @@ function buildColumnDefs() {
     Object.assign({
       title: "Control", field: "Control", width: 200,
       editor: "list",
+      // A strict pick list of derived Sample_IDs (#91): with the ID no longer
+      // typed anywhere, a free-text Control could only ever be a typo. Each
+      // item is tagged with its ID so hovering it (or moving to it with the
+      // keyboard) highlights the referenced row — see wireControlRowHighlight.
       editorParams: function(cell) {
-        return { values: controlListValues(cell), autocomplete: true, listOnEmpty: true, freetext: true };
+        return {
+          values: controlListValues(cell), autocomplete: true, listOnEmpty: true, freetext: false,
+          itemFormatter: function(label, value, item, element) {
+            if (element) element.setAttribute("data-control-sid", value || "");
+            return controlItemLabel(value) || label;
+          },
+        };
       },
       editable: assayGatedEditable("Control"),
     }, descHooks("Control")),
@@ -1783,16 +1844,10 @@ function showDescription(field) {
 }
 
 function refreshUI() {
+  applyDerivedIds();
   runValidation();
-  applySuggestions();
   applyExampleCellStyles();
   applyDisabledCellStyles();
-}
-
-function clearSuggestion(el) {
-  el.classList.remove("cell-suggestion");
-  el.removeAttribute("data-suggestion");
-  el.title = "";
 }
 
 // Deliberately no headerClick: Tabulator runs it *alongside* its built-in
@@ -1885,16 +1940,15 @@ function addReplicate(row) {
   } else {
     data.Replicate_ID = rep ? rep + "_2" : "rep1";
   }
-  data.Sample_ID = ""; // clear so suggestion kicks in
-  data._sid_user_edited = false;
   table.addRow(data, false, row);
   refreshUI();
 }
 
+// The copy derives the same Sample_ID as its original until the user changes
+// its Replicate_ID (or another field the ID is built from); validation flags
+// the clash meanwhile.
 function duplicateRow(row) {
   var data = cloneRowData(row);
-  data.Sample_ID = data.Sample_ID ? data.Sample_ID + "_copy" : "";
-  data._sid_user_edited = !!data.Sample_ID;
   table.addRow(data, false, row);
   refreshUI();
 }
@@ -1932,6 +1986,7 @@ function runValidation() {
   var errors = [];
   var warnings = [];
   var sampleIds = new Set();
+  var sidRowNum = {};  // Sample_ID + Genome -> first row number using it
   var rows = table.getRows();
 
   // Commented rows (issue #65) are invisible to the pipeline, so none of the
@@ -1967,16 +2022,34 @@ function runValidation() {
     var peakType = (row.Peak_type || "").trim();
     var rowKey = rows[i] ? rows[i].getIndex() : i;
 
-    // Sample_ID
+    // Sample_ID — derived (#91), so each problem is reported against the field
+    // it comes from; the Sample_ID cell only carries the cross-row clash.
     if (!sid) {
-      addIssue(cellIssues, errors, rowKey, "Sample_ID", "[X] Row #" + rowNum + ": Sample_ID is required");
+      addIssue(cellIssues, errors, rowKey, "Sample_ID", "[X] Row #" + rowNum +
+        ": Sample_ID cannot be derived yet — it needs Levels, Replicate_ID, an Assay and, for ChIP/CUT_RUN/CUT_TAG, IP_target");
     } else {
-      if (UNSAFE_CHARS_RE.test(sid))
-        addIssue(cellIssues, errors, rowKey, "Sample_ID", "[X] Row #" + rowNum + " '" + sid + "': Sample_ID contains unsafe characters");
-      if (DOUBLE_UNDERSCORE_RE.test(sid))
-        addIssue(cellIssues, errors, rowKey, "Sample_ID", "[X] Row #" + rowNum + " '" + sid + "': Sample_ID must not contain '__'");
-      if (sampleIds.has(sid))
-        addIssue(cellIssues, errors, rowKey, "Sample_ID", "[X] Row #" + rowNum + " '" + sid + "': duplicate Sample_ID");
+      var parts = sampleIdParts(row) || [];
+      for (var pi = 0; pi < parts.length; pi++) {
+        var pcol = parts[pi][0], pval = parts[pi][1];
+        var pcell = pcol === "Levels" ? (factors.length ? null : "Levels") : pcol;
+        if (pcol === "Levels" && factors.length) {
+          for (var fj = 0; fj < factors.length; fj++)
+            if ((row[factorField(factors[fj])] || "").trim() === pval) { pcell = factorField(factors[fj]); break; }
+        }
+        if (UNSAFE_CHARS_RE.test(pval))
+          addIssue(cellIssues, errors, rowKey, pcell || "Levels", "[X] Row #" + rowNum + " '" + sid + "': " +
+            pcol + " value '" + pval + "' contains unsafe characters (it becomes part of the Sample_ID)");
+        else if (DOUBLE_UNDERSCORE_RE.test(pval) || /^_|_$/.test(pval))
+          addIssue(cellIssues, errors, rowKey, pcell || "Levels", "[X] Row #" + rowNum + " '" + sid + "': " +
+            pcol + " value '" + pval + "' must not contain '__' or start/end with '_' (it becomes part of the Sample_ID)");
+      }
+      var dupKey = sid + "\u0000" + genome;
+      if (sidRowNum[dupKey])
+        addIssue(cellIssues, errors, rowKey, "Sample_ID", "[X] Row #" + rowNum + " '" + sid +
+          "': same Sample_ID as row #" + sidRowNum[dupKey] + " — the rows must differ in Levels, Assay, IP_target or Replicate_ID " +
+          "(several sequencing runs of one library belong in one row, Read_files joined with '+')");
+      else
+        sidRowNum[dupKey] = rowNum;
       sampleIds.add(sid);
     }
 
@@ -2217,7 +2290,7 @@ function runValidation() {
         "[X] Row #" + rowNum + " '" + sid + "': Control '" + control + "' is commented out — the pipeline will not see it; uncomment it or comment this row too");
     } else if (!sampleIds.has(control)) {
       addIssue(cellIssues, errors, rowKey, "Control",
-        "[X] Row #" + rowNum + " '" + sid + "': Control '" + control + "' does not match any Sample_ID in the sheet");
+        "[X] Row #" + rowNum + " '" + sid + "': Control '" + control + "' does not match any Sample_ID in the sheet — pick one from the list");
     } else {
       // No chaining
       var ctrlRow = sidToRow.get(control);
@@ -2360,38 +2433,22 @@ function renderDiagnostics(errors, warnings) {
 }
 
 // ===========================================================================
-// Sample_ID suggestion
+// Derived Sample_ID
 // ===========================================================================
 
-function applySuggestions() {
+// Recompute every row's Sample_ID from its fields and push the result into the
+// table, carrying Control references along when an ID changes. Runs first in
+// refreshUI so validation sees the current IDs.
+function applyDerivedIds() {
   var rows = table.getRows();
+  var data = rows.map(function(r) { return Object.assign({}, r.getData()); });
+  adoptDerivedIds(data);
   for (var ri = 0; ri < rows.length; ri++) {
-    var data = rows[ri].getData();
-    var sid = (data.Sample_ID || "").trim();
-    var userEdited = !!data._sid_user_edited;
-    var cell = rows[ri].getCell("Sample_ID");
-    if (!cell) continue;
-    var cellEl = cell.getElement();
-    var suggestion = suggestSampleId(data);
-
-    if (!userEdited) {
-      // Auto-update: set the actual cell value to the suggestion
-      if (suggestion) {
-        if (sid !== suggestion) {
-          cell.setValue(suggestion, true);  // true = don't trigger cellEdited
-        }
-        cellEl.classList.add("cell-suggestion");
-        cellEl.setAttribute("data-suggestion", suggestion);
-        cellEl.title = "Suggested: " + suggestion;
-      } else if (!sid) {
-        clearSuggestion(cellEl);
-      } else {
-        clearSuggestion(cellEl);
-      }
-    } else {
-      // User has manually edited — don't touch the value
-      clearSuggestion(cellEl);
-    }
+    var cur = rows[ri].getData();
+    var upd = {};
+    if ((cur.Sample_ID || "") !== data[ri].Sample_ID) upd.Sample_ID = data[ri].Sample_ID;
+    if ((cur.Control || "") !== (data[ri].Control || "")) upd.Control = data[ri].Control;
+    if (Object.keys(upd).length) rows[ri].update(upd);
   }
 }
 
@@ -2447,7 +2504,9 @@ function parseCommentedRow(line, required) {
   if (!m) return null;
   var fields = line.slice(m[0].length).split("\t");
   if (fields.length < required) return null;
-  if (fields[0].trim() === "Sample_ID") return null; // commented-out header
+  // A commented-out copy of the header.
+  var trimmed = fields.map(function(f) { return f.trim(); });
+  if (trimmed.indexOf("Assay") !== -1 && trimmed.indexOf("Levels") !== -1) return null;
   return { prefix: m[0], fields: fields };
 }
 
@@ -2560,9 +2619,10 @@ function importTSV(text) {
   factors = importedFactors;
   for (var i = 0; i < rows.length; i++) {
     populateFactorsFromLevels(rows[i]);
-    // Imported rows with a Sample_ID are treated as user-edited
-    rows[i]._sid_user_edited = !!(rows[i].Sample_ID || "").trim();
   }
+  // Columns are read by header name, so any column outside COLUMNS — a
+  // Sample_ID column from before #91 included — is not read. IDs are derived.
+  adoptDerivedIds(rows);
 
   // Rebuild columns for the new factors
   rebuildTableColumns();
@@ -2587,12 +2647,12 @@ function sanitizeCell(v) {
 }
 
 // Prepare the export matrix shared by exportTSV and the code-block export:
-// reconstruct Levels from the factor columns, accept Sample_ID suggestions
-// for empty cells, and sanitize every value. Returns { header, rows } where
+// reconstruct Levels from the factor columns and sanitize every value.
+// Sample_ID is not exported: the pipeline derives it, as the builder does. Returns { header, rows } where
 // rows is an array of sanitized string arrays aligned to COLUMNS.
 //
 // Operates on per-row COPIES: table.getData() returns references to the live
-// row objects, so writing Levels/Sample_ID back onto them would mutate the
+// row objects, so writing Levels back onto them would mutate the
 // table itself — visibly rewriting cells just because the user previewed the
 // export command. Keep this function side-effect free.
 //
@@ -2609,10 +2669,6 @@ function buildExportMatrix() {
     if (factors.length > 0) {
       row.Levels = commentedRowKeepsImportedLevels(row)
         ? row._importedLevels : buildLevelsFromFactors(row);
-    }
-    if (!(row.Sample_ID || "").trim()) {
-      var suggestion = suggestSampleId(row);
-      if (suggestion) row.Sample_ID = suggestion;
     }
     var cells = COLUMNS.map(function(c) { return sanitizeCell(row[c]); });
     if (row._commented) cells[0] = (row._commentPrefix || "#") + cells[0];
@@ -2773,6 +2829,52 @@ function controlListValues(cell) {
     return [{ label: "(None available)", value: "", disabled: true }];
   }
   return [""].concat(candidates);
+}
+
+// The pick-list label for a Control candidate: its ID, plus what it is.
+function controlItemLabel(sid) {
+  if (!sid) return "";
+  var d = table.getData().find(function(r) { return r.Sample_ID === sid; });
+  if (!d) return escapeHtml(sid);
+  var bits = [d.Assay, d.IP_target, d.Genome].filter(function(x) { return (x || "").trim(); });
+  return escapeHtml(sid) + ' <span class="ctrl-item-meta">' + escapeHtml(bits.join(" \u00b7 ")) + "</span>";
+}
+
+function escapeHtml(v) {
+  return String(v).replace(/[&<>"']/g, function(c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
+
+// Highlight the table row a Control pick-list item refers to, while the item
+// is hovered or keyboard-focused, scrolling it into view if it is off-screen.
+var _ctrlHighlighted = null;
+function highlightControlRow(sid) {
+  if (_ctrlHighlighted) { _ctrlHighlighted.classList.remove("row-ref-highlight"); _ctrlHighlighted = null; }
+  if (!sid || !table) return;
+  var row = table.getRows().find(function(r) { return r.getData().Sample_ID === sid; });
+  if (!row) return;
+  _ctrlHighlighted = row.getElement();
+  _ctrlHighlighted.classList.add("row-ref-highlight");
+  try { table.scrollToRow(row, "nearest", false); } catch (e) { /* not rendered */ }
+}
+
+function wireControlRowHighlight() {
+  var itemOf = function(el) { return el && el.closest ? el.closest(".tabulator-edit-list-item") : null; };
+  document.addEventListener("mouseover", function(e) {
+    var it = itemOf(e.target);
+    if (it && it.hasAttribute("data-control-sid")) highlightControlRow(it.getAttribute("data-control-sid"));
+  });
+  document.addEventListener("mouseout", function(e) {
+    var it = itemOf(e.target);
+    if (it && it.hasAttribute("data-control-sid") && !it.contains(e.relatedTarget)) highlightControlRow("");
+  });
+  // Keyboard navigation moves Tabulator's "focused" class between items.
+  document.addEventListener("keyup", function() {
+    var f = document.querySelector(".tabulator-edit-list-item.focused[data-control-sid]");
+    if (f) highlightControlRow(f.getAttribute("data-control-sid"));
+    else if (!document.querySelector(".tabulator-edit-list")) highlightControlRow("");
+  });
 }
 
 // Example rows — valid data shown dimmed per-row until that row is edited.
@@ -2977,13 +3079,12 @@ table.on("cellEditing", function(cell) {
     }, 0);
   } else {
     _editingExampleStash = null;
-    // For real rows, the Sample_ID already has the suggestion as its value
-    // (set by applySuggestions), so no special handling needed here
   }
 });
 
 table.on("cellEdited", function(cell) {
   _editingActive = false;
+  highlightControlRow("");
   var row = cell.getRow();
   var data = row.getData();
   var field = cell.getField();
@@ -3008,20 +3109,6 @@ table.on("cellEdited", function(cell) {
   }
   _editingExampleStash = null;
 
-  // Track manual Sample_ID edits for auto-suggestion behavior
-  if (field === "Sample_ID") {
-    var newVal = (cell.getValue() || "").trim();
-    var suggestion = suggestSampleId(row.getData());
-    if (!newVal) {
-      // Clearing Sample_ID resumes auto-suggestion
-      row.update({ _sid_user_edited: false });
-    } else if (newVal !== suggestion) {
-      // User typed something different from the suggestion
-      row.update({ _sid_user_edited: true });
-    }
-    // If newVal === suggestion, keep current _sid_user_edited state
-  }
-
   // When Assay changes, clear IP_target for non-IP-peak assays
   if (field === "Assay") {
     var assay = (cell.getValue() || "").trim();
@@ -3034,6 +3121,7 @@ table.on("cellEdited", function(cell) {
 
 table.on("cellEditCancelled", function(cell) {
   _editingActive = false;
+  highlightControlRow("");
   // Restore example styling — value was never changed so no need to restore it
   if (_editingExampleStash && _editingExampleStash.field === cell.getField()) {
     cell.getElement().classList.add("cell-example");
@@ -3060,6 +3148,8 @@ table.on("rowSelectionChanged", function(rows) {
 });
 
 // Initial state
+wireControlRowHighlight();
+
 table.on("tableBuilt", function() {
   applyExampleCellStyles();
   applyDisabledCellStyles();
@@ -3166,8 +3256,6 @@ document.getElementById("btn-dup-selected").addEventListener("click", function()
   selected.sort(function(a, b) { return allRows.indexOf(a) - allRows.indexOf(b); });
   for (var i = 0; i < selected.length; i++) {
     var data = cloneRowData(selected[i]);
-    data.Sample_ID = data.Sample_ID ? data.Sample_ID + "_copy" : "";
-    data._sid_user_edited = !!data.Sample_ID;
     table.addRow(data, false); // false = append at the bottom of the table
   }
   table.deselectRow();

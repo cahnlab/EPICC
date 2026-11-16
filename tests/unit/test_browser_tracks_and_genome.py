@@ -159,9 +159,9 @@ def _write_options(tmp_path, genomes, **extra):
 
 
 def _write_sheet(tmp_path, genome_cells):
-    lines = ["Sample_ID\tAssay\tGenome"]
-    lines += [f"s{i}\tChIP\t{g}" for i, g in enumerate(genome_cells)]
-    lines.append("#parked\tChIP\tCommentedOut")
+    lines = ["Assay\tGenome"]
+    lines += [f"ChIP\t{g}" for g in genome_cells]
+    lines.append("#ChIP\tCommentedOut")
     path = tmp_path / "samples.tsv"
     path.write_text("\n".join(lines) + "\n")
     return path

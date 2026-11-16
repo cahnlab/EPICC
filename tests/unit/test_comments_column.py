@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(_REPO_ROOT, "workflow", "scripts"))
 from sample_sheet import (  # noqa: E402
     NEW_COLNAMES,
     OPTIONAL_COLNAMES,
+    SHEET_COLNAMES,
     add_compat_columns,
     build_analysis_key,
     build_analysis_name,
@@ -26,12 +27,12 @@ from sample_sheet import (  # noqa: E402
 )
 
 _FULL_HEADER = (
-    "Sample_ID\tAssay\tGenome\tLevels\tReplicate_ID\tRead_files\t"
+    "Assay\tGenome\tLevels\tReplicate_ID\tRead_files\t"
     "Read_layout\tIP_target\tControl\tPeak_type\tComments"
 )
 # The pre-Comments header, for the back-compat case.
 _LEGACY_HEADER = (
-    "Sample_ID\tAssay\tGenome\tLevels\tReplicate_ID\tRead_files\t"
+    "Assay\tGenome\tLevels\tReplicate_ID\tRead_files\t"
     "Read_layout\tIP_target\tControl\tPeak_type"
 )
 
@@ -50,11 +51,12 @@ class TestSchemaPosition:
     def test_comments_is_optional(self):
         assert "Comments" in OPTIONAL_COLNAMES
 
-    def test_builder_columns_match_new_colnames(self):
-        """The builder's COLUMNS and NEW_COLNAMES must not drift apart.
+    def test_builder_columns_match_sheet_colnames(self):
+        """The builder's COLUMNS and SHEET_COLNAMES must not drift apart.
 
-        Both express the canonical column order; #55 had to keep five places in
-        step and this is the one pair a test can hold together directly.
+        Both express the canonical exported column order; #55 had to keep five
+        places in step and this is the one pair a test can hold together
+        directly. Neither holds Sample_ID: it is derived, never exported (#91).
         """
         html = open(
             os.path.join(_REPO_ROOT, "tools", "epicc-builder.html")
@@ -62,19 +64,19 @@ class TestSchemaPosition:
         m = re.search(r"const COLUMNS = \[(.*?)\];", html, re.S)
         assert m, "COLUMNS array not found in the builder"
         cols = re.findall(r'"([^"]+)"', m.group(1))
-        assert cols == NEW_COLNAMES, (
-            "builder COLUMNS and NEW_COLNAMES disagree:\n"
-            f"  builder: {cols}\n  python : {NEW_COLNAMES}"
+        assert cols == SHEET_COLNAMES, (
+            "builder COLUMNS and SHEET_COLNAMES disagree:\n"
+            f"  builder: {cols}\n  python : {SHEET_COLNAMES}"
         )
 
 
 class TestOptionalAndRoundTrip:
-    ROW = ("s1\tRNAseq\tG\tgenotype:WT\trep1\tSRR1\tSE\t\t\t")
+    ROW = ("RNAseq\tG\tgenotype:WT\trep1\tSRR1\tSE\t\t\t")
 
     def test_absent_column_still_loads(self, tmp_path):
         # A sheet written before the column existed must parse, with "" filled in.
         df = _sheet(tmp_path, _LEGACY_HEADER,
-                    ["s1\tRNAseq\tG\tgenotype:WT\trep1\tSRR1\tSE\t\t\t"])
+                    ["RNAseq\tG\tgenotype:WT\trep1\tSRR1\tSE\t\t\t"])
         assert "Comments" in df.columns
         assert df["Comments"].tolist() == [""]
 
@@ -99,14 +101,14 @@ class TestOptionalAndRoundTrip:
             "# parked sample, do not run",
             self.ROW + "\tkeep me",
         ])
-        assert df["Sample_ID"].tolist() == ["s1"]
+        assert df["Sample_ID"].tolist() == ["WT_RNA_rep1"]
         assert df["Comments"].iloc[0] == "keep me"
 
 
 class TestInertness:
     """Comments must not influence any derived identity."""
 
-    BASE = "ip1\tChIP\tG\tgenotype:WT\trep1\tSRR1\tSE\tH3K9me2\tin1\tbroad"
+    BASE = "ChIP\tG\tgenotype:WT\trep1\tSRR1\tSE\tH3K9me2\tWT_Input_rep1\tbroad"
 
     def _row(self, tmp_path, comment, name):
         df = _sheet(tmp_path, _FULL_HEADER, [self.BASE + "\t" + comment], name)
@@ -117,6 +119,12 @@ class TestInertness:
         b = self._row(tmp_path, "some note about the batch", "b.tsv")
         assert build_analysis_name(a) == build_analysis_name(b)
         assert build_analysis_name(a) == "ChIP_broad__WT__H3K9me2__G"
+
+    def test_sample_id_unaffected(self, tmp_path):
+        # Sample_ID is derived from the row (#91); Comments must not feed it.
+        a = self._row(tmp_path, "", "a.tsv")
+        b = self._row(tmp_path, "some note about the batch", "b.tsv")
+        assert a["Sample_ID"] == b["Sample_ID"] == "WT_H3K9me2_rep1"
 
     def test_analysis_key_unaffected(self, tmp_path):
         a = self._row(tmp_path, "", "a.tsv")

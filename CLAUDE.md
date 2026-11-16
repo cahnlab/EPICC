@@ -51,11 +51,11 @@ Nested settings (`dmr_thresholds.*`, `chip_callpeaks.params`, `cut_callpeaks.*`)
 
 ### Sample Sheet and Naming
 
-Sample metadata is defined in a TSV file with 11 columns:
+Sample metadata is defined in a TSV file with 10 columns:
 
-`Sample_ID | Assay | Genome | Levels | Replicate_ID | Read_files | Read_layout | IP_target | Control | Peak_type | Comments`
+`Assay | Genome | Levels | Replicate_ID | Read_files | Read_layout | IP_target | Control | Peak_type | Comments`
 
-- **Sample_ID**: Unique identifier, used as filesystem name. Must be unique and filesystem-safe (no `__`, `/`, whitespace).
+- **Sample_ID** is not a column (#91): `derive_sample_id` builds it as `{level values}_{tag}_{Replicate_ID}`, tag = `IP_target` (ChIP), `CR_`/`CT_` + `IP_target` (CUT_RUN/CUT_TAG), or the `ASSAY_SHORT` token (`RNA`, `sRNA`, `WGBS_nd`, …). Genome, Peak_type, Read_files, Read_layout, Control and Comments never contribute. `read_sample_sheet` derives it before the genome explode, so `Sample_ID` stays an ordinary internal column and nothing downstream changed. Two rows deriving the same ID for one genome is an error; each part is checked against the unsafe-char set and for `__`/leading/trailing `_`, reported against its source column. A sheet that still has a `Sample_ID` column is rejected — no compatibility layer; the repo's sheets were converted instead. The builder mirrors the rule in `deriveSampleId` (parity tested over every shipped sheet in `tests/unit/test_builder_sample_id.py`), shows the ID read-only, never exports it, and rewrites Controls when a referenced row's ID changes (`adoptDerivedIds`).
 - **Assay**: Controlled vocabulary (experimental method only): `ChIP`, `CUT_RUN`, `CUT_TAG`, `ATAC`, `RNAseq`, `RAMPAGE`, `sRNA`, `WGBS`, `WGBS_nd`, `PBAT`, `EMseq`, `dmC`.
 - **Genome**: Reference genome name (e.g. `Spombe`, `ColCEN`), or a comma-separated list (`B73,W22`) to map the same reads to several references. Multi-genome rows are exploded internally into one row per `(Sample_ID, Genome)`. A genome name must not contain `__`.
 - **Levels**: Comma-separated `factor:level` pairs (e.g. `genotype:WT,tissue:root`). All samples must have the same factors. No `=` in factor names or levels (reserved by the UpSet `label=type` map).
@@ -63,7 +63,7 @@ Sample metadata is defined in a TSV file with 11 columns:
 - **Read_files**: SRA accession (`SRR12345`), local path, HTTP(S) URL, public S3 URI (`s3://bucket/key`), or `+`-separated for merging multiple inputs (`+`-merge supported for SRA accessions and FASTQ files, local or URL; BAM/bedMethyl must be merged upstream)
 - **Read_layout**: `SE` or `PE`
 - **IP_target**: Required for pulldown assays (`ChIP`/`CUT_RUN`/`CUT_TAG`; e.g. `H3K9me2`, `WCE`, `Input`). Blank for others.
-- **Control**: Sample_ID of the control sample (e.g. WCE or Input for ChIP). Chain depth is capped at 2: a control may declare its own Control — the *dual-role* case, where a sample is both another row's control and an analysis target itself (e.g. H3 as H3K9me2's control while normalized against Input) — but that one must not. A pulldown row with no Control is not peak-callable and is dropped from peak/analysis targets (`is_peak_call_target`).
+- **Control**: derived Sample_ID of the control sample (e.g. WCE or Input for ChIP). Chain depth is capped at 2: a control may declare its own Control — the *dual-role* case, where a sample is both another row's control and an analysis target itself (e.g. H3 as H3K9me2's control while normalized against Input) — but that one must not. A pulldown row with no Control is not peak-callable and is dropped from peak/analysis targets (`is_peak_call_target`).
 - **Peak_type**: `broad` or `narrow` — the peak-calling type, separate from Assay. Required on `ChIP`/`CUT_RUN`/`CUT_TAG` rows that call peaks, i.e. those with a `Control` (broad for histone domains, narrow for TFs/sharp marks). Optional on a control-only row, which calls no peaks and whose peak type reaches no output path; must be blank for every other assay.
 - **Comments**: Optional free text for the user's own notes. Unconstrained, not assay-gated, and completely inert — never read by the pipeline and never part of analysis keys, names, or output paths. The column may be absent entirely (filled with `""`). Tabs/newlines are stripped on builder export so the TSV stays intact.
 

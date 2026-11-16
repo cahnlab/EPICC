@@ -91,7 +91,7 @@ class TestParseParityWithLoader:
     differently (or vice versa).
     """
 
-    HEADER = ("Sample_ID\tAssay\tGenome\tLevels\tReplicate_ID\tRead_files\t"
+    HEADER = ("Assay\tGenome\tLevels\tReplicate_ID\tRead_files\t"
               "Read_layout\tIP_target\tControl")
 
     def _genomes_for(self, tmp_path, cell):
@@ -99,7 +99,7 @@ class TestParseParityWithLoader:
         f.write_text(
             "\n".join([
                 self.HEADER,
-                f"s1\tATAC\t{cell}\tgenotype:WT\trep1\tSRR1\tSE\t\t",
+                f"ATAC\t{cell}\tgenotype:WT\trep1\tSRR1\tSE\t\t",
             ]) + "\n"
         )
         return list(read_sample_sheet(f)["Genome"])

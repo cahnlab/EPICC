@@ -1,11 +1,11 @@
-Sample_ID	Assay	Genome	Levels	Replicate_ID	Read_files	Read_layout	IP_target	Control	Peak_type
-WT_CR_H3K27me3_rep1	CUT_RUN	test_genome	genotype:WT	rep1	tests/integration/data/mock_inputs/cr_broad_wt_rep1_R1.fq.gz,tests/integration/data/mock_inputs/cr_broad_wt_rep1_R2.fq.gz	PE	H3K27me3	WT_CR_IgG_rep1	broad
-WT_CR_H3K27me3_rep2	CUT_RUN	test_genome	genotype:WT	rep2	tests/integration/data/mock_inputs/cr_broad_wt_rep2_R1.fq.gz,tests/integration/data/mock_inputs/cr_broad_wt_rep2_R2.fq.gz	PE	H3K27me3	WT_CR_IgG_rep1	broad
-WT_CR_TF1_rep1	CUT_RUN	test_genome	genotype:WT	rep1	tests/integration/data/mock_inputs/cr_narrow_wt_rep1_R1.fq.gz,tests/integration/data/mock_inputs/cr_narrow_wt_rep1_R2.fq.gz	PE	TF1	WT_CR_IgG_rep1	narrow
-WT_CR_TF1_rep2	CUT_RUN	test_genome	genotype:WT	rep2	tests/integration/data/mock_inputs/cr_narrow_wt_rep2_R1.fq.gz,tests/integration/data/mock_inputs/cr_narrow_wt_rep2_R2.fq.gz	PE	TF1	WT_CR_IgG_rep1	narrow
-WT_CR_IgG_rep1	CUT_RUN	test_genome	genotype:WT	rep1	tests/integration/data/mock_inputs/cr_igg_wt_rep1_R1.fq.gz,tests/integration/data/mock_inputs/cr_igg_wt_rep1_R2.fq.gz	PE	IgG		broad
-WT_CT_H3K27me3_rep1	CUT_TAG	test_genome	genotype:WT	rep1	tests/integration/data/mock_inputs/ct_broad_wt_rep1_R0.fq.gz	SE	H3K27me3	WT_CT_IgG_rep1	broad
-WT_CT_H3K27me3_rep2	CUT_TAG	test_genome	genotype:WT	rep2	tests/integration/data/mock_inputs/ct_broad_wt_rep2_R0.fq.gz	SE	H3K27me3	WT_CT_IgG_rep1	broad
-WT_CT_TF1_rep1	CUT_TAG	test_genome	genotype:WT	rep1	tests/integration/data/mock_inputs/ct_narrow_wt_rep1_R0.fq.gz	SE	TF1	WT_CT_IgG_rep1	narrow
-WT_CT_TF1_rep2	CUT_TAG	test_genome	genotype:WT	rep2	tests/integration/data/mock_inputs/ct_narrow_wt_rep2_R0.fq.gz	SE	TF1	WT_CT_IgG_rep1	narrow
-WT_CT_IgG_rep1	CUT_TAG	test_genome	genotype:WT	rep1	tests/integration/data/mock_inputs/ct_igg_wt_rep1_R0.fq.gz	SE	IgG		broad
+Assay	Genome	Levels	Replicate_ID	Read_files	Read_layout	IP_target	Control	Peak_type
+CUT_RUN	test_genome	genotype:WT	rep1	tests/integration/data/mock_inputs/cr_broad_wt_rep1_R1.fq.gz,tests/integration/data/mock_inputs/cr_broad_wt_rep1_R2.fq.gz	PE	H3K27me3	WT_CR_IgG_rep1	broad
+CUT_RUN	test_genome	genotype:WT	rep2	tests/integration/data/mock_inputs/cr_broad_wt_rep2_R1.fq.gz,tests/integration/data/mock_inputs/cr_broad_wt_rep2_R2.fq.gz	PE	H3K27me3	WT_CR_IgG_rep1	broad
+CUT_RUN	test_genome	genotype:WT	rep1	tests/integration/data/mock_inputs/cr_narrow_wt_rep1_R1.fq.gz,tests/integration/data/mock_inputs/cr_narrow_wt_rep1_R2.fq.gz	PE	TF1	WT_CR_IgG_rep1	narrow
+CUT_RUN	test_genome	genotype:WT	rep2	tests/integration/data/mock_inputs/cr_narrow_wt_rep2_R1.fq.gz,tests/integration/data/mock_inputs/cr_narrow_wt_rep2_R2.fq.gz	PE	TF1	WT_CR_IgG_rep1	narrow
+CUT_RUN	test_genome	genotype:WT	rep1	tests/integration/data/mock_inputs/cr_igg_wt_rep1_R1.fq.gz,tests/integration/data/mock_inputs/cr_igg_wt_rep1_R2.fq.gz	PE	IgG		broad
+CUT_TAG	test_genome	genotype:WT	rep1	tests/integration/data/mock_inputs/ct_broad_wt_rep1_R0.fq.gz	SE	H3K27me3	WT_CT_IgG_rep1	broad
+CUT_TAG	test_genome	genotype:WT	rep2	tests/integration/data/mock_inputs/ct_broad_wt_rep2_R0.fq.gz	SE	H3K27me3	WT_CT_IgG_rep1	broad
+CUT_TAG	test_genome	genotype:WT	rep1	tests/integration/data/mock_inputs/ct_narrow_wt_rep1_R0.fq.gz	SE	TF1	WT_CT_IgG_rep1	narrow
+CUT_TAG	test_genome	genotype:WT	rep2	tests/integration/data/mock_inputs/ct_narrow_wt_rep2_R0.fq.gz	SE	TF1	WT_CT_IgG_rep1	narrow
+CUT_TAG	test_genome	genotype:WT	rep1	tests/integration/data/mock_inputs/ct_igg_wt_rep1_R0.fq.gz	SE	IgG		broad
