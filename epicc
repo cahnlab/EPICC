@@ -388,6 +388,25 @@ def _lock_present(repo):
     return locks.exists() and any(locks.iterdir())
 
 
+def report_lock_for_validate(repo):
+    """Tell a validate user that the next 'epicc run' will hit a lock.
+
+    A dry-run only warns about a lock (snakemake runs it with
+    lock_warn_only), and that warning is buried in, or captured out of, the
+    dry-run output, so validate can pass while the run it vouches for is
+    refused at startup.
+    """
+    if not _lock_present(repo):
+        return
+    print(
+        "\n  Note: the working directory is locked, so 'epicc run' will refuse "
+        "to start.\n  If no other epicc run is active here, a prior run was "
+        "likely killed — clear\n  the lock with:\n      epicc unlock\n  or "
+        "pass --auto-unlock to 'epicc run' (or to this validate).",
+        file=sys.stderr,
+    )
+
+
 def maybe_clear_stale_lock(args, extra_args, repo):
     """Clear a stale Snakemake lock before running, but only if opted in.
 
@@ -1138,6 +1157,9 @@ def cmd_validate(args, extra_args):
 
     # Optionally run snakemake dry-run for full DAG validation
     if not errors:
+        # After the config checks: the unlock call parses the Snakefile too,
+        # so it needs the same valid config the dry-run does.
+        maybe_clear_stale_lock(args, extra_args, repo)
         print("\n  Running snakemake dry-run for DAG validation...\n",
               file=sys.stderr)
         cmd = build_snakemake_cmd(args, extra_args, dry_run=True)
@@ -1150,6 +1172,7 @@ def cmd_validate(args, extra_args):
             result = subprocess.run(cmd)
             if result.returncode == 0:
                 print("\nEPICC: Validation passed.", file=sys.stderr)
+                report_lock_for_validate(repo)
                 maybe_render_graphs(args)
             else:
                 print(f"\nEPICC: Dry-run validation failed (exit code "
@@ -1168,6 +1191,7 @@ def cmd_validate(args, extra_args):
             print("EPICC: Validation passed.", file=sys.stderr)
             print("  (re-run with --verbose to see the full snakemake output)",
                   file=sys.stderr)
+            report_lock_for_validate(repo)
             maybe_render_graphs(args)
             if getattr(args, "build_envs", False):
                 return _run_build_envs(args, extra_args)
@@ -1803,6 +1827,22 @@ def add_common_options(parser):
     )
 
 
+def add_lock_options(parser):
+    """--auto-unlock, shared by run and validate.
+
+    validate takes it too so a run's command line can be reused verbatim,
+    and so a validate after a killed run leaves the directory ready for a
+    plain 'epicc run'.
+    """
+    parser.add_argument(
+        "--auto-unlock", action="store_true",
+        help="If a stale Snakemake lock is detected at startup, clear it and "
+             "continue (default: halt and report the lock, like snakemake). "
+             "Only use when you are sure no other run is active on this "
+             "directory; run 'epicc unlock' to clear a lock manually",
+    )
+
+
 def add_run_options(parser):
     """Add options specific to run."""
     parser.add_argument(
@@ -1816,13 +1856,6 @@ def add_run_options(parser):
     parser.add_argument(
         "--forcerun", nargs="+", metavar="RULE",
         help="Force re-execution of specific rules",
-    )
-    parser.add_argument(
-        "--auto-unlock", action="store_true",
-        help="If a stale Snakemake lock is detected at startup, clear it and "
-             "continue (default: halt and report the lock, like snakemake). "
-             "Only use when you are sure no other run is active on this "
-             "directory; run 'epicc unlock' to clear a lock manually",
     )
     parser.add_argument(
         "--no-rerun-incomplete", action="store_true",
@@ -2035,6 +2068,7 @@ def build_parser():
     )
     add_common_options(p_run)
     add_run_options(p_run)
+    add_lock_options(p_run)
     add_analysis_options(p_run)
 
     # --- validate ---
@@ -2044,6 +2078,7 @@ def build_parser():
                     "then run a snakemake dry-run for full DAG validation.",
     )
     add_common_options(p_val)
+    add_lock_options(p_val)
     add_graph_options(p_val)
     add_analysis_options(p_val)
     p_val.add_argument(
