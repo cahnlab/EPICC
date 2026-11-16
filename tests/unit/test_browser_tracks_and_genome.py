@@ -248,6 +248,21 @@ class TestRunGenomeFlags:
         args = types.SimpleNamespace(options=str(opts), te_file=None, ref_genome="B73", samples=None)
         assert epicc._prepare_options_file(args) == str(opts)
 
+    def test_merged_config_on_shared_run_dir_not_system_tmp(self, tmp_path, monkeypatch):
+        # Cluster jobs re-read --configfile on their own node; a node-local
+        # /tmp path made every SLURM job die with FileNotFoundError.
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        monkeypatch.chdir(run_dir)
+        te = tmp_path / "te.bed"
+        te.write_text("chr1\t1\t2\n")
+        opts = _write_options(tmp_path, ["B73"])
+        args = types.SimpleNamespace(options=str(opts), te_file=str(te), ref_genome="B73", samples=None)
+        merged = Path(epicc._prepare_options_file(args))
+        assert merged.is_absolute()
+        assert merged.parent == (run_dir / ".snakemake" / "epicc").resolve()
+        assert _merged(merged)["genomes"]["B73"]["alt_te_file"] == str(te)
+
 
 # ---------------------------------------------------------------------------
 # epicc output: --extra-tracks[-labels|-colors]

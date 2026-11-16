@@ -30,7 +30,7 @@ epicc validate --build-envs --samples your_samples.tsv        # pre-create rule 
 
 `epicc output --plot-type browser` also takes `--te-file` and `--extra-tracks BED,…` with optional `--extra-tracks-labels` / `--extra-tracks-colors`, which replace `browser_extra_tracks` for that run (normalized by `workflow/scripts/browser_extra_tracks.py`).
 
-Nested settings (`dmr_thresholds.*`, `chip_callpeaks.params`, `cut_callpeaks.*`) are applied via a temp merged config file; sibling keys not specified on the CLI are preserved from the options YAML.
+Nested settings (`dmr_thresholds.*`, `chip_callpeaks.params`, `cut_callpeaks.*`) are applied via a temp merged config file, written under the run directory's `.snakemake/epicc/` rather than `/tmp` because cluster jobs re-read `--configfile` on their own node; sibling keys not specified on the CLI are preserved from the options YAML.
 
 ## Architecture
 

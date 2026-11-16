@@ -808,8 +808,17 @@ def _prepare_options_file(args):
             d = d[part]
         d[parts[-1]] = value
 
+    # Not the system temp dir: under a cluster profile every job re-runs
+    # snakemake on its own node with the same --configfile, and a node-local
+    # /tmp path does not exist there (FileNotFoundError before the rule
+    # starts). The run directory's .snakemake/ is on the filesystem the jobs
+    # share, and snakemake writes there already. Absolute, so a job that
+    # starts in another working directory still finds it.
+    merged_dir = (Path.cwd() / ".snakemake" / "epicc").resolve()
+    merged_dir.mkdir(parents=True, exist_ok=True)
     tmp = tempfile.NamedTemporaryFile(
-        mode="w", suffix=".yaml", prefix="epicc_merged_", delete=False
+        mode="w", suffix=".yaml", prefix="epicc_merged_", delete=False,
+        dir=str(merged_dir),
     )
     yaml.dump(config, tmp, default_flow_style=False, allow_unicode=True)
     tmp.close()
