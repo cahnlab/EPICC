@@ -13,40 +13,52 @@ Trailing whitespace on any field is stripped during parsing.
 
 | # | Column | Required | Type |
 |---|--------|----------|------|
-| 1 | Sample_ID | Yes | Controlled freetext |
-| 2 | Assay | Yes | Controlled vocabulary |
-| 3 | Genome | Yes | Freetext |
-| 4 | Levels | Yes | Structured freetext |
-| 5 | Replicate_ID | Yes | Freetext |
-| 6 | Read_files | Yes | Path / SRA ID |
-| 7 | Read_layout | Yes | Controlled vocabulary |
-| 8 | IP_target | Conditional | Freetext |
-| 9 | Control | Conditional | Reference |
-| 10 | Peak_type | Conditional | Controlled vocabulary |
-| 11 | Comments | Optional | Freetext |
+| 1 | Assay | Yes | Controlled vocabulary |
+| 2 | Genome | Yes | Freetext |
+| 3 | Levels | Yes | Structured freetext |
+| 4 | Replicate_ID | Yes | Freetext |
+| 5 | Read_files | Yes | Path / SRA ID |
+| 6 | Read_layout | Yes | Controlled vocabulary |
+| 7 | IP_target | Conditional | Freetext |
+| 8 | Control | Conditional | Reference |
+| 9 | Peak_type | Conditional | Controlled vocabulary |
+| 10 | Comments | Optional | Freetext |
+
+There is no Sample_ID column: it is derived (below).
 
 `Peak_type` is last because it applies to only three assays; column lookup is by
 header name on both sides, so the order is ergonomic rather than semantic.
 
 ## Per-Field Validation Rules
 
-### Sample_ID
+### Sample_ID (derived)
 
-Unique identifier for each sample row. Used as a filesystem path component and
-as a reference target for the Control column.
+Identifier for each sample row, used as a filesystem path component and as the
+reference target for the Control column. It is **not a column** (#91): both the
+pipeline (`derive_sample_id` in `workflow/scripts/sample_sheet.py`) and the
+builder (`deriveSampleId`) build it from the row, joined with `_`:
+
+| Assay | Sample_ID | Example |
+|-------|-----------|---------|
+| `ChIP` | `{level values}_ChIP_{IP_target}_{Replicate_ID}` | `WT_leaf_ChIP_H3K9me2_rep1` |
+| `CUT_RUN` | `{level values}_CR_{IP_target}_{Replicate_ID}` | `WT_leaf_CR_H3K27me3_rep1` |
+| `CUT_TAG` | `{level values}_CT_{IP_target}_{Replicate_ID}` | `WT_leaf_CT_IgG_rep1` |
+| others | `{level values}_{short}_{Replicate_ID}`, short = `ATAC`, `RNA`, `RAMPAGE`, `sRNA`, `WGBS`, `WGBS_nd`, `PBAT`, `EMseq`, `dmC` | `WT_leaf_RNA_rep1` |
+
+Genome, Peak_type, Read_files, Read_layout, Control and Comments never
+contribute: they describe how a library is analysed or where its files live,
+not which library it is.
 
 | Rule | Detail |
 |------|--------|
-| Required | Must be non-empty |
-| Unique | No two rows may share the same Sample_ID |
-| No double underscores | Must not contain `__` (reserved as a delimiter in analysis-level names) |
-| Filesystem-safe | Must not contain any of: `/\` whitespace `'";&\|<>$`` !{}()[]?*~#` |
+| Derivable | Levels, Replicate_ID, a valid Assay and (pulldown assays) IP_target must be set |
+| Unique | No two rows may derive the same Sample_ID for the same Genome. Distinct libraries differ in Replicate_ID (or IP_target); several sequencing runs of one library go in one row, Read_files joined with `+` |
+| Safe parts | Each level value, IP_target and Replicate_ID must be free of `/\` whitespace `'";&\|<>$`` !{}()[]?*~#`, must not contain `__`, and must not start or end with `_` (that would join into `__`, the reserved delimiter) |
 
-There are no other format requirements. Sample_IDs can be fully arbitrary
-strings (the pipeline never parses them for metadata). However, concise
-descriptive IDs like `WT_leaf_H3K9me2_rep1` are recommended for readability.
-The epicc-builder app should suggest IDs progressively as the user fills in
-other fields, but always allow manual editing.
+A sheet that still carries a `Sample_ID` column is an error; there is no
+compatibility layer. The builder reads columns by header name, so importing such
+a sheet simply does not read the column, and any Control naming an old ID is
+flagged as an unknown reference until it is re-picked.
 
 ### Assay
 
@@ -102,8 +114,8 @@ Examples: `ColCEN`, `Spombe`, `hg38`.
 
 **Multiple references per sample.** A comma-separated list maps the same reads
 to several genomes — e.g. `B73,W22`. The row is exploded internally into one
-`(Sample_ID, Genome)` entry per reference, so `Sample_ID` remains globally
-unique and does not encode the genome.
+`(Sample_ID, Genome)` entry per reference, so `Sample_ID` is derived once per
+sheet row, remains globally unique, and does not encode the genome.
 
 | Rule | Detail |
 |------|--------|
@@ -219,11 +231,14 @@ analysis-level names and plot labels.
 
 ### Control
 
-References the Sample_ID of the control sample used for normalization.
+References the (derived) Sample_ID of the control sample used for
+normalization. In the builder it is a pick list of the derived IDs of eligible
+rows; hovering an item highlights that row, and the reference follows the row if
+an edit changes its ID.
 
 | Rule | Detail |
 |------|--------|
-| Valid reference | Must match an existing Sample_ID in the sheet |
+| Valid reference | Must match an existing (derived) Sample_ID in the sheet; close matches are suggested |
 | Allowed assays only | May only be specified for pulldown assays (`ChIP`, `CUT_RUN`, `CUT_TAG`) and `RAMPAGE` samples |
 | Not itself | A sample may not list itself as its own Control |
 | Chain depth ≤ 2 | The referenced control **may** declare its own Control (the *dual-role* case below), but that one must not. Deeper chains are rejected; the bound also makes control cycles impossible |
@@ -231,13 +246,13 @@ References the Sample_ID of the control sample used for normalization.
 | Optional | Blank/absent is valid (sample has no associated control) |
 
 **Examples**:
-- ChIP: `WT_leaf_Input_rep1` (`Assay: ChIP`, `IP_target: Input`)
+- ChIP: `WT_leaf_ChIP_Input_rep1` (`Assay: ChIP`, `IP_target: Input`)
   referenced as `Control` by H3K9me2 IP samples.
-- CUT&RUN: `WT_endosperm_IgG_rep1` (`Assay: CUT_RUN`, `IP_target: IgG`)
+- CUT&RUN: `WT_endosperm_CR_IgG_rep1` (`Assay: CUT_RUN`, `IP_target: IgG`)
   shared as `Control` by both H3K27me3 replicates in the same family. The
-  builder constrains the Control dropdown to same-family assays
-  (`ChIP`, `CUT_RUN`, or `CUT_TAG`), but freetext entry is allowed
-  for cross-family controls if a study uses one.
+  builder's Control pick list offers only same-family assays (`ChIP`,
+  `CUT_RUN`, or `CUT_TAG`); a cross-family control has to be written into
+  the TSV by hand, where the pipeline accepts it.
 
 **Dual-role samples.** A sample can serve as another row's control *and* be
 analysed in its own right, as long as it declares a `Control` of its own. The

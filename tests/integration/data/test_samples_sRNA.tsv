@@ -1,6 +1,6 @@
-Sample_ID	Assay	Genome	Levels	Replicate_ID	Read_files	Read_layout	IP_target	Control	Peak_type
-WT_sRNA_rep1	sRNA	test_genome	genotype:WT	rep1	tests/integration/data/mock_inputs/srna_wt_rep1_R0.fq.gz	SE			
-WT_sRNA_rep2	sRNA	test_genome	genotype:WT	rep2	tests/integration/data/mock_inputs/srna_wt_rep2_R0.fq.gz	SE			
-mutant_sRNA_rep1	sRNA	test_genome	genotype:mutant	rep1	tests/integration/data/mock_inputs/srna_mut_rep1_R0.fq.gz	SE			
-mutant_sRNA_rep2	sRNA	test_genome	genotype:mutant	rep2	tests/integration/data/mock_inputs/srna_mut_rep2_R0.fq.gz	SE			
-mutant2_sRNA_rep1	sRNA	test_genome	genotype:mutant2	rep1	tests/integration/data/mock_inputs/srna_mut2_rep1_R0.fq.gz	SE			
+Assay	Genome	Levels	Replicate_ID	Read_files	Read_layout	IP_target	Control	Peak_type
+sRNA	test_genome	genotype:WT	rep1	tests/integration/data/mock_inputs/srna_wt_rep1_R0.fq.gz	SE			
+sRNA	test_genome	genotype:WT	rep2	tests/integration/data/mock_inputs/srna_wt_rep2_R0.fq.gz	SE			
+sRNA	test_genome	genotype:mutant	rep1	tests/integration/data/mock_inputs/srna_mut_rep1_R0.fq.gz	SE			
+sRNA	test_genome	genotype:mutant	rep2	tests/integration/data/mock_inputs/srna_mut_rep2_R0.fq.gz	SE			
+sRNA	test_genome	genotype:mutant2	rep1	tests/integration/data/mock_inputs/srna_mut2_rep1_R0.fq.gz	SE			

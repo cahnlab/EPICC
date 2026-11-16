@@ -68,7 +68,6 @@ If you want to run the pipeline on a different platform than locally or slurm, y
 For new users, it is recommended to use the local HTML builder at `tools/epicc-builder.html` (open directly in a browser; it loads its Tabulator and js-yaml libraries from a CDN, so it needs an internet connection) to build and validate your sample metadata file and choose analysis options.
 
 1. Prepare your sample metadata file (start from the documented template at `config/example_samples.tsv` and pass yours via `epicc run --samples ...`) with the required columns below (see Input requirements for more details specific to each data-type):
-   - `Sample_ID`: Unique identifier for the sample (e.g. `WT_leaf_H3K9me2_rep1`). Must be filesystem-safe.
    - `Assay`: Type of assay — the experimental method only [`ChIP` | `CUT_RUN` | `CUT_TAG` | `ATAC` | `RNAseq` | `RAMPAGE` | `sRNA` | `WGBS` | `WGBS_nd` | `PBAT` | `EMseq` | `dmC`].
    - `Genome`: Reference genome name (e.g. `ColCEN`, `Spombe`), or a comma-separated list (e.g. `B73,W22`) to map the same reads to several references
    - `Levels`: Experimental conditions as comma-separated `factor:level` pairs (e.g. `genotype:WT,tissue:leaf`)
@@ -76,7 +75,7 @@ For new users, it is recommended to use the local HTML builder at `tools/epicc-b
    - `Read_files`: Path to FASTQ/BAM files, SRA accession (e.g. `SRR12345678`), HTTP(S) URL, or public `s3://bucket/key` URI. For PE FASTQs, comma-separate R1 and R2 paths. Use `+` to merge multiple SRA accessions or FASTQ files (e.g. `SRR111+SRR222`, or `a.fq.gz+b.fq.gz`); BAM/bedMethyl inputs must be merged upstream.
    - `Read_layout`: [`PE` | `SE`]
    - `IP_target`: Required for pulldown assays (`ChIP`/`CUT_RUN`/`CUT_TAG`) — the IP target (e.g. `H3K9me2`) or control type (e.g. `Input`, `WCE`, `IgG`). Leave blank for other assays.
-   - `Control`: Sample_ID of the control sample for this IP (e.g. the Input sample's Sample_ID). Required for pulldown and RAMPAGE IP samples. Leave blank for plain controls and non-pulldown assays.
+   - `Control`: Sample_ID of the control sample for this IP (e.g. `WT_leaf_ChIP_Input_rep1`). Sample_IDs are derived from the other columns — see [Sample file configuration](#sample-file-configuration). Required for pulldown and RAMPAGE IP samples. Leave blank for plain controls and non-pulldown assays.
    - `Peak_type`: [`broad` | `narrow`] — the peak-calling type, kept separate from the assay. Required on `ChIP`/`CUT_RUN`/`CUT_TAG` rows that call peaks (those with a `Control`); optional on a control-only row, which calls no peaks; blank on every other assay.
    - `Comments`: Optional free text for your own notes. Never read by the pipeline. The column may be omitted entirely.
 
@@ -213,10 +212,22 @@ Note that this interacts with the pre-building step above: if `conda env create`
 
 ### Overview
 
-The sample metadata file is a tab-separated file (TSV) with 11 columns. Each row defines one biological sample.
+The sample metadata file is a tab-separated file (TSV) with 10 columns. Each row defines one biological sample.
 
-| Sample_ID | Assay | Genome | Levels | Replicate_ID | Read_files | Read_layout | IP_target | Control | Peak_type | Comments |
-|-----------|-------|--------|--------|--------------|------------|-------------|-----------|---------|-----------|----------|
+| Assay | Genome | Levels | Replicate_ID | Read_files | Read_layout | IP_target | Control | Peak_type | Comments |
+|-------|--------|--------|--------------|------------|-------------|-----------|---------|-----------|----------|
+
+Each sample's **Sample_ID** is not a column: it is derived from the row as
+`{level values}_{tag}_{IP_target}_{Replicate_ID}` for the pulldown assays, the tag being `ChIP`,
+`CR` (`CUT_RUN`) or `CT` (`CUT_TAG`) — control rows included (e.g. `WT_leaf_ChIP_H3K9me2_rep1`,
+`WT_leaf_ChIP_Input_rep1`, `WT_leaf_CR_IgG_rep1`) — and
+`{level values}_{assay}_{Replicate_ID}` otherwise, where `{assay}` is `ATAC`, `RNA`, `RAMPAGE`,
+`sRNA`, `WGBS`, `WGBS_nd`, `PBAT`, `EMseq` or `dmC` (e.g. `WT_leaf_RNA_rep1`). It names the
+sample's files and is what `Control` refers to; the builder shows it read-only. Two rows must
+not derive the same name for the same genome: give distinct libraries different `Replicate_ID`s
+(or `IP_target`s), and list several sequencing runs of one library in one row with `+`. A sheet
+that still has a `Sample_ID` column is rejected: remove the column and set each `Control` to the
+derived name of its control row (the builder shows them).
 
 The four trailing columns (`IP_target`, `Control`, `Peak_type`, `Comments`) are optional and may be left blank or omitted from the right-hand end of a row — a WGBS row can stop after `Read_layout`. See the documented template at `config/example_samples.tsv`.
 
@@ -224,7 +235,7 @@ A line whose first non-whitespace character is `#` is skipped, so you can park s
 
 ### Common to all types of samples
 
-- **Sample_ID**: A unique identifier for this sample. Used in output filenames. Must be filesystem-safe (no `__`, `/`, whitespace, or shell metacharacters).
+- **Sample_ID** (derived, not a column): see above. Because level values, `IP_target` and `Replicate_ID` become part of file names, they must be filesystem-safe (no whitespace, `/` or shell metacharacters) and must not contain `__` or start or end with `_`.
 - **Levels**: Comma-separated `factor:level` pairs describing experimental conditions (e.g. `genotype:WT,tissue:leaf` or `genotype:Col0,treatment:control`). The combination of levels is used for comparisons. All samples must have the same number of factors with the same factor names. Factor names and levels must not contain `=`.
 - **Replicate_ID**: Any value to identify replicates (e.g. `rep1`, `repA`, `1`). Replicates with the same Assay, Levels, IP_target, and Genome are merged for downstream analysis.
 - **Read_files**: Path to input data. Supports:
@@ -237,7 +248,7 @@ A line whose first non-whitespace character is `#` is skipped, so you can park s
 - **Read_layout**: `PE` for paired-end data or `SE` for single-end data. For SRA accessions this must match the run's real layout: the download rule checks what `fasterq-dump` produced and stops with the accession name if the two disagree, rather than carrying an empty FASTQ through mapping.
 - **Peak_type**: `broad` or `narrow`, for the three pulldown assays only (`ChIP`, `CUT_RUN`, `CUT_TAG`). This is an *analytical* choice — how peaks are called — kept separate from the assay, which records what was done at the bench. The same libraries can therefore be re-analyzed under the other peak type by editing one column. Leave blank for every other assay: ATAC's peak type is fixed, and the rest call no peaks. Peak type still appears in output filenames.
 - **Comments**: Free text for your own notes (e.g. `resequenced 2026-03; higher duplication than rep2`). Completely inert — never read by the pipeline and never part of analysis names or output paths. Tabs and newlines are stripped on builder export so the TSV stays intact.
-- **Genome**: Name of the reference genome (e.g. `ColCEN`, `Spombe`). To map one sample to several references, comma-separate them (e.g. `B73,W22`) — or tick them in the builder's Genome cell. The reads are downloaded and trimmed once, then aligned to each reference; every output from alignment onward is tagged with the genome (`final__WT_H3K9me2_rep1__B73.bam`), so the two analyses never collide. A genome name must not contain `__`. Each genome is defined under the `genomes:` namespace in `config/epicc-options.yaml`:
+- **Genome**: Name of the reference genome (e.g. `ColCEN`, `Spombe`). To map one sample to several references, comma-separate them (e.g. `B73,W22`) — or tick them in the builder's Genome cell. The reads are downloaded and trimmed once, then aligned to each reference; every output from alignment onward is tagged with the genome (`final__WT_ChIP_H3K9me2_rep1__B73.bam`), so the two analyses never collide. A genome name must not contain `__`. Each genome is defined under the `genomes:` namespace in `config/epicc-options.yaml`:
 ```yaml
 genomes:
   ColCEN:
@@ -269,14 +280,14 @@ Reference genomes must be defined under the `genomes:` namespace shown above.
 
 Histone example:
 ```
-WT_leaf_H3K9me2_rep1	ChIP	ColCEN	genotype:WT,tissue:leaf	rep1	SRR12345	PE	H3K9me2	WT_leaf_Input_rep1	broad
-WT_leaf_Input_rep1	ChIP	ColCEN	genotype:WT,tissue:leaf	rep1	SRR12346	PE	Input		broad
+ChIP	ColCEN	genotype:WT,tissue:leaf	rep1	SRR12345	PE	H3K9me2	WT_leaf_ChIP_Input_rep1	broad
+ChIP	ColCEN	genotype:WT,tissue:leaf	rep1	SRR12346	PE	Input		broad
 ```
 
 Transcription factor example:
 ```
-WT_leaf_TB1_rep1	ChIP	ColCEN	genotype:WT,tissue:leaf	rep1	SRR12347	PE	TB1	WT_leaf_Input_rep1	narrow
-WT_leaf_Input_rep1	ChIP	ColCEN	genotype:WT,tissue:leaf	rep1	SRR12348	PE	Input		narrow
+ChIP	ColCEN	genotype:WT,tissue:leaf	rep1	SRR12347	PE	TB1	WT_leaf_ChIP_Input_rep1	narrow
+ChIP	ColCEN	genotype:WT,tissue:leaf	rep1	SRR12348	PE	Input		narrow
 ```
 
 To use different controls for different marks (e.g. H3 for one mark, H4 for another), simply assign the appropriate control Sample_ID in the `Control` column.
@@ -293,15 +304,15 @@ To use different controls for different marks (e.g. H3 for one mark, H4 for anot
 
 CUT&RUN example (sharing a single IgG across reps):
 ```
-WT_endo_H3K27me3_rep1	CUT_RUN	ColCEN	genotype:WT,tissue:endosperm	rep1	SRR8310960	PE	H3K27me3	WT_endo_IgG_rep1	broad
-WT_endo_H3K27me3_rep2	CUT_RUN	ColCEN	genotype:WT,tissue:endosperm	rep2	SRR8310958	PE	H3K27me3	WT_endo_IgG_rep1	broad
-WT_endo_IgG_rep1	CUT_RUN	ColCEN	genotype:WT,tissue:endosperm	rep1	SRR8310961	PE	IgG		broad
+CUT_RUN	ColCEN	genotype:WT,tissue:endosperm	rep1	SRR8310960	PE	H3K27me3	WT_endosperm_CR_IgG_rep1	broad
+CUT_RUN	ColCEN	genotype:WT,tissue:endosperm	rep2	SRR8310958	PE	H3K27me3	WT_endosperm_CR_IgG_rep1	broad
+CUT_RUN	ColCEN	genotype:WT,tissue:endosperm	rep1	SRR8310961	PE	IgG		broad
 ```
 
 CUT&Tag for a TF (single-end, defaulting to SEACR for narrow peak calling):
 ```
-WT_leaf_CTCF_rep1	CUT_TAG	hg38	genotype:WT,tissue:leaf	rep1	SRR12345	SE	CTCF	WT_leaf_IgG_rep1	narrow
-WT_leaf_IgG_rep1	CUT_TAG	hg38	genotype:WT,tissue:leaf	rep1	SRR12346	SE	IgG		narrow
+CUT_TAG	hg38	genotype:WT,tissue:leaf	rep1	SRR12345	SE	CTCF	WT_leaf_CT_IgG_rep1	narrow
+CUT_TAG	hg38	genotype:WT,tissue:leaf	rep1	SRR12346	SE	IgG		narrow
 ```
 
 ### RNA-seq

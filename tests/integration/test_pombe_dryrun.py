@@ -34,15 +34,15 @@ _OUTPUT_DIR = load_output_dir("test_options_pombe.yaml")
 # ---------------------------------------------------------------------------
 
 # Per-replicate targets
-CHIP_BROAD_TARGET = f"{_OUTPUT_DIR}/ChIP/tracks/coverage__WT_H3K9me2_rep1.bw"
-CHIP_BROAD_TARGET_REP2 = f"{_OUTPUT_DIR}/ChIP/tracks/coverage__WT_H3K9me2_rep2.bw"
-CHIP_NARROW_TARGET = f"{_OUTPUT_DIR}/ChIP/tracks/coverage__WT_H3K4me3_rep1.bw"
+CHIP_BROAD_TARGET = f"{_OUTPUT_DIR}/ChIP/tracks/coverage__WT_ChIP_H3K9me2_rep1.bw"
+CHIP_BROAD_TARGET_REP2 = f"{_OUTPUT_DIR}/ChIP/tracks/coverage__WT_ChIP_H3K9me2_rep2.bw"
+CHIP_NARROW_TARGET = f"{_OUTPUT_DIR}/ChIP/tracks/coverage__WT_ChIP_H3K4me3_rep1.bw"
 RNA_TARGET = f"{_OUTPUT_DIR}/RNA/mapped/final__WT_RNA_rep1.bam"
 SRNA_TARGET = f"{_OUTPUT_DIR}/sRNA/mapped/WT_sRNA_rep1/Results.txt"
 
 # Control sample targets
-INPUT_BROAD_TARGET = f"{_OUTPUT_DIR}/ChIP/tracks/coverage__WT_WCE_rep1.bw"
-INPUT_NARROW_TARGET = f"{_OUTPUT_DIR}/ChIP/tracks/coverage__WT_Input_rep1.bw"
+INPUT_BROAD_TARGET = f"{_OUTPUT_DIR}/ChIP/tracks/coverage__WT_ChIP_WCE_rep1.bw"
+INPUT_NARROW_TARGET = f"{_OUTPUT_DIR}/ChIP/tracks/coverage__WT_ChIP_Input_rep1.bw"
 
 # Analysis-level names (Assay__levels_label__IP_target__Genome)
 CHIP_BROAD_ANALYSIS = "ChIP_broad__WT__H3K9me2__Spombe"
@@ -300,8 +300,8 @@ class TestControlLinking:
 
         output = result.stdout + result.stderr
 
-        assert "WT_WCE_rep1" in output, \
-            "ChIP broad workflow should reference WT_WCE_rep1 as control"
+        assert "WT_ChIP_WCE_rep1" in output, \
+            "ChIP broad workflow should reference WT_ChIP_WCE_rep1 as control"
 
     def test_chip_narrow_resolves_control(self, snakemake_available, repo_root, test_options):
         """Test that ChIP narrow workflow references WT Input control in peak calling."""
@@ -314,8 +314,8 @@ class TestControlLinking:
 
         output = result.stdout + result.stderr
 
-        assert "WT_Input_rep1" in output, \
-            "ChIP workflow should reference WT_Input_rep1 as control"
+        assert "WT_ChIP_Input_rep1" in output, \
+            "ChIP workflow should reference WT_ChIP_Input_rep1 as control"
 
     def test_input_control_processed(self, snakemake_available, repo_root, test_options):
         """Test that Input control samples can be processed independently."""

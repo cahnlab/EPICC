@@ -28,14 +28,15 @@ from sample_sheet import read_sample_sheet  # noqa: E402
 _needs_node = pytest.mark.skipif(shutil.which("node") is None, reason="node not available")
 
 _HEADER = (
-    "Sample_ID\tAssay\tGenome\tLevels\tReplicate_ID\tRead_files\t"
+    "Assay\tGenome\tLevels\tReplicate_ID\tRead_files\t"
     "Read_layout\tIP_target\tControl\tPeak_type\tComments"
 )
 
 
-def _row(sid, rep, srr, prefix=""):
+def _row(geno, rep, srr, prefix=""):
+    # Sample_ID is derived: '{geno}_ATAC_{rep}'.
     return prefix + "\t".join([
-        sid, "ATAC", "ColCEN", "genotype:WT", rep, srr, "SE", "", "", "", "",
+        "ATAC", "ColCEN", f"genotype:{geno}", rep, srr, "SE", "", "", "", "",
     ])
 
 
@@ -68,18 +69,18 @@ class TestBehavior:
         sheet.write_text("\n".join([
             "# preamble",
             _HEADER,
-            _row("a_rep1", "rep1", "SRR1"),
+            _row("a", "rep1", "SRR1"),
             "",
             "# a note",
-            _row("b_rep1", "rep1", "SRR2", prefix="#"),
-            _row("c_rep1", "rep1", "SRR3", prefix="  # "),
+            _row("b", "rep1", "SRR2", prefix="#"),
+            _row("c", "rep1", "SRR3", prefix="  # "),
             "#" + _HEADER,
-            _row("d_rep1", "rep1", "SRR4"),
+            _row("d", "rep1", "SRR4"),
         ]) + "\n")
         proc = subprocess.run(["node", _JS_TEST, str(sheet)], capture_output=True, text=True)
         assert proc.returncode == 0, proc.stderr
         view = json.loads(proc.stdout)
         active = sorted(r["Sample_ID"] for r in view if not r["commented"])
         parked = sorted(r["Sample_ID"] for r in view if r["commented"])
-        assert parked == ["b_rep1", "c_rep1"]
+        assert parked == ["b_ATAC_rep1", "c_ATAC_rep1"]
         assert active == sorted(read_sample_sheet(sheet)["Sample_ID"].unique())

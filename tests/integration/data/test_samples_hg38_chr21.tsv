@@ -1,34 +1,34 @@
-Sample_ID	Assay	Genome	Levels	Replicate_ID	Read_files	Read_layout	IP_target	Control	Peak_type
-stomach_H3K27ac_D1	ChIP	hg38_chr21	tissue:stomach	D1	tests/integration/data/hg38_chr21/reads/stomach_H3K27ac_D1_R0.fastq.gz	SE	H3K27ac	stomach_Input_D1	broad
-stomach_H3K27ac_D2	ChIP	hg38_chr21	tissue:stomach	D2	tests/integration/data/hg38_chr21/reads/stomach_H3K27ac_D2_R0.fastq.gz	SE	H3K27ac	stomach_Input_D2	broad
-colon_H3K27ac_D1	ChIP	hg38_chr21	tissue:colon	D1	tests/integration/data/hg38_chr21/reads/colon_H3K27ac_D1_R0.fastq.gz	SE	H3K27ac	colon_Input_D1	broad
-colon_H3K27ac_D2	ChIP	hg38_chr21	tissue:colon	D2	tests/integration/data/hg38_chr21/reads/colon_H3K27ac_D2_R0.fastq.gz	SE	H3K27ac	colon_Input_D2	broad
-stomach_CTCF_D1	ChIP	hg38_chr21	tissue:stomach	D1	tests/integration/data/hg38_chr21/reads/stomach_CTCF_D1_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/stomach_CTCF_D1_R2.fastq.gz	PE	CTCF	stomach_CTCFctrl_D1	narrow
-stomach_CTCF_D2	ChIP	hg38_chr21	tissue:stomach	D2	tests/integration/data/hg38_chr21/reads/stomach_CTCF_D2_R0.fastq.gz	SE	CTCF	stomach_Input_D2	narrow
-colon_CTCF_D1	ChIP	hg38_chr21	tissue:colon	D1	tests/integration/data/hg38_chr21/reads/colon_CTCF_D1_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/colon_CTCF_D1_R2.fastq.gz	PE	CTCF	colon_CTCFctrl_D1	narrow
-colon_CTCF_D2	ChIP	hg38_chr21	tissue:colon	D2	tests/integration/data/hg38_chr21/reads/colon_CTCF_D2_R0.fastq.gz	SE	CTCF	colon_Input_D2	narrow
-stomach_Input_D1	ChIP	hg38_chr21	tissue:stomach	D1	tests/integration/data/hg38_chr21/reads/stomach_Input_D1_R0.fastq.gz	SE	Input		broad
-stomach_Input_D2	ChIP	hg38_chr21	tissue:stomach	D2	tests/integration/data/hg38_chr21/reads/stomach_Input_D2_R0.fastq.gz	SE	Input		broad
-colon_Input_D1	ChIP	hg38_chr21	tissue:colon	D1	tests/integration/data/hg38_chr21/reads/colon_Input_D1_R0.fastq.gz	SE	Input		broad
-colon_Input_D2	ChIP	hg38_chr21	tissue:colon	D2	tests/integration/data/hg38_chr21/reads/colon_Input_D2_R0.fastq.gz	SE	Input		broad
-stomach_CTCFctrl_D1	ChIP	hg38_chr21	tissue:stomach	D1	tests/integration/data/hg38_chr21/reads/stomach_CTCFctrl_D1_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/stomach_CTCFctrl_D1_R2.fastq.gz	PE	Input		narrow
-colon_CTCFctrl_D1	ChIP	hg38_chr21	tissue:colon	D1	tests/integration/data/hg38_chr21/reads/colon_CTCFctrl_D1_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/colon_CTCFctrl_D1_R2.fastq.gz	PE	Input		narrow
-stomach_RNA_D1	RNAseq	hg38_chr21	tissue:stomach	D1	tests/integration/data/hg38_chr21/reads/stomach_RNA_D1_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/stomach_RNA_D1_R2.fastq.gz	PE			
-stomach_RNA_D2	RNAseq	hg38_chr21	tissue:stomach	D2	tests/integration/data/hg38_chr21/reads/stomach_RNA_D2_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/stomach_RNA_D2_R2.fastq.gz	PE			
-stomach_RNA_D3	RNAseq	hg38_chr21	tissue:stomach	D3	tests/integration/data/hg38_chr21/reads/stomach_RNA_D3_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/stomach_RNA_D3_R2.fastq.gz	PE			
-colon_RNA_D1	RNAseq	hg38_chr21	tissue:colon	D1	tests/integration/data/hg38_chr21/reads/colon_RNA_D1_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/colon_RNA_D1_R2.fastq.gz	PE			
-colon_RNA_D2	RNAseq	hg38_chr21	tissue:colon	D2	tests/integration/data/hg38_chr21/reads/colon_RNA_D2_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/colon_RNA_D2_R2.fastq.gz	PE			
-colon_RNA_D3	RNAseq	hg38_chr21	tissue:colon	D3	tests/integration/data/hg38_chr21/reads/colon_RNA_D3_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/colon_RNA_D3_R2.fastq.gz	PE			
-stomach_RAMPAGE_D1	RAMPAGE	hg38_chr21	tissue:stomach	D1	tests/integration/data/hg38_chr21/reads/stomach_RAMPAGE_D1_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/stomach_RAMPAGE_D1_R2.fastq.gz	PE		stomach_RNA_D1	
-stomach_RAMPAGE_D2	RAMPAGE	hg38_chr21	tissue:stomach	D2	tests/integration/data/hg38_chr21/reads/stomach_RAMPAGE_D2_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/stomach_RAMPAGE_D2_R2.fastq.gz	PE		stomach_RNA_D2	
-colon_RAMPAGE_D1	RAMPAGE	hg38_chr21	tissue:colon	D1	tests/integration/data/hg38_chr21/reads/colon_RAMPAGE_D1_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/colon_RAMPAGE_D1_R2.fastq.gz	PE		colon_RNA_D1	
-colon_RAMPAGE_D2	RAMPAGE	hg38_chr21	tissue:colon	D2	tests/integration/data/hg38_chr21/reads/colon_RAMPAGE_D2_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/colon_RAMPAGE_D2_R2.fastq.gz	PE		colon_RNA_D2	
-stomach_sRNA_D1	sRNA	hg38_chr21	tissue:stomach	D1	tests/integration/data/hg38_chr21/reads/stomach_sRNA_D1_R0.fastq.gz	SE			
-stomach_sRNA_D2	sRNA	hg38_chr21	tissue:stomach	D2	tests/integration/data/hg38_chr21/reads/stomach_sRNA_D2_R0.fastq.gz	SE			
-colon_sRNA_D1	sRNA	hg38_chr21	tissue:colon	D1	tests/integration/data/hg38_chr21/reads/colon_sRNA_D1_R0.fastq.gz	SE			
-colon_sRNA_D2	sRNA	hg38_chr21	tissue:colon	D2	tests/integration/data/hg38_chr21/reads/colon_sRNA_D2_R0.fastq.gz	SE			
-stomach_WGBS_D1	WGBS	hg38_chr21	tissue:stomach	D1	tests/integration/data/hg38_chr21/reads/stomach_WGBS_D1_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/stomach_WGBS_D1_R2.fastq.gz	PE			
-stomach_WGBS_D3	WGBS	hg38_chr21	tissue:stomach	D3	tests/integration/data/hg38_chr21/reads/stomach_WGBS_D3_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/stomach_WGBS_D3_R2.fastq.gz	PE			
-colon_WGBS_D2	WGBS	hg38_chr21	tissue:colon	D2	tests/integration/data/hg38_chr21/reads/colon_WGBS_D2_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/colon_WGBS_D2_R2.fastq.gz	PE			
-colon_WGBS_D3	WGBS	hg38_chr21	tissue:colon	D3	tests/integration/data/hg38_chr21/reads/colon_WGBS_D3_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/colon_WGBS_D3_R2.fastq.gz	PE			
-cell_line_dmC_HG002	dmC	hg38_chr21	tissue:cell_line	HG002	tests/integration/data/hg38_chr21/reads/cell_line_dmC_HG002.bedmethyl.gz	SE			
+Assay	Genome	Levels	Replicate_ID	Read_files	Read_layout	IP_target	Control	Peak_type
+ChIP	hg38_chr21	tissue:stomach	D1	tests/integration/data/hg38_chr21/reads/stomach_H3K27ac_D1_R0.fastq.gz	SE	H3K27ac	stomach_ChIP_Input_D1	broad
+ChIP	hg38_chr21	tissue:stomach	D2	tests/integration/data/hg38_chr21/reads/stomach_H3K27ac_D2_R0.fastq.gz	SE	H3K27ac	stomach_ChIP_Input_D2	broad
+ChIP	hg38_chr21	tissue:colon	D1	tests/integration/data/hg38_chr21/reads/colon_H3K27ac_D1_R0.fastq.gz	SE	H3K27ac	colon_ChIP_Input_D1	broad
+ChIP	hg38_chr21	tissue:colon	D2	tests/integration/data/hg38_chr21/reads/colon_H3K27ac_D2_R0.fastq.gz	SE	H3K27ac	colon_ChIP_Input_D2	broad
+ChIP	hg38_chr21	tissue:stomach	D1	tests/integration/data/hg38_chr21/reads/stomach_CTCF_D1_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/stomach_CTCF_D1_R2.fastq.gz	PE	CTCF	stomach_ChIP_CTCFInput_D1	narrow
+ChIP	hg38_chr21	tissue:stomach	D2	tests/integration/data/hg38_chr21/reads/stomach_CTCF_D2_R0.fastq.gz	SE	CTCF	stomach_ChIP_Input_D2	narrow
+ChIP	hg38_chr21	tissue:colon	D1	tests/integration/data/hg38_chr21/reads/colon_CTCF_D1_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/colon_CTCF_D1_R2.fastq.gz	PE	CTCF	colon_ChIP_CTCFInput_D1	narrow
+ChIP	hg38_chr21	tissue:colon	D2	tests/integration/data/hg38_chr21/reads/colon_CTCF_D2_R0.fastq.gz	SE	CTCF	colon_ChIP_Input_D2	narrow
+ChIP	hg38_chr21	tissue:stomach	D1	tests/integration/data/hg38_chr21/reads/stomach_Input_D1_R0.fastq.gz	SE	Input		broad
+ChIP	hg38_chr21	tissue:stomach	D2	tests/integration/data/hg38_chr21/reads/stomach_Input_D2_R0.fastq.gz	SE	Input		broad
+ChIP	hg38_chr21	tissue:colon	D1	tests/integration/data/hg38_chr21/reads/colon_Input_D1_R0.fastq.gz	SE	Input		broad
+ChIP	hg38_chr21	tissue:colon	D2	tests/integration/data/hg38_chr21/reads/colon_Input_D2_R0.fastq.gz	SE	Input		broad
+ChIP	hg38_chr21	tissue:stomach	D1	tests/integration/data/hg38_chr21/reads/stomach_CTCFctrl_D1_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/stomach_CTCFctrl_D1_R2.fastq.gz	PE	CTCFInput		narrow
+ChIP	hg38_chr21	tissue:colon	D1	tests/integration/data/hg38_chr21/reads/colon_CTCFctrl_D1_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/colon_CTCFctrl_D1_R2.fastq.gz	PE	CTCFInput		narrow
+RNAseq	hg38_chr21	tissue:stomach	D1	tests/integration/data/hg38_chr21/reads/stomach_RNA_D1_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/stomach_RNA_D1_R2.fastq.gz	PE			
+RNAseq	hg38_chr21	tissue:stomach	D2	tests/integration/data/hg38_chr21/reads/stomach_RNA_D2_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/stomach_RNA_D2_R2.fastq.gz	PE			
+RNAseq	hg38_chr21	tissue:stomach	D3	tests/integration/data/hg38_chr21/reads/stomach_RNA_D3_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/stomach_RNA_D3_R2.fastq.gz	PE			
+RNAseq	hg38_chr21	tissue:colon	D1	tests/integration/data/hg38_chr21/reads/colon_RNA_D1_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/colon_RNA_D1_R2.fastq.gz	PE			
+RNAseq	hg38_chr21	tissue:colon	D2	tests/integration/data/hg38_chr21/reads/colon_RNA_D2_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/colon_RNA_D2_R2.fastq.gz	PE			
+RNAseq	hg38_chr21	tissue:colon	D3	tests/integration/data/hg38_chr21/reads/colon_RNA_D3_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/colon_RNA_D3_R2.fastq.gz	PE			
+RAMPAGE	hg38_chr21	tissue:stomach	D1	tests/integration/data/hg38_chr21/reads/stomach_RAMPAGE_D1_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/stomach_RAMPAGE_D1_R2.fastq.gz	PE		stomach_RNA_D1	
+RAMPAGE	hg38_chr21	tissue:stomach	D2	tests/integration/data/hg38_chr21/reads/stomach_RAMPAGE_D2_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/stomach_RAMPAGE_D2_R2.fastq.gz	PE		stomach_RNA_D2	
+RAMPAGE	hg38_chr21	tissue:colon	D1	tests/integration/data/hg38_chr21/reads/colon_RAMPAGE_D1_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/colon_RAMPAGE_D1_R2.fastq.gz	PE		colon_RNA_D1	
+RAMPAGE	hg38_chr21	tissue:colon	D2	tests/integration/data/hg38_chr21/reads/colon_RAMPAGE_D2_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/colon_RAMPAGE_D2_R2.fastq.gz	PE		colon_RNA_D2	
+sRNA	hg38_chr21	tissue:stomach	D1	tests/integration/data/hg38_chr21/reads/stomach_sRNA_D1_R0.fastq.gz	SE			
+sRNA	hg38_chr21	tissue:stomach	D2	tests/integration/data/hg38_chr21/reads/stomach_sRNA_D2_R0.fastq.gz	SE			
+sRNA	hg38_chr21	tissue:colon	D1	tests/integration/data/hg38_chr21/reads/colon_sRNA_D1_R0.fastq.gz	SE			
+sRNA	hg38_chr21	tissue:colon	D2	tests/integration/data/hg38_chr21/reads/colon_sRNA_D2_R0.fastq.gz	SE			
+WGBS	hg38_chr21	tissue:stomach	D1	tests/integration/data/hg38_chr21/reads/stomach_WGBS_D1_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/stomach_WGBS_D1_R2.fastq.gz	PE			
+WGBS	hg38_chr21	tissue:stomach	D3	tests/integration/data/hg38_chr21/reads/stomach_WGBS_D3_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/stomach_WGBS_D3_R2.fastq.gz	PE			
+WGBS	hg38_chr21	tissue:colon	D2	tests/integration/data/hg38_chr21/reads/colon_WGBS_D2_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/colon_WGBS_D2_R2.fastq.gz	PE			
+WGBS	hg38_chr21	tissue:colon	D3	tests/integration/data/hg38_chr21/reads/colon_WGBS_D3_R1.fastq.gz,tests/integration/data/hg38_chr21/reads/colon_WGBS_D3_R2.fastq.gz	PE			
+dmC	hg38_chr21	tissue:cell_line	HG002	tests/integration/data/hg38_chr21/reads/cell_line_dmC_HG002.bedmethyl.gz	SE			

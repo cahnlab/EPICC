@@ -25,7 +25,8 @@ from sample_sheet import (  # noqa: E402
 )
 from scripts.samplefile_validation import check_table  # noqa: E402
 
-HEADER = ("Sample_ID\tAssay\tGenome\tLevels\tReplicate_ID\tRead_files\t"
+# No Sample_ID column: it is derived from Levels/Assay/IP_target/Replicate_ID.
+HEADER = ("Assay\tGenome\tLevels\tReplicate_ID\tRead_files\t"
           "Read_layout\tIP_target\tControl")
 
 
@@ -68,33 +69,33 @@ class TestExplode:
 class TestMappedName:
     def test_mapped_name_is_sample_and_genome(self, tmp_path):
         f = _sheet(tmp_path, [
-            "s1\tRNAseq\tB73,W22\tgenotype:WT\trep1\tSRR1\tSE\t\t",
+            "RNAseq\tB73,W22\tgenotype:WT\trep1\tSRR1\tSE\t\t",
         ])
         df = add_compat_columns(read_sample_sheet(f))
-        assert sorted(df["mapped_name"]) == ["s1__B73", "s1__W22"]
+        assert sorted(df["mapped_name"]) == ["WT_RNA_rep1__B73", "WT_RNA_rep1__W22"]
         # sample_name stays bare: it is the pre-alignment identity.
-        assert set(df["sample_name"]) == {"s1"}
+        assert set(df["sample_name"]) == {"WT_RNA_rep1"}
 
     def test_single_genome_mapped_name(self, tmp_path):
         f = _sheet(tmp_path, [
-            "s1\tRNAseq\tB73\tgenotype:WT\trep1\tSRR1\tSE\t\t",
+            "RNAseq\tB73\tgenotype:WT\trep1\tSRR1\tSE\t\t",
         ])
         df = add_compat_columns(read_sample_sheet(f))
-        assert list(df["mapped_name"]) == ["s1__B73"]
+        assert list(df["mapped_name"]) == ["WT_RNA_rep1__B73"]
 
 
 class TestValidation:
     def test_multi_genome_sheet_validates(self, tmp_path):
         # Same Sample_ID and same reads on both exploded rows is the whole point.
         f = _sheet(tmp_path, [
-            "s1\tRNAseq\tB73,W22\tgenotype:WT\trep1\tSRR1\tSE\t\t",
+            "RNAseq\tB73,W22\tgenotype:WT\trep1\tSRR1\tSE\t\t",
         ])
         check_table(read_sample_sheet(f), check_paths=False)  # no raise
 
     def test_genome_with_double_underscore_rejected(self, tmp_path):
         # '__' is the delimiter in '{Sample_ID}__{Genome}'.
         f = _sheet(tmp_path, [
-            "s1\tRNAseq\tB73__v5\tgenotype:WT\trep1\tSRR1\tSE\t\t",
+            "RNAseq\tB73__v5\tgenotype:WT\trep1\tSRR1\tSE\t\t",
         ])
         with pytest.raises(ValueError, match="must not contain '__'"):
             check_table(read_sample_sheet(f), check_paths=False)
@@ -102,17 +103,17 @@ class TestValidation:
     def test_genuine_duplicate_still_rejected(self, tmp_path):
         # Same Sample_ID AND same genome is still a real duplicate.
         f = _sheet(tmp_path, [
-            "s1\tRNAseq\tB73\tgenotype:WT\trep1\tSRR1\tSE\t\t",
-            "s1\tRNAseq\tB73\tgenotype:WT\trep2\tSRR2\tSE\t\t",
+            "RNAseq\tB73\tgenotype:WT\trep1\tSRR1\tSE\t\t",
+            "RNAseq\tB73\tgenotype:WT\trep1\tSRR2\tSE\t\t",
         ])
-        with pytest.raises(ValueError, match="duplicate Sample_ID"):
+        with pytest.raises(ValueError, match="same Sample_ID as row #1"):
             check_table(read_sample_sheet(f), check_paths=False)
 
     def test_shared_reads_across_samples_still_rejected(self, tmp_path):
         # Two DIFFERENT samples pointing at one accession remains an error.
         f = _sheet(tmp_path, [
-            "s1\tRNAseq\tB73\tgenotype:WT\trep1\tSRR1\tSE\t\t",
-            "s2\tRNAseq\tB73\tgenotype:WT\trep1\tSRR1\tSE\t\t",
+            "RNAseq\tB73\tgenotype:WT\trep1\tSRR1\tSE\t\t",
+            "RNAseq\tB73\tgenotype:WT\trep2\tSRR1\tSE\t\t",
         ])
         with pytest.raises(ValueError, match="is also used by"):
             check_table(read_sample_sheet(f), check_paths=False)
@@ -126,10 +127,10 @@ class TestControlMergeAcceptsQualifiedNames:
     """
 
     ROWS = [
-        "ip1\tChIP\tB73,W22\tgenotype:WT\trep1\tSRR0000001\tSE\tH3K9me2\tin1",
-        "ip2\tChIP\tB73,W22\tgenotype:WT\trep2\tSRR0000002\tSE\tH3K9me2\tin2",
-        "in1\tChIP\tB73,W22\tgenotype:WT\trep1\tSRR0000003\tSE\tInput\t",
-        "in2\tChIP\tB73,W22\tgenotype:WT\trep2\tSRR0000004\tSE\tInput\t",
+        "ChIP\tB73,W22\tgenotype:WT\trep1\tSRR0000001\tSE\tH3K9me2\tWT_ChIP_Input_rep1",
+        "ChIP\tB73,W22\tgenotype:WT\trep2\tSRR0000002\tSE\tH3K9me2\tWT_ChIP_Input_rep2",
+        "ChIP\tB73,W22\tgenotype:WT\trep1\tSRR0000003\tSE\tInput\t",
+        "ChIP\tB73,W22\tgenotype:WT\trep2\tSRR0000004\tSE\tInput\t",
     ]
 
     def _df(self, tmp_path):
@@ -137,23 +138,24 @@ class TestControlMergeAcceptsQualifiedNames:
 
     def test_qualified_control_name_resolves(self, tmp_path):
         df = self._df(tmp_path)
-        assert get_replicate_sample_ids("in1__B73", df) == ["in1__B73", "in2__B73"]
+        assert get_replicate_sample_ids("WT_ChIP_Input_rep1__B73", df) == [
+            "WT_ChIP_Input_rep1__B73", "WT_ChIP_Input_rep2__B73"]
 
     def test_bare_control_name_still_resolves(self, tmp_path):
         df = self._df(tmp_path)
-        assert get_replicate_sample_ids("in1", df) != []
+        assert get_replicate_sample_ids("WT_ChIP_Input_rep1", df) != []
 
     def test_replicates_never_mix_genomes(self, tmp_path):
         df = self._df(tmp_path)
         for genome in ("B73", "W22"):
-            got = get_replicate_sample_ids("in1__" + genome, df)
-            assert got, f"no replicates for in1__{genome}"
+            got = get_replicate_sample_ids("WT_ChIP_Input_rep1__" + genome, df)
+            assert got, f"no replicates for WT_ChIP_Input_rep1__{genome}"
             assert {g.rsplit("__", 1)[1] for g in got} == {genome}
 
     def test_either_replicate_names_the_same_group(self, tmp_path):
         df = self._df(tmp_path)
-        assert (get_replicate_sample_ids("in1__B73", df)
-                == get_replicate_sample_ids("in2__B73", df))
+        assert (get_replicate_sample_ids("WT_ChIP_Input_rep1__B73", df)
+                == get_replicate_sample_ids("WT_ChIP_Input_rep2__B73", df))
 
     def test_unknown_name_still_returns_empty(self, tmp_path):
         df = self._df(tmp_path)

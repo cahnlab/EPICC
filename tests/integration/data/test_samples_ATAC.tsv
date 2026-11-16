@@ -1,7 +1,7 @@
-Sample_ID	Assay	Genome	Levels	Replicate_ID	Read_files	Read_layout	IP_target	Control	Peak_type
-WT_ATAC_rep1	ATAC	test_genome	genotype:WT	rep1	tests/integration/data/mock_inputs/atac_wt_rep1_R1.fq.gz,tests/integration/data/mock_inputs/atac_wt_rep1_R2.fq.gz	PE			
-WT_ATAC_rep2	ATAC	test_genome	genotype:WT	rep2	tests/integration/data/mock_inputs/atac_wt_rep2_R1.fq.gz,tests/integration/data/mock_inputs/atac_wt_rep2_R2.fq.gz	PE			
-mutant_ATAC_rep1	ATAC	test_genome	genotype:mutant	rep1	tests/integration/data/mock_inputs/atac_mut_rep1_R1.fq.gz,tests/integration/data/mock_inputs/atac_mut_rep1_R2.fq.gz	PE			
-mutant_ATAC_rep2	ATAC	test_genome	genotype:mutant	rep2	tests/integration/data/mock_inputs/atac_mut_rep2_R1.fq.gz,tests/integration/data/mock_inputs/atac_mut_rep2_R2.fq.gz	PE			
-mutant2_ATAC_rep1	ATAC	test_genome	genotype:mutant2	rep1	tests/integration/data/mock_inputs/atac_mut2_rep1_R1.fq.gz,tests/integration/data/mock_inputs/atac_mut2_rep1_R2.fq.gz	PE			
-mutant2_ATAC_rep2	ATAC	test_genome	genotype:mutant2	rep2	tests/integration/data/mock_inputs/atac_mut2_rep2_R1.fq.gz,tests/integration/data/mock_inputs/atac_mut2_rep2_R2.fq.gz	PE			
+Assay	Genome	Levels	Replicate_ID	Read_files	Read_layout	IP_target	Control	Peak_type
+ATAC	test_genome	genotype:WT	rep1	tests/integration/data/mock_inputs/atac_wt_rep1_R1.fq.gz,tests/integration/data/mock_inputs/atac_wt_rep1_R2.fq.gz	PE			
+ATAC	test_genome	genotype:WT	rep2	tests/integration/data/mock_inputs/atac_wt_rep2_R1.fq.gz,tests/integration/data/mock_inputs/atac_wt_rep2_R2.fq.gz	PE			
+ATAC	test_genome	genotype:mutant	rep1	tests/integration/data/mock_inputs/atac_mut_rep1_R1.fq.gz,tests/integration/data/mock_inputs/atac_mut_rep1_R2.fq.gz	PE			
+ATAC	test_genome	genotype:mutant	rep2	tests/integration/data/mock_inputs/atac_mut_rep2_R1.fq.gz,tests/integration/data/mock_inputs/atac_mut_rep2_R2.fq.gz	PE			
+ATAC	test_genome	genotype:mutant2	rep1	tests/integration/data/mock_inputs/atac_mut2_rep1_R1.fq.gz,tests/integration/data/mock_inputs/atac_mut2_rep1_R2.fq.gz	PE			
+ATAC	test_genome	genotype:mutant2	rep2	tests/integration/data/mock_inputs/atac_mut2_rep2_R1.fq.gz,tests/integration/data/mock_inputs/atac_mut2_rep2_R2.fq.gz	PE			

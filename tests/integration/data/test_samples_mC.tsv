@@ -1,14 +1,14 @@
-Sample_ID	Assay	Genome	Levels	Replicate_ID	Read_files	Read_layout	IP_target	Control	Peak_type
-WT_leaf_WGBS_rep1	WGBS	test_genome	genotype:WT,tissue:leaf	rep1	tests/integration/data/mock_inputs/wgbs_sample1_R1.fq.gz,tests/integration/data/mock_inputs/wgbs_sample1_R2.fq.gz	PE			
-WT_leaf_WGBS_rep2	WGBS	test_genome	genotype:WT,tissue:leaf	rep2	tests/integration/data/mock_inputs/wgbs_sample2_R1.fq.gz,tests/integration/data/mock_inputs/wgbs_sample2_R2.fq.gz	PE			
-mutant_leaf_WGBS_rep1	WGBS	test_genome	genotype:mutant,tissue:leaf	rep1	tests/integration/data/mock_inputs/wgbs_mut_R1.fq.gz,tests/integration/data/mock_inputs/wgbs_mut_R2.fq.gz	PE			
-WT_leaf_WGBSnd_rep1	WGBS_nd	test_genome	genotype:WT,tissue:leaf	rep1	tests/integration/data/mock_inputs/wgbsnd_sample1_R0.fq.gz	SE			
-mutant_leaf_WGBSnd_rep1	WGBS_nd	test_genome	genotype:mutant,tissue:leaf	rep1	tests/integration/data/mock_inputs/wgbsnd_mut_R0.fq.gz	SE			
-WT_leaf_PBAT_rep1	PBAT	test_genome	genotype:WT,tissue:leaf	rep1	tests/integration/data/mock_inputs/pbat_sample1_R1.fq.gz,tests/integration/data/mock_inputs/pbat_sample1_R2.fq.gz	PE			
-WT_leaf_EMseq_rep1	EMseq	test_genome	genotype:WT,tissue:leaf	rep1	tests/integration/data/mock_inputs/emseq_sample1_R1.fq.gz,tests/integration/data/mock_inputs/emseq_sample1_R2.fq.gz	PE			
-mutant_leaf_EMseq_rep1	EMseq	test_genome	genotype:mutant,tissue:leaf	rep1	tests/integration/data/mock_inputs/emseq_mut_R1.fq.gz,tests/integration/data/mock_inputs/emseq_mut_R2.fq.gz	PE			
-WT_leaf_dmC_rep1	dmC	test_genome	genotype:WT,tissue:leaf	rep1	tests/integration/data/mock_inputs/dmc_sample1.bam	SE			
-WT_leaf_dmC_rep2	dmC	test_genome	genotype:WT,tissue:leaf	rep2	tests/integration/data/mock_inputs/dmc_sample2.bam	SE			
-WT_root_bedMethyl_rep1	dmC	test_genome	genotype:WT,tissue:root	rep1	tests/integration/data/mock_inputs/bedmethyl_sample1.bed.gz	SE			
-mutant_leaf_dmC_rep1	dmC	test_genome	genotype:mutant,tissue:leaf	rep1	tests/integration/data/mock_inputs/dmc_mut_sample1.bam	SE			
-mutant_leaf_dmC_rep2	dmC	test_genome	genotype:mutant,tissue:leaf	rep2	tests/integration/data/mock_inputs/dmc_mut_sample2.bam	SE			
+Assay	Genome	Levels	Replicate_ID	Read_files	Read_layout	IP_target	Control	Peak_type
+WGBS	test_genome	genotype:WT,tissue:leaf	rep1	tests/integration/data/mock_inputs/wgbs_sample1_R1.fq.gz,tests/integration/data/mock_inputs/wgbs_sample1_R2.fq.gz	PE			
+WGBS	test_genome	genotype:WT,tissue:leaf	rep2	tests/integration/data/mock_inputs/wgbs_sample2_R1.fq.gz,tests/integration/data/mock_inputs/wgbs_sample2_R2.fq.gz	PE			
+WGBS	test_genome	genotype:mutant,tissue:leaf	rep1	tests/integration/data/mock_inputs/wgbs_mut_R1.fq.gz,tests/integration/data/mock_inputs/wgbs_mut_R2.fq.gz	PE			
+WGBS_nd	test_genome	genotype:WT,tissue:leaf	rep1	tests/integration/data/mock_inputs/wgbsnd_sample1_R0.fq.gz	SE			
+WGBS_nd	test_genome	genotype:mutant,tissue:leaf	rep1	tests/integration/data/mock_inputs/wgbsnd_mut_R0.fq.gz	SE			
+PBAT	test_genome	genotype:WT,tissue:leaf	rep1	tests/integration/data/mock_inputs/pbat_sample1_R1.fq.gz,tests/integration/data/mock_inputs/pbat_sample1_R2.fq.gz	PE			
+EMseq	test_genome	genotype:WT,tissue:leaf	rep1	tests/integration/data/mock_inputs/emseq_sample1_R1.fq.gz,tests/integration/data/mock_inputs/emseq_sample1_R2.fq.gz	PE			
+EMseq	test_genome	genotype:mutant,tissue:leaf	rep1	tests/integration/data/mock_inputs/emseq_mut_R1.fq.gz,tests/integration/data/mock_inputs/emseq_mut_R2.fq.gz	PE			
+dmC	test_genome	genotype:WT,tissue:leaf	rep1	tests/integration/data/mock_inputs/dmc_sample1.bam	SE			
+dmC	test_genome	genotype:WT,tissue:leaf	rep2	tests/integration/data/mock_inputs/dmc_sample2.bam	SE			
+dmC	test_genome	genotype:WT,tissue:root	rep1	tests/integration/data/mock_inputs/bedmethyl_sample1.bed.gz	SE			
+dmC	test_genome	genotype:mutant,tissue:leaf	rep1	tests/integration/data/mock_inputs/dmc_mut_sample1.bam	SE			
+dmC	test_genome	genotype:mutant,tissue:leaf	rep2	tests/integration/data/mock_inputs/dmc_mut_sample2.bam	SE			

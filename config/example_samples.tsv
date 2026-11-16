@@ -6,8 +6,16 @@
 # Lines starting with '#' are skipped, so you can park samples without
 # deleting their rows.
 #
-# Columns (tab-separated, in this order):
-#   Sample_ID    Unique, filesystem-safe name (no '__', '/', whitespace).
+# Columns (tab-separated, in this order). There is no Sample_ID column: each
+# sample's name is derived from its other columns as
+#   {level values}_ChIP_{IP_target}_{Replicate_ID}  ChIP     WT_leaf_ChIP_H3K9me2_rep1
+#   {level values}_CR_{IP_target}_{Replicate_ID}    CUT_RUN (CT_ for CUT_TAG)
+#   {level values}_{assay}_{Replicate_ID}           others   WT_leaf_RNA_rep1
+# where {assay} is ATAC, RNA, RAMPAGE, sRNA, WGBS, WGBS_nd, PBAT, EMseq or dmC.
+# Two rows must not derive the same name: distinct libraries differ in
+# Replicate_ID (or IP_target); several runs of one library go in one row,
+# their Read_files joined with '+'. Level values, IP_target and Replicate_ID
+# become part of file names, so no whitespace, '/', '__' or leading/trailing '_'.
 #   Assay        ChIP | CUT_RUN | CUT_TAG | ATAC | RNAseq | RAMPAGE |
 #                sRNA | WGBS | WGBS_nd | PBAT | EMseq | dmC
 #   Genome       Reference genome name (must match `genomes:` key in the
@@ -26,7 +34,8 @@
 #   Read_layout  SE or PE.
 #   IP_target    Required for ChIP / CUT_RUN / CUT_TAG (H3K9me2, Input, WCE,
 #                etc.). Blank for other assays.
-#   Control      Sample_ID of the matching control (Input/WCE for ChIP).
+#   Control      Derived name of the matching control (Input/WCE for ChIP),
+#                e.g. Col0_WT_ChIP_Input_rep1.
 #                Leave blank on a control row, unless that control is also
 #                analysed against its own control (e.g. H3 normalized to Input);
 #                a chain is at most two deep.
@@ -43,25 +52,25 @@
 # See dev/docs/sample-sheet-spec.md for the full per-field specification
 # and tools/epicc-builder.html for an interactive editor.
 
-Sample_ID	Assay	Genome	Levels	Replicate_ID	Read_files	Read_layout	IP_target	Control	Peak_type	Comments
-Col0_WT_H3K27ac_rep1	ChIP	ColCEN	genotype:Col0,tissue:WT	rep1	SRR27821885	PE	H3K27ac	Col0_WT_Input_rep1	narrow	resequenced 2026-03; higher duplication than rep2
-Col0_WT_H3K4me1_rep1	ChIP	ColCEN	genotype:Col0,tissue:WT	rep1	SRR27821852	PE	H3K4me1	Col0_WT_Input_rep1	broad
-Col0_WT_Input_rep1	ChIP	ColCEN	genotype:Col0,tissue:WT	rep1	SRR27821932	PE	Input		
-Col0_suvh1_WGBS_rep1	WGBS	ColCEN	genotype:Col0,tissue:suvh1	rep1	SRR27821959	SE
-Col0_WT_WGBS_rep1	WGBS	ColCEN	genotype:Col0,tissue:WT	rep1	SRR27821907	SE
-Col0_WT_WGBS_rep2	WGBS	ColCEN	genotype:Col0,tissue:WT	rep2	SRR35564203	PE
-Col0_suvh13_RNA_rep1	RNAseq	ColCEN	genotype:Col0,tissue:suvh13	rep1	SRR27821840	PE
-Col0_suvh13_RNA_rep2	RNAseq	ColCEN	genotype:Col0,tissue:suvh13	rep2	SRR27821839	PE
-Col0_suvh13_RNA_rep3	RNAseq	ColCEN	genotype:Col0,tissue:suvh13	rep3	SRR27821838	PE
-Col0_WT_RNA_rep1	RNAseq	ColCEN	genotype:Col0,tissue:WT	rep1	SRR27821967	PE
-Col0_WT_RNA_rep2	RNAseq	ColCEN	genotype:Col0,tissue:WT	rep2	SRR27821966	PE
-Col0_WT_RNA_rep3	RNAseq	ColCEN	genotype:Col0,tissue:WT	rep3	SRR27821918	PE
-Col0_VLP_ddm1_sRNA_rep1	sRNA	ColCEN	genotype:Col0,tissue:VLP_ddm1	rep1	SRR8792540	SE
-Col0_VLP_ddm1_sRNA_rep2	sRNA	ColCEN	genotype:Col0,tissue:VLP_ddm1	rep2	SRR8792538	SE
-Col0_VLP_WT_inflo_sRNA_rep1	sRNA	ColCEN	genotype:Col0,tissue:VLP_WT_inflo	rep1	SRR8792539	SE
-Col0_suvh1.1_Input_rep1	ChIP	ColCEN	genotype:Col0,tissue:suvh1.1	rep1	SRR27821931	SE	Input		
-Col0_suvh1.1_Input_rep2	ChIP	ColCEN	genotype:Col0,tissue:suvh1.1	rep2	SRR27821934	SE	Input		
-Col0_suvh1.1_SUVH1_rep1	ChIP	ColCEN	genotype:Col0,tissue:suvh1.1	rep1	SRR27821933	SE	SUVH1	Col0_suvh1.1_Input_rep1	narrow
-Col0_suvh1.1_SUVH1_rep2	ChIP	ColCEN	genotype:Col0,tissue:suvh1.1	rep2	SRR27821935	SE	SUVH1	Col0_suvh1.1_Input_rep2	narrow
-Col0_suvh3_Input_repA	ChIP	ColCEN	genotype:Col0,tissue:suvh3	repA	SRR27821929	SE	Input		
-Col0_suvh3_SUVH3_repA	ChIP	ColCEN	genotype:Col0,tissue:suvh3	repA	SRR27821930	SE	SUVH3	Col0_suvh3_Input_repA	narrow
+Assay	Genome	Levels	Replicate_ID	Read_files	Read_layout	IP_target	Control	Peak_type	Comments
+ChIP	ColCEN	genotype:Col0,tissue:WT	rep1	SRR27821885	PE	H3K27ac	Col0_WT_ChIP_Input_rep1	narrow	resequenced 2026-03; higher duplication than rep2
+ChIP	ColCEN	genotype:Col0,tissue:WT	rep1	SRR27821852	PE	H3K4me1	Col0_WT_ChIP_Input_rep1	broad
+ChIP	ColCEN	genotype:Col0,tissue:WT	rep1	SRR27821932	PE	Input		
+WGBS	ColCEN	genotype:Col0,tissue:suvh1	rep1	SRR27821959	SE
+WGBS	ColCEN	genotype:Col0,tissue:WT	rep1	SRR27821907	SE
+WGBS	ColCEN	genotype:Col0,tissue:WT	rep2	SRR35564203	PE
+RNAseq	ColCEN	genotype:Col0,tissue:suvh13	rep1	SRR27821840	PE
+RNAseq	ColCEN	genotype:Col0,tissue:suvh13	rep2	SRR27821839	PE
+RNAseq	ColCEN	genotype:Col0,tissue:suvh13	rep3	SRR27821838	PE
+RNAseq	ColCEN	genotype:Col0,tissue:WT	rep1	SRR27821967	PE
+RNAseq	ColCEN	genotype:Col0,tissue:WT	rep2	SRR27821966	PE
+RNAseq	ColCEN	genotype:Col0,tissue:WT	rep3	SRR27821918	PE
+sRNA	ColCEN	genotype:Col0,tissue:VLP_ddm1	rep1	SRR8792540	SE
+sRNA	ColCEN	genotype:Col0,tissue:VLP_ddm1	rep2	SRR8792538	SE
+sRNA	ColCEN	genotype:Col0,tissue:VLP_WT_inflo	rep1	SRR8792539	SE
+ChIP	ColCEN	genotype:Col0,tissue:suvh1.1	rep1	SRR27821931	SE	Input		
+ChIP	ColCEN	genotype:Col0,tissue:suvh1.1	rep2	SRR27821934	SE	Input		
+ChIP	ColCEN	genotype:Col0,tissue:suvh1.1	rep1	SRR27821933	SE	SUVH1	Col0_suvh1.1_ChIP_Input_rep1	narrow
+ChIP	ColCEN	genotype:Col0,tissue:suvh1.1	rep2	SRR27821935	SE	SUVH1	Col0_suvh1.1_ChIP_Input_rep2	narrow
+ChIP	ColCEN	genotype:Col0,tissue:suvh3	repA	SRR27821929	SE	Input		
+ChIP	ColCEN	genotype:Col0,tissue:suvh3	repA	SRR27821930	SE	SUVH3	Col0_suvh3_ChIP_Input_repA	narrow

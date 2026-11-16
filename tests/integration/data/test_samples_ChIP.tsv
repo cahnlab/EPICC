@@ -1,15 +1,15 @@
-Sample_ID	Assay	Genome	Levels	Replicate_ID	Read_files	Read_layout	IP_target	Control	Peak_type
-WT_H3K9me2_rep1	ChIP	test_genome	genotype:WT	rep1	tests/integration/data/mock_inputs/chip_broad_wt_rep1_R1.fq.gz,tests/integration/data/mock_inputs/chip_broad_wt_rep1_R2.fq.gz	PE	H3K9me2	WT_WCE_rep1	broad
-WT_H3K9me2_rep2	ChIP	test_genome	genotype:WT	rep2	tests/integration/data/mock_inputs/chip_broad_wt_rep2_R1.fq.gz,tests/integration/data/mock_inputs/chip_broad_wt_rep2_R2.fq.gz	PE	H3K9me2	WT_WCE_rep2	broad
-mutant_H3K9me2_rep1	ChIP	test_genome	genotype:mutant	rep1	tests/integration/data/mock_inputs/chip_broad_mut_rep1_R1.fq.gz,tests/integration/data/mock_inputs/chip_broad_mut_rep1_R2.fq.gz	PE	H3K9me2	mutant_WCE_rep1	broad
-WT_WCE_rep1	ChIP	test_genome	genotype:WT	rep1	tests/integration/data/mock_inputs/chip_wce_wt_rep1_R1.fq.gz,tests/integration/data/mock_inputs/chip_wce_wt_rep1_R2.fq.gz	PE	WCE		broad
-WT_WCE_rep2	ChIP	test_genome	genotype:WT	rep2	tests/integration/data/mock_inputs/chip_wce_wt_rep2_R1.fq.gz,tests/integration/data/mock_inputs/chip_wce_wt_rep2_R2.fq.gz	PE	WCE		broad
-mutant_WCE_rep1	ChIP	test_genome	genotype:mutant	rep1	tests/integration/data/mock_inputs/chip_wce_mut_rep1_R1.fq.gz,tests/integration/data/mock_inputs/chip_wce_mut_rep1_R2.fq.gz	PE	WCE		broad
-WT_H3K4me3_rep1	ChIP	test_genome	genotype:WT	rep1	tests/integration/data/mock_inputs/chip_narrow_wt_rep1_R0.fq.gz	SE	H3K4me3	WT_Input_rep1	narrow
-WT_H3K4me3_rep2	ChIP	test_genome	genotype:WT	rep2	tests/integration/data/mock_inputs/chip_narrow_wt_rep2_R0.fq.gz	SE	H3K4me3	WT_Input_rep1	narrow
-WT_Input_rep1	ChIP	test_genome	genotype:WT	rep1	tests/integration/data/mock_inputs/chip_input_wt_rep1_R0.fq.gz	SE	Input		narrow
-mutant_H3K9me2_rep2	ChIP	test_genome	genotype:mutant	rep2	tests/integration/data/mock_inputs/chip_broad_mut_rep2_R1.fq.gz,tests/integration/data/mock_inputs/chip_broad_mut_rep2_R2.fq.gz	PE	H3K9me2	mutant_WCE_rep1	broad
-mutant_H3K4me3_rep1	ChIP	test_genome	genotype:mutant	rep1	tests/integration/data/mock_inputs/chip_narrow_mut_rep1_R0.fq.gz	SE	H3K4me3	WT_Input_rep1	narrow
-mutant_H3K4me3_rep2	ChIP	test_genome	genotype:mutant	rep2	tests/integration/data/mock_inputs/chip_narrow_mut_rep2_R0.fq.gz	SE	H3K4me3	WT_Input_rep1	narrow
-mutant_Input_rep1	ChIP	test_genome	genotype:mutant	rep1	tests/integration/data/mock_inputs/chip_input_mut_rep1_R0.fq.gz	SE	Input		narrow
-mutant_WCE_rep2	ChIP	test_genome	genotype:mutant	rep2	tests/integration/data/mock_inputs/chip_wce_mut_rep2_R1.fq.gz,tests/integration/data/mock_inputs/chip_wce_mut_rep2_R2.fq.gz	PE	WCE		broad
+Assay	Genome	Levels	Replicate_ID	Read_files	Read_layout	IP_target	Control	Peak_type
+ChIP	test_genome	genotype:WT	rep1	tests/integration/data/mock_inputs/chip_broad_wt_rep1_R1.fq.gz,tests/integration/data/mock_inputs/chip_broad_wt_rep1_R2.fq.gz	PE	H3K9me2	WT_ChIP_WCE_rep1	broad
+ChIP	test_genome	genotype:WT	rep2	tests/integration/data/mock_inputs/chip_broad_wt_rep2_R1.fq.gz,tests/integration/data/mock_inputs/chip_broad_wt_rep2_R2.fq.gz	PE	H3K9me2	WT_ChIP_WCE_rep2	broad
+ChIP	test_genome	genotype:mutant	rep1	tests/integration/data/mock_inputs/chip_broad_mut_rep1_R1.fq.gz,tests/integration/data/mock_inputs/chip_broad_mut_rep1_R2.fq.gz	PE	H3K9me2	mutant_ChIP_WCE_rep1	broad
+ChIP	test_genome	genotype:WT	rep1	tests/integration/data/mock_inputs/chip_wce_wt_rep1_R1.fq.gz,tests/integration/data/mock_inputs/chip_wce_wt_rep1_R2.fq.gz	PE	WCE		broad
+ChIP	test_genome	genotype:WT	rep2	tests/integration/data/mock_inputs/chip_wce_wt_rep2_R1.fq.gz,tests/integration/data/mock_inputs/chip_wce_wt_rep2_R2.fq.gz	PE	WCE		broad
+ChIP	test_genome	genotype:mutant	rep1	tests/integration/data/mock_inputs/chip_wce_mut_rep1_R1.fq.gz,tests/integration/data/mock_inputs/chip_wce_mut_rep1_R2.fq.gz	PE	WCE		broad
+ChIP	test_genome	genotype:WT	rep1	tests/integration/data/mock_inputs/chip_narrow_wt_rep1_R0.fq.gz	SE	H3K4me3	WT_ChIP_Input_rep1	narrow
+ChIP	test_genome	genotype:WT	rep2	tests/integration/data/mock_inputs/chip_narrow_wt_rep2_R0.fq.gz	SE	H3K4me3	WT_ChIP_Input_rep1	narrow
+ChIP	test_genome	genotype:WT	rep1	tests/integration/data/mock_inputs/chip_input_wt_rep1_R0.fq.gz	SE	Input		narrow
+ChIP	test_genome	genotype:mutant	rep2	tests/integration/data/mock_inputs/chip_broad_mut_rep2_R1.fq.gz,tests/integration/data/mock_inputs/chip_broad_mut_rep2_R2.fq.gz	PE	H3K9me2	mutant_ChIP_WCE_rep1	broad
+ChIP	test_genome	genotype:mutant	rep1	tests/integration/data/mock_inputs/chip_narrow_mut_rep1_R0.fq.gz	SE	H3K4me3	WT_ChIP_Input_rep1	narrow
+ChIP	test_genome	genotype:mutant	rep2	tests/integration/data/mock_inputs/chip_narrow_mut_rep2_R0.fq.gz	SE	H3K4me3	WT_ChIP_Input_rep1	narrow
+ChIP	test_genome	genotype:mutant	rep1	tests/integration/data/mock_inputs/chip_input_mut_rep1_R0.fq.gz	SE	Input		narrow
+ChIP	test_genome	genotype:mutant	rep2	tests/integration/data/mock_inputs/chip_wce_mut_rep2_R1.fq.gz,tests/integration/data/mock_inputs/chip_wce_mut_rep2_R2.fq.gz	PE	WCE		broad

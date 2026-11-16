@@ -14,15 +14,22 @@ import pandas as pd
 # Constants
 # ---------------------------------------------------------------------------
 
-# Peak_type sits last: it applies to only three assays, so it stays out of the
+# The columns a sample sheet carries. Sample_ID is NOT one of them: it is
+# derived from Levels, Assay, IP_target and Replicate_ID (derive_sample_id), so
+# a sheet cannot hold a name that disagrees with its own metadata (#91).
+# Peak_type sits late: it applies to only three assays, so it stays out of the
 # way of the fields every row needs. Column lookup is by header name (pandas
 # reads by header), so the order is ergonomic only — but keep it in step with
-# COLUMNS in tools/epicc-builder.html.
-NEW_COLNAMES = [
-    "Sample_ID", "Assay", "Genome", "Levels", "Replicate_ID",
+# COLUMNS in tools/epicc-builder.html, which is what the builder exports.
+SHEET_COLNAMES = [
+    "Assay", "Genome", "Levels", "Replicate_ID",
     "Read_files", "Read_layout", "IP_target", "Control", "Peak_type",
     "Comments",
 ]
+
+# Columns of the parsed sample frame: the sheet's own, plus the derived
+# Sample_ID every downstream lookup keys on.
+NEW_COLNAMES = ["Sample_ID", *SHEET_COLNAMES]
 
 # Columns that may be absent from a sheet; filled with "" when missing. Comments
 # is a free-text user annotation the pipeline never reads, so it is optional
@@ -169,6 +176,87 @@ def levels_to_factors(levels_str):
     ['genotype', 'tissue']
     """
     return list(parse_levels(levels_str).keys())
+
+
+# ---------------------------------------------------------------------------
+# Sample_ID derivation
+# ---------------------------------------------------------------------------
+
+# The middle token of a derived Sample_ID for assays that carry no IP_target.
+# Keep in step with ASSAY_SHORT in tools/epicc-builder.html.
+ASSAY_SHORT = {
+    "ATAC": "ATAC", "RNAseq": "RNA", "RAMPAGE": "RAMPAGE", "sRNA": "sRNA",
+    "WGBS": "WGBS", "WGBS_nd": "WGBS_nd", "PBAT": "PBAT", "EMseq": "EMseq",
+    "dmC": "dmC",
+}
+
+# Every pulldown assay prefixes its IP_target with an assay tag, so a ChIP, a
+# CUT&RUN and a CUT&Tag of the same target in the same condition stay distinct
+# and each name says which method produced it. This covers control rows too
+# (WT_ChIP_Input_rep1).
+ASSAY_ID_PREFIX = {"ChIP": "ChIP", "CUT_RUN": "CR", "CUT_TAG": "CT"}
+
+
+def sample_id_parts(row):
+    """The (column, value) pairs a row's Sample_ID is built from, in order.
+
+    Levels contributes one part per level value. Genome, Peak_type, Read_files,
+    Read_layout, Control and Comments never contribute: they describe how the
+    library is analysed or where its files live, not which library it is. That
+    is what lets one row map to several genomes under one name, and keeps the
+    name stable when files move. Returns None when a required field is missing
+    or Levels is malformed; check_table reports the underlying field.
+    """
+    def _get(col):
+        val = row.get(col, "")
+        val = "" if val is None or (isinstance(val, float) and pd.isna(val)) else str(val)
+        return val.strip()
+
+    assay = _get("Assay")
+    # Accept the internal combined token too ('ChIP_broad' -> 'ChIP'), so the
+    # name is the same before and after add_compat_columns folds Peak_type in:
+    # peak type is an analysis parameter, not part of the library's name.
+    for base in PEAK_TYPE_ASSAYS:
+        if assay in (f"{base}_{pt}" for pt in VALID_PEAK_TYPES):
+            assay = base
+    rep = _get("Replicate_ID")
+    try:
+        levels = list(parse_levels(_get("Levels")).values()) if _get("Levels") else []
+    except ValueError:
+        return None
+    if not levels or not rep or any(not v for v in levels):
+        return None
+    if assay in PEAK_TYPE_ASSAYS:
+        ip = _get("IP_target")
+        if not ip:
+            return None
+        middle = [("IP_target", ip)]
+        if assay in ASSAY_ID_PREFIX:
+            middle.insert(0, ("Assay", ASSAY_ID_PREFIX[assay]))
+    elif assay in ASSAY_SHORT:
+        middle = [("Assay", ASSAY_SHORT[assay])]
+    else:
+        return None
+    return [("Levels", v) for v in levels] + middle + [("Replicate_ID", rep)]
+
+
+def derive_sample_id(row):
+    """Sample_ID for a sheet row: '{level values}_{tag}_{Replicate_ID}'.
+
+    The tag is 'ChIP_'/'CR_'/'CT_' + IP_target for ChIP / CUT&RUN / CUT&Tag,
+    and the ASSAY_SHORT token otherwise:
+
+    >>> derive_sample_id({"Assay": "ChIP", "Levels": "genotype:WT",
+    ...                   "IP_target": "H3K9me2", "Replicate_ID": "rep1"})
+    'WT_ChIP_H3K9me2_rep1'
+    >>> derive_sample_id({"Assay": "RNAseq", "Levels": "genotype:WT,tissue:leaf",
+    ...                   "Replicate_ID": "rep2"})
+    'WT_leaf_RNA_rep2'
+
+    Returns "" when the row lacks what the name needs (see sample_id_parts).
+    """
+    parts = sample_id_parts(row)
+    return "_".join(v for _, v in parts) if parts else ""
 
 
 # ---------------------------------------------------------------------------
@@ -368,6 +456,11 @@ def read_sample_sheet(filepath):
     are skipped — useful for parking samples without deleting their rows.
     A '#' *within* a field (e.g. a URL fragment or a path) is preserved.
 
+    Sample_ID is derived from each row's metadata (derive_sample_id), never
+    read from the sheet. A sheet that still has a Sample_ID column is
+    rejected: its names could disagree with the derived ones its Controls are
+    checked against (#91).
+
     Returns a DataFrame sorted by [Genome, Assay, Levels, Sample_ID].
     """
     # Drop full-line comments before parsing. Note: we deliberately do NOT
@@ -381,7 +474,7 @@ def read_sample_sheet(filepath):
     # Fill optional columns with empty strings: Peak_type applies to only the
     # three pulldown assays and Comments to none, so a sheet may omit either
     # column outright (e.g. an all-WGBS sheet needs neither).
-    for col in NEW_COLNAMES:
+    for col in SHEET_COLNAMES:
         if col not in df.columns:
             if col in OPTIONAL_COLNAMES:
                 df[col] = ""
@@ -391,6 +484,16 @@ def read_sample_sheet(filepath):
     # Normalize NaN to empty string for optional columns
     for col in OPTIONAL_COLNAMES:
         df[col] = df[col].fillna("")
+
+    if "Sample_ID" in df.columns:
+        raise ValueError(
+            "The sample sheet has a Sample_ID column. Sample_ID is now derived "
+            "from Levels, Assay, IP_target and Replicate_ID, so remove the "
+            "column and set each Control to the derived name of its control "
+            "row (tools/epicc-builder.html shows the derived names)."
+        )
+    df.insert(0, "Sample_ID", _row_apply(df, derive_sample_id).astype(str)
+              if len(df) else pd.Series(dtype=str))
 
     df = explode_genomes(df)
 

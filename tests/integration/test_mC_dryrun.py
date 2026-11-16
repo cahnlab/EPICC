@@ -9,8 +9,8 @@ Test samples (from test_samples_mC.tsv):
     WT_leaf_WGBS_rep1       WGBS     PE   genotype:WT,tissue:leaf
     WT_leaf_WGBS_rep2       WGBS     PE   genotype:WT,tissue:leaf
     mutant_leaf_WGBS_rep1   WGBS     PE   genotype:mutant,tissue:leaf
-    WT_leaf_WGBSnd_rep1     WGBS_nd  SE   genotype:WT,tissue:leaf
-    mutant_leaf_WGBSnd_rep1 WGBS_nd  SE   genotype:mutant,tissue:leaf
+    WT_leaf_WGBS_nd_rep1    WGBS_nd  SE   genotype:WT,tissue:leaf
+    mutant_leaf_WGBS_nd_rep1 WGBS_nd SE   genotype:mutant,tissue:leaf
     WT_leaf_PBAT_rep1       PBAT     PE   genotype:WT,tissue:leaf
     WT_leaf_EMseq_rep1      EMseq    PE   genotype:WT,tissue:leaf
     mutant_leaf_EMseq_rep1  EMseq    PE   genotype:mutant,tissue:leaf
@@ -19,7 +19,7 @@ Test samples (from test_samples_mC.tsv):
     WT_leaf_dmC_rep2        dmC      SE   genotype:WT,tissue:leaf     (modBAM)
     mutant_leaf_dmC_rep1    dmC      SE   genotype:mutant,tissue:leaf (modBAM)
     mutant_leaf_dmC_rep2    dmC      SE   genotype:mutant,tissue:leaf (modBAM)
-    WT_root_bedMethyl_rep1  dmC      SE   genotype:WT,tissue:root     (bedMethyl)
+    WT_root_dmC_rep1        dmC      SE   genotype:WT,tissue:root     (bedMethyl)
 """
 
 import os
@@ -63,14 +63,14 @@ _G = "test_genome"
 # Bismark per-replicate bigwig targets
 WGBS_PE_TARGET = f"{_OUTPUT_DIR}/mC/tracks/WT_leaf_WGBS_rep1__{_G}__CG.bw"
 WGBS_PE_REP2_TARGET = f"{_OUTPUT_DIR}/mC/tracks/WT_leaf_WGBS_rep2__{_G}__CG.bw"
-WGBS_ND_SE_TARGET = f"{_OUTPUT_DIR}/mC/tracks/WT_leaf_WGBSnd_rep1__{_G}__CG.bw"
+WGBS_ND_SE_TARGET = f"{_OUTPUT_DIR}/mC/tracks/WT_leaf_WGBS_nd_rep1__{_G}__CG.bw"
 PBAT_PE_TARGET = f"{_OUTPUT_DIR}/mC/tracks/WT_leaf_PBAT_rep1__{_G}__CG.bw"
 EMSEQ_PE_TARGET = f"{_OUTPUT_DIR}/mC/tracks/WT_leaf_EMseq_rep1__{_G}__CG.bw"
 
 # dmC per-replicate bigwig targets
 DMC_MODBAM_TARGET = f"{_OUTPUT_DIR}/mC/tracks/WT_leaf_dmC_rep1__{_G}__CG.bw"
 DMC_MODBAM_REP2_TARGET = f"{_OUTPUT_DIR}/mC/tracks/WT_leaf_dmC_rep2__{_G}__CG.bw"
-BEDMETHYL_TARGET = f"{_OUTPUT_DIR}/mC/tracks/WT_root_bedMethyl_rep1__{_G}__CG.bw"
+BEDMETHYL_TARGET = f"{_OUTPUT_DIR}/mC/tracks/WT_root_dmC_rep1__{_G}__CG.bw"
 MUTANT_DMC_TARGET = f"{_OUTPUT_DIR}/mC/tracks/mutant_leaf_dmC_rep1__{_G}__CG.bw"
 
 # Analysis-level names (Assay__levels_label__Genome, empty parts omitted)
@@ -476,8 +476,8 @@ class TestWildcardResolution:
         if not snakemake_available:
             pytest.skip("Snakemake not installed")
         targets = [
-            f"{_OUTPUT_DIR}/mC/tracks/WT_leaf_WGBSnd_rep1__CG.bw",
-            f"{_OUTPUT_DIR}/mC/tracks/mutant_leaf_WGBSnd_rep1__CHG.bw",
+            f"{_OUTPUT_DIR}/mC/tracks/WT_leaf_WGBS_nd_rep1__CG.bw",
+            f"{_OUTPUT_DIR}/mC/tracks/mutant_leaf_WGBS_nd_rep1__CHG.bw",
         ]
         for target in targets:
             result = run_snakemake_dryrun(repo_root, test_options, target)

@@ -23,7 +23,7 @@ function extract(name) {
   return m[0];
 }
 function extractConst(name) {
-  const m = src.match(new RegExp("^(?:const|var) " + name + " = [\\s\\S]*?;$", "m"));
+  const m = src.match(new RegExp("^(?:const|var) " + name + "\\s+= [\\s\\S]*?;$", "m"));
   if (!m) throw new Error("could not extract " + name + " from " + BUILDER);
   return m[0].replace(/^const /, "var ");
 }
@@ -47,9 +47,10 @@ function makeContext() {
   vm.runInContext([
     extractConst("COLUMNS"),
     extractConst("COMMENT_PREFIX_RE"),
+    ...["CHIP_ASSAYS", "CUT_RUN_ASSAYS", "CUT_TAG_ASSAYS", "IP_PEAK_ASSAYS",
+        "ASSAY_SHORT", "ASSAY_ID_PREFIX"].map(extractConst),
     "var sheetPreamble = [], sheetTrailer = [];",
     "function factorField(n) { return '_factor_' + n; }",
-    "function suggestSampleId() { return ''; }",
     "function rebuildTableColumns() {}",
     "function renderFactorTiles() {}",
     "function refreshUI() {}",
@@ -57,7 +58,8 @@ function makeContext() {
     "function downloadBlob(content) { downloads.push(content); }",
     ...["isCommentLine", "parseCommentedRow", "importTSV", "parseLevels",
         "populateFactorsFromLevels", "buildLevelsFromFactors", "sanitizeCell",
-        "buildExportMatrix", "commentedRowKeepsImportedLevels", "exportTSV"].map(extract),
+        "buildExportMatrix", "commentedRowKeepsImportedLevels", "exportTSV",
+        "sampleIdParts", "deriveSampleId", "adoptDerivedIds"].map(extract),
   ].join("\n"), ctx);
   return ctx;
 }
@@ -81,22 +83,23 @@ function check(desc, cond) {
   if (cond) { passed++; } else { failed++; console.log("FAIL: " + desc); }
 }
 
-const H = ["Sample_ID", "Assay", "Genome", "Levels", "Replicate_ID", "Read_files",
-  "Read_layout", "IP_target", "Control", "Peak_type", "Comments"].join("\t");
+const COLS = ["Assay", "Genome", "Levels", "Replicate_ID", "Read_files",
+  "Read_layout", "IP_target", "Control", "Peak_type", "Comments"];
+const H = COLS.join("\t");
 const row = (...c) => c.join("\t");
 const SHEET = [
   "# preamble note",
   "",
   H,
-  row("WT_Input_rep1", "ChIP", "ColCEN", "genotype:WT,tissue:leaf", "rep1", "SRR1", "SE", "Input", "", "", ""),
-  row("WT_K9_rep1", "ChIP", "ColCEN", "genotype:WT,tissue:leaf", "rep1", "SRR2", "SE", "H3K9me2", "WT_Input_rep1", "broad", "a # in a comment"),
+  row("ChIP", "ColCEN", "genotype:WT,tissue:leaf", "rep1", "SRR1", "SE", "Input", "", "", ""),
+  row("ChIP", "ColCEN", "genotype:WT,tissue:leaf", "rep1", "SRR2", "SE", "H3K9me2", "WT_leaf_ChIP_Input_rep1", "broad", "a # in a comment"),
   "",
   "# --- parked samples ---",
-  "#" + row("WT_K9_rep2", "ChIP", "ColCEN", "genotype:WT,tissue:leaf", "rep2", "SRR3", "SE", "H3K9me2", "WT_Input_rep1", "broad", ""),
-  "  ## " + row("old_K9_rep1", "ChIP", "ColCEN", "genotype:WT,tissue:leaf,time:0h", "rep1", "SRR4", "SE", "H3K9me2", "", "broad", "old design"),
+  "#" + row("ChIP", "ColCEN", "genotype:WT,tissue:leaf", "rep2", "SRR3", "SE", "H3K9me2", "WT_leaf_ChIP_Input_rep1", "broad", ""),
+  "  ## " + row("ChIP", "ColCEN", "genotype:WT,tissue:leaf,time:0h", "rep1", "SRR4", "SE", "H3K9me2", "", "broad", "old design"),
   "#" + H,
   "# prose\twith a stray tab",
-  row("WT_ATAC_rep1", "ATAC", "ColCEN", "genotype:WT,tissue:leaf", "rep1", "https://x.org/a.fq.gz#frag", "SE", "", "", "", ""),
+  row("ATAC", "ColCEN", "genotype:WT,tissue:leaf", "rep1", "https://x.org/a.fq.gz#frag", "SE", "", "", "", ""),
   "# trailing note",
 ].join("\n") + "\n";
 
@@ -105,8 +108,9 @@ let ctx = builderView(SHEET);
 const ids = ctx.tableRows.map((r) => r.Sample_ID);
 const commented = ctx.tableRows.map((r) => !!r._commented);
 check("no import alerts: " + ctx.alerts.join("; "), ctx.alerts.length === 0);
-check("five sample rows, got " + JSON.stringify(ids),
-  JSON.stringify(ids) === JSON.stringify(["WT_Input_rep1", "WT_K9_rep1", "WT_K9_rep2", "old_K9_rep1", "WT_ATAC_rep1"]));
+check("five sample rows with derived IDs, got " + JSON.stringify(ids),
+  JSON.stringify(ids) === JSON.stringify(["WT_leaf_ChIP_Input_rep1", "WT_leaf_ChIP_H3K9me2_rep1",
+    "WT_leaf_ChIP_H3K9me2_rep2", "WT_leaf_0h_ChIP_H3K9me2_rep1", "WT_leaf_ATAC_rep1"]));
 check("'#' stripped and rows flagged commented",
   JSON.stringify(commented) === JSON.stringify([false, false, true, true, false]));
 check("factors come from active rows, not the parked 3-factor row",
@@ -128,17 +132,46 @@ ctx.tableRows[0]._commented = true;       // comment out an active row
 ctx.tableRows[2]._commented = false;      // uncomment a parked one
 ctx.exportTSV();
 const out = ctx.downloads[0].split("\n");
-check("newly commented row gets a plain '#'", out.indexOf("#" + row("WT_Input_rep1", "ChIP", "ColCEN",
+check("newly commented row gets a plain '#'", out.indexOf("#" + row("ChIP", "ColCEN",
   "genotype:WT,tissue:leaf", "rep1", "SRR1", "SE", "Input", "", "", "")) !== -1);
-check("uncommented row loses its '#'", out.indexOf(row("WT_K9_rep2", "ChIP", "ColCEN",
-  "genotype:WT,tissue:leaf", "rep2", "SRR3", "SE", "H3K9me2", "WT_Input_rep1", "broad", "")) !== -1);
+check("uncommented row loses its '#'", out.indexOf(row("ChIP", "ColCEN",
+  "genotype:WT,tissue:leaf", "rep2", "SRR3", "SE", "H3K9me2", "WT_leaf_ChIP_Input_rep1", "broad", "")) !== -1);
 
 // Editing a parked row's factor cell rebuilds its Levels from the factor set.
 ctx = builderView(SHEET);
 ctx.tableRows[3]._factor_genotype = "mut";
 ctx.exportTSV();
 check("edited parked row's Levels rebuilt",
-  ctx.downloads[0].indexOf("old_K9_rep1\tChIP\tColCEN\tgenotype:mut,tissue:leaf\t") !== -1);
+  ctx.downloads[0].indexOf("ChIP\tColCEN\tgenotype:mut,tissue:leaf\trep1\tSRR4\t") !== -1);
+
+// --- derived IDs follow edits, and Controls follow the IDs ----------------
+ctx = builderView(SHEET);
+ctx.tableRows[0]._factor_genotype = "Col0";          // the Input's ID changes
+ctx.adoptDerivedIds(ctx.tableRows);
+check("edited row re-derives its ID", ctx.tableRows[0].Sample_ID === "Col0_leaf_ChIP_Input_rep1");
+check("Control follows the renamed control row",
+  ctx.tableRows[1].Control === "Col0_leaf_ChIP_Input_rep1" && ctx.tableRows[2].Control === "Col0_leaf_ChIP_Input_rep1");
+ctx = builderView(SHEET);
+ctx.tableRows.push(Object.assign({}, ctx.tableRows[0], { Read_files: "SRR9" }));  // duplicate row
+ctx.tableRows[0].Replicate_ID = "rep9";
+ctx.adoptDerivedIds(ctx.tableRows);
+check("Control stays put while another row still derives the old ID",
+  ctx.tableRows[1].Control === "WT_leaf_ChIP_Input_rep1");
+
+// --- a column outside COLUMNS is not read -------------------------------
+// No compatibility layer: an old Sample_ID column is neither honoured nor used
+// to translate Controls; an old-style Control is left for validation to flag.
+const LH = ["Sample_ID", ...COLS].join("\t");
+ctx = builderView([
+  LH,
+  row("in1", "ChIP", "ColCEN", "genotype:WT,tissue:leaf", "rep1", "SRR1", "SE", "Input", "", "", ""),
+  row("ip1", "ChIP", "ColCEN", "genotype:WT,tissue:leaf", "rep1", "SRR2", "SE", "H3K9me2", "in1", "broad", ""),
+].join("\n") + "\n");
+check("extra column: no alert", ctx.alerts.length === 0);
+check("extra column: IDs derived, not read",
+  ctx.tableRows[0].Sample_ID === "WT_leaf_ChIP_Input_rep1" && ctx.tableRows[1].Control === "in1");
+ctx.exportTSV();
+check("extra column not exported", ctx.downloads[0].split("\n")[0] === H);
 
 // --- no header ------------------------------------------------------------
 ctx = builderView("# only\n# comments\n");

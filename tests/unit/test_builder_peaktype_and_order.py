@@ -138,7 +138,7 @@ class TestPeakTypeRuleMatchesValidator:
 class TestShippedExamplesFollowTheRule:
     def test_builder_example_control_rows_have_no_peak_type(self, html):
         # The shipped example is how most users learn the format.
-        for sid in ("WT_leaf_Input_rep1", "WT_leaf_Input_rep2"):
+        for sid in ("WT_leaf_ChIP_Input_rep1", "WT_leaf_ChIP_Input_rep2"):
             m = re.search(r'Sample_ID: "%s", Assay: "ChIP", Peak_type: "([^"]*)"' % sid, html)
             assert m, f"example row {sid} not found"
             assert m.group(1) == "", f"{sid} is control-only; Peak_type should be blank"
@@ -147,7 +147,7 @@ class TestShippedExamplesFollowTheRule:
         path = os.path.join(_REPO_ROOT, "config", "example_samples.tsv")
         with open(path) as fh:
             lines = [l.rstrip("\n") for l in fh]
-        hi = next(i for i, l in enumerate(lines) if l.startswith("Sample_ID\t"))
+        hi = next(i for i, l in enumerate(lines) if l.startswith("Assay\t"))
         cols = {h: i for i, h in enumerate(lines[hi].split("\t"))}
         checked = 0
         for line in lines[hi + 1:]:
@@ -161,7 +161,7 @@ class TestShippedExamplesFollowTheRule:
             if f[cols["Control"]].strip():
                 continue
             assert f[cols["Peak_type"]].strip() == "", (
-                f"{f[cols['Sample_ID']]} is control-only; Peak_type should be blank"
+                f"{line!r} is control-only; Peak_type should be blank"
             )
             checked += 1
         assert checked > 0, "no control-only pulldown rows found to check"

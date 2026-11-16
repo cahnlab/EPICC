@@ -1,7 +1,7 @@
-Sample_ID	Assay	Genome	Levels	Replicate_ID	Read_files	Read_layout	IP_target	Control	Peak_type
-WT_RNA_rep1	RNAseq	test_genome	genotype:WT	rep1	tests/integration/data/mock_inputs/rna_wt_R1.fq.gz,tests/integration/data/mock_inputs/rna_wt_R2.fq.gz	PE			
-WT_RNA_rep2	RNAseq	test_genome	genotype:WT	rep2	tests/integration/data/mock_inputs/rna_wt2_R1.fq.gz,tests/integration/data/mock_inputs/rna_wt2_R2.fq.gz	PE			
-mutant_RNA_rep1	RNAseq	test_genome	genotype:mutant	rep1	tests/integration/data/mock_inputs/rna_mut_R1.fq.gz,tests/integration/data/mock_inputs/rna_mut_R2.fq.gz	PE			
-mutant_RNA_rep2	RNAseq	test_genome	genotype:mutant	rep2	tests/integration/data/mock_inputs/rna_mut2_R1.fq.gz,tests/integration/data/mock_inputs/rna_mut2_R2.fq.gz	PE			
-WT_RAMPAGE_rep1	RAMPAGE	test_genome	genotype:WT	rep1	tests/integration/data/mock_inputs/rampage_wt_R1.fq.gz,tests/integration/data/mock_inputs/rampage_wt_R2.fq.gz	PE		WT_RNA_rep1	
-WT_RAMPAGE_rep2	RAMPAGE	test_genome	genotype:WT	rep2	tests/integration/data/mock_inputs/rampage_wt2_R1.fq.gz,tests/integration/data/mock_inputs/rampage_wt2_R2.fq.gz	PE		WT_RNA_rep2	
+Assay	Genome	Levels	Replicate_ID	Read_files	Read_layout	IP_target	Control	Peak_type
+RNAseq	test_genome	genotype:WT	rep1	tests/integration/data/mock_inputs/rna_wt_R1.fq.gz,tests/integration/data/mock_inputs/rna_wt_R2.fq.gz	PE			
+RNAseq	test_genome	genotype:WT	rep2	tests/integration/data/mock_inputs/rna_wt2_R1.fq.gz,tests/integration/data/mock_inputs/rna_wt2_R2.fq.gz	PE			
+RNAseq	test_genome	genotype:mutant	rep1	tests/integration/data/mock_inputs/rna_mut_R1.fq.gz,tests/integration/data/mock_inputs/rna_mut_R2.fq.gz	PE			
+RNAseq	test_genome	genotype:mutant	rep2	tests/integration/data/mock_inputs/rna_mut2_R1.fq.gz,tests/integration/data/mock_inputs/rna_mut2_R2.fq.gz	PE			
+RAMPAGE	test_genome	genotype:WT	rep1	tests/integration/data/mock_inputs/rampage_wt_R1.fq.gz,tests/integration/data/mock_inputs/rampage_wt_R2.fq.gz	PE		WT_RNA_rep1	
+RAMPAGE	test_genome	genotype:WT	rep2	tests/integration/data/mock_inputs/rampage_wt2_R1.fq.gz,tests/integration/data/mock_inputs/rampage_wt2_R2.fq.gz	PE		WT_RNA_rep2	
