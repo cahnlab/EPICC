@@ -30,6 +30,8 @@ epicc validate --build-envs --samples your_samples.tsv        # pre-create rule 
 
 `epicc output --plot-type browser` also takes `--te-file` and `--extra-tracks BED,…` with optional `--extra-tracks-labels` / `--extra-tracks-colors`, which replace `browser_extra_tracks` for that run (normalized by `workflow/scripts/browser_extra_tracks.py`).
 
+`run --auto-unlock` clears a stale `.snakemake/locks/` before starting. `validate` accepts the flag so a run's command line can be reused, but never unlocks — it is run beside active runs, and a lock file can't tell a live run from a killed one. A dry-run only warns about a lock, so `validate` passes regardless and then prints a note that `epicc run` will be refused.
+
 Nested settings (`dmr_thresholds.*`, `chip_callpeaks.params`, `cut_callpeaks.*`) are applied via a temp merged config file, written under the run directory's `.snakemake/epicc/` rather than `/tmp` because cluster jobs re-read `--configfile` on their own node; sibling keys not specified on the CLI are preserved from the options YAML.
 
 ## Architecture

@@ -1,9 +1,10 @@
-"""Unit tests for `epicc run --auto-unlock`.
+"""Unit tests for `epicc run --auto-unlock` and `epicc validate --auto-unlock`.
 
 snakemake parses the Snakefile before it unlocks, and the Snakefile reads the
 sample sheet, so the unlock call has to carry the same config as the run.
 """
 
+import argparse
 import importlib.util
 import subprocess
 import sys
@@ -86,3 +87,93 @@ def test_no_unlock_without_flag(args, tmp_path, monkeypatch):
     monkeypatch.setattr(epicc.subprocess, "run",
                         lambda *a, **k: pytest.fail("unlock ran"))
     epicc.maybe_clear_stale_lock(args, [], tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# epicc validate: accepts --auto-unlock, and reports a lock it leaves in place
+# ---------------------------------------------------------------------------
+
+def test_validate_accepts_auto_unlock():
+    parse = epicc.build_parser().parse_args
+    assert parse(["validate", "--auto-unlock"]).auto_unlock is True
+    assert parse(["validate"]).auto_unlock is False
+    assert parse(["run", "--auto-unlock"]).auto_unlock is True
+
+
+def _validate_env(tmp_path, monkeypatch, *flags, locked=True):
+    """Run cmd_validate in installed mode from tmp_path with snakemake stubbed."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(epicc, "_is_installed_mode", lambda: True)
+    monkeypatch.setattr(epicc, "find_repo_root", lambda: _REPO_ROOT)
+    if locked:
+        locks = tmp_path / ".snakemake" / "locks"
+        locks.mkdir(parents=True)
+        (locks / "0.input.lock").write_text("")
+    samples = tmp_path / "samples.tsv"
+    samples.write_text("")
+    options = tmp_path / "opts.yaml"
+    options.write_text("analysis_name: t\ngenomes: {}\n")
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        if "--unlock" in cmd:
+            for f in (tmp_path / ".snakemake" / "locks").glob("*"):
+                f.unlink()
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(epicc.subprocess, "run", fake_run)
+    args = epicc.build_parser().parse_args(
+        ["validate", "--options", str(options), "--samples", str(samples),
+         "--cores", "1", *flags])
+    rc = epicc.cmd_validate(args, [])
+    return rc, calls
+
+
+def test_validate_auto_unlock_never_unlocks(tmp_path, monkeypatch, capsys):
+    # validate runs beside live runs; a lock file can't tell live from dead.
+    rc, calls = _validate_env(tmp_path, monkeypatch, "--auto-unlock")
+    assert rc == 0
+    assert not any("--unlock" in c for c in calls)
+    assert any((tmp_path / ".snakemake" / "locks").iterdir())
+    err = capsys.readouterr().err
+    assert "working directory is locked" in err
+    assert "validate never unlocks" in err
+    assert "epicc run --auto-unlock" in err
+
+
+def test_validate_reports_lock_without_flag(tmp_path, monkeypatch, capsys):
+    rc, calls = _validate_env(tmp_path, monkeypatch)
+    assert rc == 0
+    assert not any("--unlock" in c for c in calls)
+    err = capsys.readouterr().err
+    assert "Validation passed" in err
+    assert "working directory is locked" in err
+    assert "epicc unlock" in err
+
+
+def test_validate_silent_when_unlocked(tmp_path, monkeypatch, capsys):
+    rc, _ = _validate_env(tmp_path, monkeypatch, locked=False)
+    assert rc == 0
+    assert "working directory is locked" not in capsys.readouterr().err
+
+
+def test_validate_verbose_reports_lock(tmp_path, monkeypatch, capsys):
+    rc, calls = _validate_env(tmp_path, monkeypatch, "--verbose")
+    assert rc == 0
+    assert not any("--unlock" in c for c in calls)
+    err = capsys.readouterr().err
+    assert "Validation passed" in err
+    assert "working directory is locked" in err
+
+
+def test_auto_unlock_help_differs_for_validate():
+    def help_for(sub):
+        p = epicc.build_parser()
+        sp = next(a for a in p._actions
+                  if isinstance(a, argparse._SubParsersAction))
+        act = next(a for a in sp.choices[sub]._actions if a.dest == "auto_unlock")
+        return act.help
+    assert "default: halt" in help_for("run")
+    assert "never clears a lock" in help_for("validate")
+    assert "default: halt" not in help_for("validate")
