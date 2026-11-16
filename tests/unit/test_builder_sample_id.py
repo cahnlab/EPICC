@@ -28,6 +28,7 @@ from sample_sheet import (  # noqa: E402
 from scripts.samplefile_validation import check_table  # noqa: E402
 
 _JS_VIEW = os.path.join(os.path.dirname(__file__), "js", "commented_rows_test.js")
+_JS_PICKER = os.path.join(os.path.dirname(__file__), "js", "control_picker_test.js")
 _needs_node = pytest.mark.skipif(shutil.which("node") is None, reason="node not available")
 
 HEADER = "\t".join(SHEET_COLNAMES)
@@ -182,3 +183,11 @@ class TestShippedSheets:
         builder = sorted(r["Sample_ID"] for r in json.loads(proc.stdout)
                          if not r["commented"])
         assert builder == sorted(read_sample_sheet(sheet)["Sample_ID"].unique())
+
+
+@_needs_node
+def test_control_picker_highlight_never_scrolls():
+    """Hovering a Control candidate must not scroll the table away from the cell
+    being edited — that closed the editor mid-pick (#91 review)."""
+    proc = subprocess.run(["node", _JS_PICKER], capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
