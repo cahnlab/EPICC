@@ -11,94 +11,105 @@ Run with: pytest tests/integration/test_pombe_postrun.py -v -m slow
 import gzip
 import json
 import struct
+import sys
 
 import pytest
+import yaml
 from pathlib import Path
 
-from tests.integration.conftest import REPO_ROOT, load_output_dir
+from tests.integration.conftest import DATA_DIR, REPO_ROOT, load_output_dir
+
+sys.path.insert(0, str(REPO_ROOT / "workflow" / "scripts"))
+from sample_sheet import (  # noqa: E402
+    add_compat_columns,
+    build_analysis_name,
+    get_analysis_samples,
+    get_replicate_sample_ids,
+    is_peak_call_target,
+    read_sample_sheet,
+)
 
 # ---------------------------------------------------------------------------
-# Constants: repo root and results directory
+# Constants: repo root, results directory, run identity
 # ---------------------------------------------------------------------------
-RESULTS = REPO_ROOT / load_output_dir("test_options_pombe.yaml")
+OPTIONS_FILE = "test_options_pombe.yaml"
+RESULTS = REPO_ROOT / load_output_dir(OPTIONS_FILE)
+
+with open(DATA_DIR / OPTIONS_FILE) as _fh:
+    _OPTIONS = yaml.safe_load(_fh)
+ANALYSIS_NAME = _OPTIONS["analysis_name"]
 
 # ---------------------------------------------------------------------------
-# Expected file lists (verified against actual pombe run 2026-02-26)
+# Expected names, derived from the sample sheet with the pipeline's own helpers
 # ---------------------------------------------------------------------------
+# Naming splits at the alignment boundary (issue #39): download/trim outputs
+# use the bare Sample_ID, but every per-replicate file from alignment onward is
+# named by mapped_name = '{Sample_ID}__{Genome}' (final__*.bam, FC__final__*.bw,
+# peaks_*__final__*, map_<env>__*.done, RNA/sRNA tracks, ShortStack dirs).
+# Analysis-level (merged) files use build_analysis_name, which already ends in
+# the genome. Building both from the sheet keeps this test in step with the
+# rules rather than with a hand-copied list (issue #81).
+SAMPLES = add_compat_columns(
+    read_sample_sheet(REPO_ROOT / _OPTIONS["sample_file"])
+)
+_GENOMES = sorted(SAMPLES["ref_genome"].unique())
+assert len(_GENOMES) == 1, f"pombe postrun expects one genome, got {_GENOMES}"
+GENOME = _GENOMES[0]
 
-# ChIP per-replicate BAMs (10 samples)
-CHIP_PER_REP_BAMS = [
-    "WT_H3K9me2_rep1",
-    "WT_H3K9me2_rep2",
-    "WT_H3K9me3_rep1",
-    "WT_H3K9me3_rep2",
-    "dcr1_H3K9me2_rep1",
-    "dcr1_H3K9me3_rep1",
-    "WT_WCE_rep1",
-    "WT_H3K4me3_rep1",
-    "WT_H3K4me3_rep2",
-    "WT_Input_rep1",
-]
 
-# ChIP analysis-level merged BAMs (3 analysis groups + 2 merged controls)
-CHIP_MERGED_ANALYSIS_BAMS = [
-    "ChIP_broad__WT__H3K9me2__Spombe",
-    "ChIP_broad__WT__H3K9me3__Spombe",
-    "ChIP_narrow__WT__H3K4me3__Spombe",
-]
-CHIP_MERGED_CONTROL_BAMS = [
-    "WT_WCE_rep1",
-    "WT_Input_rep1",
-]
+def _env_rows(env):
+    return SAMPLES[SAMPLES["env"] == env]
 
-# ChIP non-Input/WCE samples (for FC bigwigs)
-CHIP_NON_INPUT_PER_REP = [
-    "WT_H3K9me2_rep1",
-    "WT_H3K9me2_rep2",
-    "WT_H3K9me3_rep1",
-    "WT_H3K9me3_rep2",
-    "dcr1_H3K9me2_rep1",
-    "dcr1_H3K9me3_rep1",
-    "WT_H3K4me3_rep1",
-    "WT_H3K4me3_rep2",
-]
 
-# ChIP PE samples that should have broadPeak files
-CHIP_PE_PEAK_SAMPLES = [
-    "WT_H3K9me2_rep1",
-    "WT_H3K9me2_rep2",
-    "WT_H3K9me3_rep1",
-    "WT_H3K9me3_rep2",
-    "dcr1_H3K9me2_rep1",
-    "dcr1_H3K9me3_rep1",
-]
+def _mapped_names(rows):
+    return rows["mapped_name"].tolist()
 
-# ChIP SE samples that should have narrowPeak files
-CHIP_SE_PEAK_SAMPLES = [
-    "WT_H3K4me3_rep1",
-    "WT_H3K4me3_rep2",
-]
 
-# RNA per-replicate samples (4)
-RNA_PER_REP = [
-    "WT_RNA_rep1",
-    "WT_RNA_rep2",
-    "dcr1_RNA_rep1",
-    "dcr1_RNA_rep2",
-]
+def _merged_analysis_rows(env):
+    """Analysis names with >=2 replicates, i.e. those that get merged outputs.
 
-# RNA merged BAMs (2)
-RNA_MERGED = [
-    "RNAseq__WT__Spombe",
-    "RNAseq__dcr1__Spombe",
-]
+    A single-replicate group has no merged BAM: its downstream files fall back
+    to the replicate's own name (see combined_analysis.smk).
+    """
+    analysis = add_compat_columns(get_analysis_samples(_env_rows(env)))
+    rows = {build_analysis_name(row): row for _, row in analysis.iterrows()}
+    return {n: r for n, r in rows.items()
+            if len(get_replicate_sample_ids(n, SAMPLES)) >= 2}
 
-# sRNA per-replicate samples (3)
-SRNA_PER_REP = [
-    "WT_sRNA_rep1",
-    "WT_sRNA_rep2",
-    "dcr1_sRNA_rep1",
-]
+
+def _merged_analysis_names(env):
+    return list(_merged_analysis_rows(env))
+
+
+_CHIP_ROWS = _env_rows("ChIP")
+_CHIP_PEAK_ROWS = _CHIP_ROWS[_CHIP_ROWS.apply(is_peak_call_target, axis=1)]
+
+# ChIP per-replicate BAMs: every ChIP row, controls included
+CHIP_PER_REP_BAMS = _mapped_names(_CHIP_ROWS)
+
+# ChIP per-replicate rows that call peaks (have a Control) -> FC bigwigs
+CHIP_NON_INPUT_PER_REP = _mapped_names(_CHIP_PEAK_ROWS)
+
+# Per-replicate peak files: PE -> peaks_pe__*.broadPeak, SE -> peaks_se__*.narrowPeak
+CHIP_PE_PEAK_SAMPLES = _mapped_names(
+    _CHIP_PEAK_ROWS[_CHIP_PEAK_ROWS["Read_layout"] == "PE"]
+)
+CHIP_SE_PEAK_SAMPLES = _mapped_names(
+    _CHIP_PEAK_ROWS[_CHIP_PEAK_ROWS["Read_layout"] == "SE"]
+)
+PEAK_TYPE = dict(zip(_CHIP_PEAK_ROWS["mapped_name"], _CHIP_PEAK_ROWS["Peak_type"]))
+
+# ChIP analysis groups with >=2 replicates (merged BAM / FC bigwig / IDR)
+CHIP_MERGED_ANALYSIS_BAMS = _merged_analysis_names("ChIP")
+MERGED_PEAK_TYPE = {n: r["Peak_type"] for n, r in _merged_analysis_rows("ChIP").items()}
+
+# RNA
+RNA_PER_REP = _mapped_names(_env_rows("RNA"))
+RNA_MERGED = _merged_analysis_names("RNA")
+
+# sRNA
+SRNA_PER_REP = _mapped_names(_env_rows("sRNA"))
+SRNA_MERGED = _merged_analysis_names("sRNA")
 
 # sRNA size classes
 SRNA_SIZES = ["21nt", "22nt", "23nt", "24nt"]
@@ -106,26 +117,27 @@ SRNA_STRANDS = ["plus", "minus"]
 
 # Checkpoint files
 CHIP_CHECKPOINTS = [
-    "ChIP_analysis__test_pombe__Spombe.done",
-    "idr__ChIP_broad__WT__H3K9me2__Spombe.done",
-    "idr__ChIP_broad__WT__H3K9me3__Spombe.done",
-    "idr__ChIP_narrow__WT__H3K4me3__Spombe.done",
-] + [f"map_ChIP__{s}.done" for s in CHIP_PER_REP_BAMS]
+    f"ChIP_analysis__{ANALYSIS_NAME}__{GENOME}.done",
+] + [f"idr__{name}.done" for name in CHIP_MERGED_ANALYSIS_BAMS] \
+  + [f"map_ChIP__{s}.done" for s in CHIP_PER_REP_BAMS]
 
 RNA_CHECKPOINTS = [
-    "calling_DEGs__test_pombe__Spombe.done",
-    "RNA_analysis__test_pombe__Spombe.done",
+    f"calling_DEGs__{ANALYSIS_NAME}__{GENOME}.done",
+    f"RNA_analysis__{ANALYSIS_NAME}__{GENOME}.done",
 ] + [f"map_RNA__{s}.done" for s in RNA_PER_REP]
 
 SRNA_CHECKPOINTS = [
-    "sRNA_analysis__test_pombe__Spombe.done",
-    "calling_differential_sRNA_clusters__test_pombe__Spombe__on_all_genes.done",
-    "calling_differential_sRNA_clusters__test_pombe__Spombe__on_new_clusters.done",
+    f"sRNA_analysis__{ANALYSIS_NAME}__{GENOME}.done",
+    f"calling_differential_sRNA_clusters__{ANALYSIS_NAME}__{GENOME}__on_all_genes.done",
+    f"calling_differential_sRNA_clusters__{ANALYSIS_NAME}__{GENOME}__on_new_clusters.done",
 ] + [f"map_sRNA__{s}.done" for s in SRNA_PER_REP]
 
+# '{analysis_name}__{genome}': the run-level tag on DEG, cluster and combined outputs
+RUN = f"{ANALYSIS_NAME}__{GENOME}"
+
 COMBINED_CHECKPOINTS = [
-    "combined_analysis__test_pombe__Spombe.done",
-    "final_analysis__test_pombe.done",
+    f"combined_analysis__{ANALYSIS_NAME}__{GENOME}.done",
+    f"final_analysis__{ANALYSIS_NAME}.done",
 ]
 
 
@@ -170,7 +182,7 @@ class TestChIPOutputs:
     """Validate ChIP-seq pipeline outputs."""
 
     def test_per_rep_bams_exist(self, results_exist):
-        """All 11 per-replicate BAMs and BAIs exist and are non-empty."""
+        """Every ChIP per-replicate BAM and BAI exists and is non-empty."""
         for sample in CHIP_PER_REP_BAMS:
             bam = RESULTS / "ChIP" / "mapped" / f"final__{sample}.bam"
             bai = RESULTS / "ChIP" / "mapped" / f"final__{sample}.bam.bai"
@@ -186,37 +198,35 @@ class TestChIPOutputs:
             )
 
     def test_fc_bigwigs_per_rep(self, results_exist):
-        """FC bigwigs for 8 non-Input per-rep samples exist."""
+        """FC bigwigs exist for every per-rep sample that has a Control."""
         for sample in CHIP_NON_INPUT_PER_REP:
             bw = RESULTS / "ChIP" / "tracks" / f"FC__final__{sample}.bw"
             assert _file_exists_nonempty(bw), f"Missing or empty: {bw}"
 
     def test_fc_bigwigs_merged(self, results_exist):
-        """Merged FC bigwigs for 3 analysis groups exist."""
+        """Merged FC bigwigs exist for every multi-replicate analysis group."""
         for name in CHIP_MERGED_ANALYSIS_BAMS:
             bw = RESULTS / "ChIP" / "tracks" / f"FC__merged__{name}.bw"
             assert _file_exists_nonempty(bw), f"Missing or empty: {bw}"
 
     def test_broad_peaks(self, results_exist):
-        """BroadPeak files for 6 PE samples exist."""
+        """Per-replicate peak files for PE samples (peaks_pe__) exist."""
         for sample in CHIP_PE_PEAK_SAMPLES:
-            peak = RESULTS / "ChIP" / "peaks" / f"peaks_pe__final__{sample}_peaks.broadPeak"
+            peak = RESULTS / "ChIP" / "peaks" / f"peaks_pe__final__{sample}_peaks.{PEAK_TYPE[sample]}Peak"
             assert _file_exists_nonempty(peak), f"Missing or empty: {peak}"
 
     def test_narrow_peaks(self, results_exist):
-        """NarrowPeak files for 2 SE samples exist."""
+        """Per-replicate peak files for SE samples (peaks_se__) exist."""
         for sample in CHIP_SE_PEAK_SAMPLES:
-            peak = RESULTS / "ChIP" / "peaks" / f"peaks_se__final__{sample}_peaks.narrowPeak"
+            peak = RESULTS / "ChIP" / "peaks" / f"peaks_se__final__{sample}_peaks.{PEAK_TYPE[sample]}Peak"
             assert _file_exists_nonempty(peak), f"Missing or empty: {peak}"
 
     def test_idr_files(self, results_exist):
         """IDR output files exist (may be empty when IDR fails due to few peaks)."""
-        for name in ["ChIP_broad__WT__H3K9me2__Spombe",
-                      "ChIP_broad__WT__H3K9me3__Spombe"]:
-            idr = RESULTS / "ChIP" / "peaks" / f"idr_peaks__{name}.broadPeak"
+        for name in CHIP_MERGED_ANALYSIS_BAMS:
+            peaktype = MERGED_PEAK_TYPE[name]
+            idr = RESULTS / "ChIP" / "peaks" / f"idr_peaks__{name}.{peaktype}Peak"
             assert idr.exists(), f"Missing: {idr}"
-        idr_narrow = RESULTS / "ChIP" / "peaks" / "idr_peaks__ChIP_narrow__WT__H3K4me3__Spombe.narrowPeak"
-        assert idr_narrow.exists(), f"Missing: {idr_narrow}"
 
     def test_chip_checkpoints(self, results_exist):
         """All ChIP checkpoints present."""
@@ -235,7 +245,7 @@ class TestRNAOutputs:
     """Validate RNA-seq pipeline outputs."""
 
     def test_per_rep_bams(self, results_exist):
-        """4 per-replicate BAMs + BAIs exist."""
+        """RNA per-replicate BAMs + BAIs exist."""
         for sample in RNA_PER_REP:
             bam = RESULTS / "RNA" / "mapped" / f"final__{sample}.bam"
             bai = RESULTS / "RNA" / "mapped" / f"final__{sample}.bam.bai"
@@ -267,7 +277,7 @@ class TestRNAOutputs:
         Note: the raw count matrix (counts__*.txt) is temp() and removed after
         DEG analysis, so we validate the persistent RPKM output instead.
         """
-        rpkm = RESULTS / "RNA" / "DEG" / "genes_rpkm__test_pombe__Spombe.txt"
+        rpkm = RESULTS / "RNA" / "DEG" / f"genes_rpkm__{RUN}.txt"
         assert _file_exists_nonempty(rpkm), f"Missing or empty: {rpkm}"
         with open(rpkm) as f:
             header = f.readline().strip().split("\t")
@@ -280,7 +290,7 @@ class TestRNAOutputs:
         Note: with a single factor (genotype), sample labels get a trailing
         underscore from the empty 2nd factor, producing WT___vs_dcr1__.
         """
-        deg = RESULTS / "RNA" / "DEG" / "DEG_test_pombe__Spombe__WT___vs_dcr1__.txt"
+        deg = RESULTS / "RNA" / "DEG" / f"DEG_{RUN}__WT___vs_dcr1__.txt"
         assert _file_exists_nonempty(deg), f"Missing or empty: {deg}"
         with open(deg) as f:
             header = f.readline().strip()
@@ -304,13 +314,13 @@ class TestSRNAOutputs:
     """Validate small RNA pipeline outputs."""
 
     def test_shortstack_results(self, results_exist):
-        """ShortStack Results.txt for 3 samples."""
+        """ShortStack Results.txt for every sRNA replicate."""
         for sample in SRNA_PER_REP:
             results_txt = RESULTS / "sRNA" / "mapped" / sample / "Results.txt"
             assert _file_exists_nonempty(results_txt), f"Missing or empty: {results_txt}"
 
     def test_size_class_bigwigs_per_rep(self, results_exist):
-        """Size-class bigwigs (4 sizes x 2 strands x 3 reps)."""
+        """Size-class bigwigs (4 sizes x 2 strands x every replicate)."""
         for sample in SRNA_PER_REP:
             for size in SRNA_SIZES:
                 for strand in SRNA_STRANDS:
@@ -318,22 +328,23 @@ class TestSRNAOutputs:
                     assert _file_exists_nonempty(bw), f"Missing or empty: {bw}"
 
     def test_merged_wt_bigwigs(self, results_exist):
-        """Merged WT bigwigs (4 sizes x 2 strands)."""
-        for size in SRNA_SIZES:
-            for strand in SRNA_STRANDS:
-                bw = RESULTS / "sRNA" / "tracks" / f"sRNA__WT__Spombe__{size}__{strand}.bw"
-                assert _file_exists_nonempty(bw), f"Missing or empty: {bw}"
+        """Merged bigwigs for multi-replicate groups (4 sizes x 2 strands)."""
+        for name in SRNA_MERGED:
+            for size in SRNA_SIZES:
+                for strand in SRNA_STRANDS:
+                    bw = RESULTS / "sRNA" / "tracks" / f"{name}__{size}__{strand}.bw"
+                    assert _file_exists_nonempty(bw), f"Missing or empty: {bw}"
 
     def test_cluster_deg_results(self, results_exist):
         """Cluster DEG results for on_new_clusters and on_all_genes."""
         for mode in ["on_new_clusters", "on_all_genes"]:
-            deg = RESULTS / "sRNA" / "clusters" / f"test_pombe__Spombe__{mode}" / "DEG_WT_vs_dcr1.txt"
+            deg = RESULTS / "sRNA" / "clusters" / f"{RUN}__{mode}" / "DEG_WT_vs_dcr1.txt"
             assert _file_exists_nonempty(deg), f"Missing or empty: {deg}"
 
     def test_cluster_count_files(self, results_exist):
         """Cluster count files exist for both modes."""
         for mode in ["on_new_clusters", "on_all_genes"]:
-            base = RESULTS / "sRNA" / "clusters" / f"test_pombe__Spombe__{mode}"
+            base = RESULTS / "sRNA" / "clusters" / f"{RUN}__{mode}"
             for fname in ["Counts.txt", "counts_for_edgeR.txt", "Results.txt"]:
                 path = base / fname
                 assert _file_exists_nonempty(path), f"Missing or empty: {path}"
@@ -357,7 +368,7 @@ class TestCombinedOutputs:
     def test_heatmap_matrices(self, results_exist):
         """Heatmap matrices for tss/tes/regions exist."""
         for region_type in ["tss", "tes", "regions"]:
-            gz = RESULTS / "combined" / "matrix" / f"final_matrix_{region_type}__most__test_pombe__Spombe__all_genes.gz"
+            gz = RESULTS / "combined" / "matrix" / f"final_matrix_{region_type}__most__{RUN}__all_genes.gz"
             assert _file_exists_nonempty(gz), f"Missing or empty: {gz}"
 
     def test_heatmap_matrices_have_one_region_group(self, results_exist):
@@ -369,7 +380,7 @@ class TestCombinedOutputs:
         back as one group; two groups means the plots below cannot be drawn.
         """
         for region_type in ["tss", "tes", "regions"]:
-            gz = RESULTS / "combined" / "matrix" / f"final_matrix_{region_type}__most__test_pombe__Spombe__all_genes.gz"
+            gz = RESULTS / "combined" / "matrix" / f"final_matrix_{region_type}__most__{RUN}__all_genes.gz"
             with gzip.open(gz, "rt") as fh:
                 header = json.loads(fh.readline().lstrip("@"))
             assert len(header["group_labels"]) == 1, (
@@ -380,35 +391,35 @@ class TestCombinedOutputs:
     def test_heatmap_pdfs(self, results_exist):
         """Heatmap PDFs for tss/tes/regions exist."""
         for region_type in ["tss", "tes", "regions"]:
-            pdf = RESULTS / "combined" / "plots" / f"Heatmap__{region_type}__most__test_pombe__Spombe__all_genes.pdf"
+            pdf = RESULTS / "combined" / "plots" / f"Heatmap__{region_type}__most__{RUN}__all_genes.pdf"
             assert _file_exists_nonempty(pdf), f"Missing or empty: {pdf}"
 
     def test_profile_pdfs(self, results_exist):
         """Profile PDFs for tss/tes/regions exist."""
         for region_type in ["tss", "tes", "regions"]:
-            pdf = RESULTS / "combined" / "plots" / f"Profile__{region_type}__most__test_pombe__Spombe__all_genes.pdf"
+            pdf = RESULTS / "combined" / "plots" / f"Profile__{region_type}__most__{RUN}__all_genes.pdf"
             assert _file_exists_nonempty(pdf), f"Missing or empty: {pdf}"
 
     def test_browser_track_pdf(self, results_exist):
         """Browser track PDF exists."""
-        pdf = RESULTS / "combined" / "plots" / "Browser_full_chromosomes__all__test_pombe__Spombe.pdf"
+        pdf = RESULTS / "combined" / "plots" / f"Browser_full_chromosomes__all__{RUN}.pdf"
         assert _file_exists_nonempty(pdf), f"Missing or empty: {pdf}"
 
     def test_pca_matrices(self, results_exist):
         """PCA matrices (.npz) exist."""
         for prefix in ["pca_matrix__all_chip", "pca_matrix__ChIP"]:
-            npz = RESULTS / "combined" / "matrix" / f"{prefix}__test_pombe__Spombe.npz"
+            npz = RESULTS / "combined" / "matrix" / f"{prefix}__{RUN}.npz"
             assert _file_exists_nonempty(npz), f"Missing or empty: {npz}"
 
     def test_bed_annotation_files(self, results_exist):
         """BED annotation files exist."""
         bedfiles = RESULTS / "combined" / "bedfiles"
         expected = [
-            "Spombe__all_genes.bed",
-            "Spombe__protein_coding_genes.bed",
-            "full_chromosomes__Spombe.bed",
-            "combined_peaks__ChIP__test_pombe__Spombe.bed",
-            "annotated__combined_peaks__ChIP__test_pombe__Spombe.bed",
+            f"{GENOME}__all_genes.bed",
+            f"{GENOME}__protein_coding_genes.bed",
+            f"full_chromosomes__{GENOME}.bed",
+            f"combined_peaks__ChIP__{RUN}.bed",
+            f"annotated__combined_peaks__ChIP__{RUN}.bed",
         ]
         for fname in expected:
             path = bedfiles / fname
@@ -427,7 +438,7 @@ class TestOutputIntegrity:
     def test_bam_header_has_pombe_chromosomes(self, results_exist):
         """BAM header contains @SQ lines with pombe chromosomes (I, II, III)."""
         import subprocess
-        bam = RESULTS / "ChIP" / "mapped" / "final__WT_H3K9me2_rep1.bam"
+        bam = RESULTS / "ChIP" / "mapped" / f"final__{CHIP_PE_PEAK_SAMPLES[0]}.bam"
         result = subprocess.run(
             ["samtools", "view", "-H", str(bam)],
             capture_output=True, text=True, timeout=30
@@ -444,7 +455,7 @@ class TestOutputIntegrity:
 
     def test_bigwig_magic_bytes(self, results_exist):
         """Bigwig files have valid magic bytes (0x888FFC26 or 0x26FC8F88)."""
-        bw = RESULTS / "ChIP" / "tracks" / "FC__final__WT_H3K9me2_rep1.bw"
+        bw = RESULTS / "ChIP" / "tracks" / f"FC__final__{CHIP_NON_INPUT_PER_REP[0]}.bw"
         magic = _read_bigwig_magic(bw)
         valid_magics = {0x888FFC26, 0x26FC8F88}
         assert magic in valid_magics, \
@@ -452,7 +463,7 @@ class TestOutputIntegrity:
 
     def test_broadpeak_has_9_columns(self, results_exist):
         """BroadPeak files have 9 tab-separated columns."""
-        peak = RESULTS / "ChIP" / "peaks" / "peaks_pe__final__WT_H3K9me2_rep1_peaks.broadPeak"
+        peak = RESULTS / "ChIP" / "peaks" / f"peaks_pe__final__{CHIP_PE_PEAK_SAMPLES[0]}_peaks.broadPeak"
         with open(peak) as f:
             for i, line in enumerate(f):
                 line = line.strip()
@@ -465,7 +476,7 @@ class TestOutputIntegrity:
 
     def test_narrowpeak_has_10_columns(self, results_exist):
         """NarrowPeak files have 10 tab-separated columns."""
-        peak = RESULTS / "ChIP" / "peaks" / "peaks_se__final__WT_H3K4me3_rep1_peaks.narrowPeak"
+        peak = RESULTS / "ChIP" / "peaks" / f"peaks_se__final__{CHIP_SE_PEAK_SAMPLES[0]}_peaks.narrowPeak"
         with open(peak) as f:
             for i, line in enumerate(f):
                 line = line.strip()
