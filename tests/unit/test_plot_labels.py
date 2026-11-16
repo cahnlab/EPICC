@@ -125,7 +125,7 @@ def _builders(sheet, allreps, disambiguate=True):
 SHEETS = ["test_samples_CUT.tsv", "test_samples_mC.tsv", "test_samples_colcen.tsv"]
 CASES = (
     [("define_key_for_plots", env, "labels", strand)
-     for env in ["all", "most", "ChIP", "ATAC", "RNA", "sRNA", "mC", "mCG", "mCHH"]
+     for env in ["all", "most", "ChIP", "ATAC", "RNA", "sRNA", "mC"]
      for strand in ["unstranded", "plus", "nostrand"]]
     + [("define_samples_for_upset", env, "pairs", None)
        for env in ["ChIP", "ATAC", "all_chip", "RAMPAGE", "sRNA"]]
@@ -208,61 +208,15 @@ def test_srna_label_types_follow_final_labels():
     assert {p.rsplit("=", 1)[0].rsplit("_", 1)[0] for p in pairs} == set(prefixes)
 
 
-# --- One methylation context per heatmap / metaplot --------------------------
+# --- The context of each mC matrix column -----------------------------------
 
-@pytest.mark.parametrize("allreps", [False, True])
-@pytest.mark.parametrize("context", ["CG", "CHG", "CHH"])
-def test_per_context_env_plots_only_that_context(allreps, context):
-    ns, genome = _builders("test_samples_colcen.tsv", allreps)
-    wc = SimpleNamespace(ref_genome=genome, env=f"m{context}")
-    bigwigs = ns["define_key_for_plots"](wc, "bigwigs")
-    labels = ns["define_key_for_plots"](wc, "labels")
-    marks = ns["define_key_for_plots"](wc, "marks")
-    assert bigwigs and all(bw.endswith(f"__{context}.bw") for bw in bigwigs)
-    assert all(f"_m{context}" in lab for lab in labels)
-    assert marks == [f"m{context}"]
-
-
-def test_per_context_envs_partition_the_mc_plot():
-    # Together the context plots draw exactly what the all-context 'mC' set
-    # holds (still what the browser uses), each track once.
-    ns, genome = _builders("test_samples_colcen.tsv", False)
+def test_tracks_name_each_columns_context():
+    # R_mc_profile_by_context.R facets the mC per-group profile on these.
+    ns, genome = _builders("test_samples_colcen.tsv", True)
+    wc = SimpleNamespace(ref_genome=genome, env="mC")
     key = ns["define_key_for_plots"]
-    every = key(SimpleNamespace(ref_genome=genome, env="mC"), "bigwigs")
-    split = sum((key(SimpleNamespace(ref_genome=genome, env=f"m{c}"), "bigwigs")
-                 for c in ["CG", "CHG", "CHH"]), [])
-    assert sorted(split) == sorted(every)
-
-
-def test_per_context_env_keeps_sample_colours():
-    # A sample keeps its colour across the context plots.
-    ns, genome = _builders("test_samples_colcen.tsv", False)
-    key = ns["define_key_for_plots"]
-    colours = {}
-    for c in ["CG", "CHH"]:
-        wc = SimpleNamespace(ref_genome=genome, env=f"m{c}")
-        for lab, col in zip(key(wc, "labels"), key(wc, "colors")):
-            colours.setdefault(lab.replace(f"_m{c}", ""), set()).add(col)
-    assert all(len(v) == 1 for v in colours.values())
-
-
-def test_unconfigured_context_is_rejected():
-    ns, genome = _builders("test_samples_colcen.tsv", False)
-    ns["get_methylation_contexts"] = lambda: ["CG"]
-    with pytest.raises(ValueError, match="CHH.*not in methylation_contexts"):
-        ns["define_key_for_plots"](SimpleNamespace(ref_genome=genome, env="mCHH"), "bigwigs")
-
-
-def test_mc_env_helpers():
-    ns, _ = _builders("test_samples_colcen.tsv", False)
-    assert ns["mc_context_of_env"]("mCHG") == "CHG"
-    assert ns["mc_context_of_env"]("mC") is None
-    assert ns["mc_context_of_env"]("most") is None
-    assert ns["is_mc_env"]("mC") and ns["is_mc_env"]("mCG")
-    assert not ns["is_mc_env"]("ChIP")
-    assert ns["mc_plot_envs"]() == ["mCG", "mCHG", "mCHH"]
-    # A context env without its own entry takes the 'mC' heatmap settings.
-    mc = ns["config"]["heatmaps_plot_params"]["mC"]
-    assert ns["heatmap_plot_params"]("mCHH") == mc
-    ns["config"]["heatmaps_plot_params"]["mCHH"] = "--colorMap Blues"
-    assert ns["heatmap_plot_params"]("mCHH") == "--colorMap Blues"
+    labels, tracks, bigwigs = key(wc, "labels"), key(wc, "tracks"), key(wc, "bigwigs")
+    assert len(tracks) == len(labels) == len(bigwigs)
+    assert set(tracks) == {"mCG", "mCHG", "mCHH"}
+    for lab, ctx, bw in zip(labels, tracks, bigwigs):
+        assert f"_{ctx}" in lab and bw.endswith(f"__{ctx[1:]}.bw")

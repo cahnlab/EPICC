@@ -1381,22 +1381,6 @@ OUTPUT_TYPES = {
 }
 
 VALID_OUTPUT_ENVS = ("all", "most", "ChIP", "ATAC", "RNA", "sRNA", "mC", "mCG", "mCHG", "mCHH")
-# Heatmaps and metaplots draw one methylation context per plot, so for them
-# `--env mC` stands for every configured context: one target per context.
-PER_CONTEXT_PLOT_TYPES = ("heatmap", "metaplot")
-DEFAULT_METHYLATION_CONTEXTS = ["CG", "CHG", "CHH"]
-
-
-def output_envs(plot_type, env, contexts):
-    """The plot env(s) one `epicc output` request expands to."""
-    if plot_type in PER_CONTEXT_PLOT_TYPES and env == "mC":
-        return [f"m{c}" for c in contexts]
-    if plot_type in PER_CONTEXT_PLOT_TYPES and env and env.startswith("mC") and env[1:] not in contexts:
-        sys.exit(
-            f"Error: --env {env} asks for methylation context {env[1:]}, which is not in "
-            f"methylation_contexts ({','.join(contexts)})."
-        )
-    return [env]
 VALID_OUTPUT_MATRICES = ("regions", "tss", "tes")
 
 
@@ -1551,20 +1535,15 @@ def cmd_output(args, extra_args):
             f"{', '.join(VALID_OUTPUT_MATRICES)}."
         )
 
-    # --- Build target path(s)
-    contexts = (getattr(args, "methylation_contexts", None)
-                or cfg.get("methylation_contexts") or DEFAULT_METHYLATION_CONTEXTS)
-    targets = [
-        spec["target"].format(
-            output_dir=output_dir,
-            analysis_name=analysis_name,
-            ref_genome=ref_genome or "",
-            env=plot_env or "",
-            label=label,
-            matrix=matrix,
-        )
-        for plot_env in output_envs(args.plot_type, env, contexts)
-    ]
+    # --- Build target path
+    target = spec["target"].format(
+        output_dir=output_dir,
+        analysis_name=analysis_name,
+        ref_genome=ref_genome or "",
+        env=env or "",
+        label=label,
+        matrix=matrix,
+    )
 
     # --- Build snakemake config overrides for the target's input wiring
     sources = {
@@ -1626,10 +1605,9 @@ def cmd_output(args, extra_args):
         cmd += extra_args
     # Use -- separator to prevent Snakemake from interpreting the target as an option
     cmd.append("--")
-    cmd += targets
+    cmd.append(target)
 
-    for target in targets:
-        print(f"EPICC: Targeting output → {target}", file=sys.stderr)
+    print(f"EPICC: Targeting output → {target}", file=sys.stderr)
     if args.verbose:
         print(f"  Command: {' '.join(cmd)}", file=sys.stderr)
 
@@ -2193,9 +2171,7 @@ def build_parser():
     p_out.add_argument(
         "--env", metavar="ENV", choices=VALID_OUTPUT_ENVS,
         help="Data type for env-aware plots (heatmap/metaplot/browser): "
-             + ", ".join(VALID_OUTPUT_ENVS) + ". Heatmaps and metaplots "
-             "draw one methylation context per plot, so for them 'mC' makes "
-             "one plot per configured context (mCG, mCHG, mCHH).",
+             + ", ".join(VALID_OUTPUT_ENVS) + ".",
     )
     p_out.add_argument(
         "--matrix", metavar="KIND", choices=VALID_OUTPUT_MATRICES,
