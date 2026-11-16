@@ -4,6 +4,7 @@ snakemake parses the Snakefile before it unlocks, and the Snakefile reads the
 sample sheet, so the unlock call has to carry the same config as the run.
 """
 
+import argparse
 import importlib.util
 import subprocess
 import sys
@@ -129,12 +130,16 @@ def _validate_env(tmp_path, monkeypatch, *flags, locked=True):
     return rc, calls
 
 
-def test_validate_auto_unlock_clears_lock_before_dry_run(tmp_path, monkeypatch, capsys):
+def test_validate_auto_unlock_never_unlocks(tmp_path, monkeypatch, capsys):
+    # validate runs beside live runs; a lock file can't tell live from dead.
     rc, calls = _validate_env(tmp_path, monkeypatch, "--auto-unlock")
     assert rc == 0
-    assert "--unlock" in calls[0]
-    assert "--dry-run" in calls[1]
-    assert "working directory is locked" not in capsys.readouterr().err
+    assert not any("--unlock" in c for c in calls)
+    assert any((tmp_path / ".snakemake" / "locks").iterdir())
+    err = capsys.readouterr().err
+    assert "working directory is locked" in err
+    assert "validate never unlocks" in err
+    assert "epicc run --auto-unlock" in err
 
 
 def test_validate_reports_lock_without_flag(tmp_path, monkeypatch, capsys):
@@ -151,3 +156,24 @@ def test_validate_silent_when_unlocked(tmp_path, monkeypatch, capsys):
     rc, _ = _validate_env(tmp_path, monkeypatch, locked=False)
     assert rc == 0
     assert "working directory is locked" not in capsys.readouterr().err
+
+
+def test_validate_verbose_reports_lock(tmp_path, monkeypatch, capsys):
+    rc, calls = _validate_env(tmp_path, monkeypatch, "--verbose")
+    assert rc == 0
+    assert not any("--unlock" in c for c in calls)
+    err = capsys.readouterr().err
+    assert "Validation passed" in err
+    assert "working directory is locked" in err
+
+
+def test_auto_unlock_help_differs_for_validate():
+    def help_for(sub):
+        p = epicc.build_parser()
+        sp = next(a for a in p._actions
+                  if isinstance(a, argparse._SubParsersAction))
+        act = next(a for a in sp.choices[sub]._actions if a.dest == "auto_unlock")
+        return act.help
+    assert "default: halt" in help_for("run")
+    assert "never clears a lock" in help_for("validate")
+    assert "default: halt" not in help_for("validate")
