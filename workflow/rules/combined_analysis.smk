@@ -1374,7 +1374,8 @@ rule plotting_profile_on_targetfile:
         display = lambda wildcards: define_key_for_plots(wildcards, "display"),
         sample_labeller = os.path.join(REPO_FOLDER, "workflow", "scripts", "matrix_sample_labels.py"),
         # mC: the per-group plot is faceted on context instead (see below).
-        mc_script = os.path.join(REPO_FOLDER, "workflow", "scripts", "R_mc_profile_by_context.R")
+        mc_script = os.path.join(REPO_FOLDER, "workflow", "scripts", "R_mc_profile_by_context.R"),
+        theme = PLOT_THEME_JSON
     log:
         temp(return_log_combined("{analysis_name}", "{env}_{ref_genome}", "plot_profile_{matrix_param}_{target_name}"))
     conda: CONDA_ENV
@@ -1410,7 +1411,8 @@ rule plotting_profile_on_targetfile:
             printf "Plotting per context profile {params.matrix} for {params.env} {params.target_name} on {params.ref_genome}\n"
             plotProfile -m {input.matrix} -out "$TMPDIR/profile_data.pdf" ${{reg}} ${{lab}} ${{add}} --averageType {params.average} --outFileNameData "$TMPDIR/profile_data.tab"
             awk -F"\t" -v OFS="\t" '{{print $2, $4, $3, $5}}' "$TMPDIR/columns.tsv" > "$TMPDIR/profile_samples.tsv"
-            Rscript "{params.mc_script}" "$TMPDIR/profile_data.tab" "$TMPDIR/profile_samples.tsv" {output.plot2} "{params.average} methylation"
+            printf '%s\n' {params.theme:q} > "$TMPDIR/plot_theme.json"
+            Rscript "{params.mc_script}" "$TMPDIR/profile_data.tab" "$TMPDIR/profile_samples.tsv" {output.plot2} "{params.average} methylation" "$TMPDIR/plot_theme.json"
         else
         printf "Plotting per group profile {params.matrix} for {params.env} {params.target_name} on {params.ref_genome}\n"
         ymin=$(cat {input.params_profile} | awk 'BEGIN {{y=99999}} {{for (i=1; i<=NF; i++) {{if ($i == "--yMin") {{for (j=i+1; j<=NF && $j !~ /^--/; j++) {{if ($j<y) y=$j}} break}} }} }} END {{print y}}' )
