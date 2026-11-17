@@ -78,8 +78,8 @@ def test_plot_rules_apply_labels(rule):
 
 def _relabelled_builders(sheet, allreps):
     ns, genome = tpl._builders(sheet, allreps)
-    real = ns["disambiguate_labels"]
-    ns["disambiguate_labels"] = lambda *a, **k: [x + "_RELABELLED" for x in real(*a, **k)]
+    real = ns["build_plot_labels"]
+    ns["build_plot_labels"] = lambda *a, **k: [x + "_RELABELLED" for x in real(*a, **k)]
     return ns, genome
 
 
@@ -117,13 +117,14 @@ def test_display_covers_both_strand_layouts(env):
     ns, genome = tpl._builders("test_samples_colcen.tsv", False)
     rows = {}
     for line in ns["define_key_for_plots"](SimpleNamespace(ref_genome=genome, env=env), "display").split("\n"):
-        key, label, color, track = line.split("\t")
-        rows[key] = (label, color, track)
+        key, *rest = line.split("\t")
+        rows[key] = tuple(rest)
     for strand in ("unstranded", "plus"):
         wc = SimpleNamespace(ref_genome=genome, env=env, strand=strand)
         fn = ns["define_key_for_plots"]
-        for key, label, color, track in zip(fn(wc, "keys"), fn(wc, "labels"), fn(wc, "colors"), fn(wc, "tracks")):
-            assert rows[key] == (label, color, track)
+        cols = [fn(wc, m) for m in ("labels", "colors", "tracks", "series")]
+        for key, *rest in zip(fn(wc, "keys"), *cols):
+            assert rows[key] == tuple(rest)
 
 
 def test_keys_end_in_their_track():

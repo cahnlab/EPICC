@@ -23,7 +23,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "workflow" / "scripts"))
-from sample_sheet import check_unique_labels, disambiguate_labels  # noqa: E402
+from sample_sheet import build_plot_labels, check_unique_labels  # noqa: E402
 SMK = REPO / "workflow" / "rules" / "combined_analysis.smk"
 SCRIPTS = REPO / "workflow" / "scripts"
 UPSET_SCRIPTS = ["R_Upset_plot_peaks.R", "R_Upset_plot_TSS.R",
@@ -49,7 +49,8 @@ def _load_define_samples_for_upset(allreps):
 
     analysis_samples = pd.DataFrame(
         [{"sample_name": n, "mapped_name": n, "Assay": n.split("__")[0],
-          "env": e, "sample_type": t, "levels_label": lv, "ref_genome": "Spombe"}
+          "env": e, "sample_type": t, "levels_label": lv, "Levels": f"strain:{lv}",
+          "ref_genome": "Spombe"}
          for n, e, t, lv, _ in ROWS])
     reps = {n: [f"{n}_{r}" for r in rr] for n, _, _, _, rr in ROWS}
     ns = {
@@ -62,7 +63,7 @@ def _load_define_samples_for_upset(allreps):
         "parse_sample_name": lambda sid: {"replicate": sid.rsplit("_", 1)[1]},
         "get_peaktype_for_env": lambda name, env: "broad",
         "get_sample_info_from_name": lambda name, df, field: "PE",
-        "disambiguate_labels": disambiguate_labels,
+        "build_plot_labels": build_plot_labels,
         "check_unique_labels": check_unique_labels,
     }
     exec(compile(m.group(0), str(SMK), "exec"), ns)
@@ -101,8 +102,10 @@ class TestLabelTypeMap:
 
     def test_all_chip_spans_chip_and_atac(self):
         m = _map("all_chip")
+        # The assay varies here, so ChIP labels carry it; ATAC's mark already
+        # says ATAC, so it isn't repeated.
         assert m["WT_ATAC"] == "ATAC"
-        assert m["WT_H3K9me2"] == "H3K9me2"
+        assert m["WT_H3K9me2_ChIP"] == "H3K9me2"
 
     @pytest.mark.parametrize("allreps", [False, True])
     def test_rampage_maps_to_levels(self, allreps):
@@ -127,6 +130,20 @@ class TestLabelTypeMap:
         m = _map(env, allreps)
         assert set(m) == set(_labels(env, allreps))
         assert set(m.values()) <= set(_call(env, "types", allreps).split(":"))
+
+    @pytest.mark.parametrize("env,allreps", [("ChIP", False), ("ChIP", True), ("RAMPAGE", True)])
+    def test_merge_names_samples_by_id_and_plot_relabels(self, env, allreps):
+        # The merged peak file is built from 'id:file' pairs, so a label change
+        # doesn't rerun the merge; the plot rule maps ids to labels.
+        ids = [p.split(":", 1)[0] for p in _call(env, "pairs", allreps)]
+        relabel = dict(l.split("\t") for l in _call(env, "relabel", allreps).split("\n"))
+        assert list(relabel) == ids
+        assert list(relabel.values()) == _labels(env, allreps)
+
+    def test_srna_relabel_covers_every_size_class(self):
+        relabel = dict(l.split("\t") for l in _call("sRNA", "relabel").split("\n"))
+        assert relabel["sRNA__WT__sRNA__Spombe_rep1_24nt"] == "WT_rep1_24nt"
+        assert set(relabel.values()) == set(_map("sRNA"))
 
     def test_rule_passes_map_to_script(self):
         text = SMK.read_text()

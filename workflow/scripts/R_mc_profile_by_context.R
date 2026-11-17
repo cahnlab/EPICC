@@ -13,8 +13,12 @@
 #   Rscript R_mc_profile_by_context.R <profile_data.tab> <samples.tsv> <out.pdf> <y_label>
 #
 # profile_data.tab : `plotProfile --outFileNameData` output for the mC matrix
-# samples.tsv      : label <TAB> context (mCG/mCHG/mCHH) <TAB> colour, one row
-#                    per matrix column, in matrix order (no header)
+# samples.tsv      : label <TAB> context (mCG/mCHG/mCHH) <TAB> colour <TAB>
+#                    series, one row per matrix column, in matrix order (no
+#                    header). The series names a sample's line in every context
+#                    panel: its label without the context, built by
+#                    build_plot_labels, which drops the context from the label
+#                    itself when only one context is plotted.
 
 suppressPackageStartupMessages({
   library(ggplot2)
@@ -49,17 +53,15 @@ profile <- do.call(rbind, lapply(rows, function(r) {
 }))
 
 samples <- read.delim(sample_file, header = FALSE, sep = "\t",
-                      col.names = c("label", "context", "color"),
+                      col.names = c("label", "context", "color", "series"),
                       stringsAsFactors = FALSE, comment.char = "")
+if (any(is.na(samples$series) | samples$series == "")) {
+  stop("samples.tsv needs a series name (4th column) for every column")
+}
 missing <- setdiff(unique(profile$label), samples$label)
 if (length(missing) > 0) {
   stop("Profile samples without a context: ", paste(missing, collapse = ", "))
 }
-# The series name is the label without its context token, so one sample's
-# three context tracks share a legend entry and a colour.
-samples$series <- mapply(function(l, ctx) sub(paste0("_", ctx), "", l, fixed = TRUE),
-                         samples$label, samples$context, USE.NAMES = FALSE)
-
 profile <- merge(profile, samples, by = "label", sort = FALSE)
 contexts <- unique(samples$context)
 series <- unique(samples$series)

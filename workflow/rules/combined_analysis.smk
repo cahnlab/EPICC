@@ -66,8 +66,9 @@ def define_sort_options(wildcards):
         return "--sortRegions keep"
 
 def define_samples_for_upset(wildcards, string):
-    # One entry per UpSet sample: (label, file, type, assay, sample id). type is
-    # None for sRNA, whose plotted columns are the label per size class.
+    # One entry per UpSet sample: its label components (build_plot_labels),
+    # file and type. type is None for sRNA, whose plotted columns are the label
+    # per size class.
     entries = []
     types = set()
     ref_genome = wildcards.ref_genome
@@ -93,36 +94,41 @@ def define_samples_for_upset(wildcards, string):
                         prefix = "peaks_se"
                     file = f"{RESULTS_DIR}/{row.env}/peaks/{prefix}__final__{sid}_peaks.{peaktype}Peak"
                     rep = parse_sample_name(sid)['replicate']
-                    entries.append((f"{row.levels_label}_{row.sample_type}_{rep}", file, row.sample_type, row.Assay, sid))
+                    entries.append(dict(levels=row.Levels, mark=row.sample_type, assay=row.Assay, replicate=rep,
+                                        sid=sid, file=file, type=row.sample_type))
                     types.add(row.sample_type)
             else:
                 file = f"{RESULTS_DIR}/{row.env}/peaks/selected_peaks__{row['mapped_name']}.bedPeak"
-                entries.append((f"{row.levels_label}_{row.sample_type}", file, row.sample_type, row.Assay, row['sample_name']))
+                entries.append(dict(levels=row.Levels, mark=row.sample_type, assay=row.Assay,
+                                    sid=row['sample_name'], file=file, type=row.sample_type))
                 types.add(row.sample_type)
         elif globenv == "RAMPAGE":
             if allreps:
                 for sid in get_replicate_sample_ids(row['sample_name'], samples):
                     file = f"{RESULTS_DIR}/RNA/TSS/TSS__final__{sid}_peaks.narrowPeak"
                     rep = parse_sample_name(sid)['replicate']
-                    entries.append((f"{row.levels_label}_{rep}", file, row.levels_label, row.Assay, sid))
+                    entries.append(dict(levels=row.Levels, mark=row.sample_type, assay=row.Assay, replicate=rep,
+                                        sid=sid, file=file, type=row.levels_label))
                     types.add(f"{row.levels_label}")
             else:
                 file = f"{RESULTS_DIR}/RNA/TSS/TSS__merged__{row['sample_name']}_peaks.narrowPeak"
-                entries.append((f"{row.levels_label}", file, row.levels_label, row.Assay, row['sample_name']))
+                entries.append(dict(levels=row.Levels, mark=row.sample_type, assay=row.Assay,
+                                    sid=row['sample_name'], file=file, type=row.levels_label))
                 types.add(f"{row.levels_label}")
         elif row.env == "sRNA":
             for sid in get_replicate_sample_ids(row['sample_name'], samples):
                 file = f"{RESULTS_DIR}/sRNA/mapped/{sid}/clusters.bed"
                 rep = parse_sample_name(sid)['replicate']
-                entries.append((f"{row.levels_label}_{rep}", file, None, row.Assay, sid))
+                entries.append(dict(levels=row.Levels, mark=row.sample_type, assay=row.Assay, replicate=rep,
+                                    sid=sid, file=file, type=None))
 
-    labels = disambiguate_labels([e[0] for e in entries], [e[3] for e in entries], [e[4] for e in entries])
+    labels = build_plot_labels(entries)
     check_unique_labels(labels, f"the {globenv} UpSet plot")
-    files = [e[1] for e in entries]
+    files = [e["file"] for e in entries]
     # The merged peak/cluster/TSS file names each sample by its sample id, not
     # its label, so the expensive merge never depends on how labels are
     # spelled; plotting_upset_regions swaps the ids for labels ('relabel').
-    keys = [e[4] for e in entries]
+    keys = [e["sid"] for e in entries]
     names = [f"{key}:{file}" for key, file in zip(keys, files)]
     if globenv == "sRNA":
         srna_min = config['srna_min_size']
@@ -136,7 +142,7 @@ def define_samples_for_upset(wildcards, string):
         relabel = {f"{key}_{t}": f"{label}_{t}" for key, label in zip(keys, labels) for t in types}
     else:
         ordered = ":".join(sorted(types))
-        label_types = {label: e[2] for label, e in zip(labels, entries)}
+        label_types = {label: e["type"] for label, e in zip(labels, entries)}
         relabel = dict(zip(keys, labels))
 
     if string == "pairs":
@@ -204,7 +210,7 @@ def make_it_lighter(palette, factor):
 def define_key_for_plots(wildcards, string):
     if string == "display":
         # Display rows for the heatmap and profile plots, "key<TAB>label<TAB>
-        # colour<TAB>track" per matrix column, looked up by key at plot time
+        # colour<TAB>track<TAB>series" per matrix column, looked up by key at plot time
         # (matrix_sample_labels.py). The plot rules don't know whether the
         # matrix came from the unstranded pass or the plus/minus/nostrand
         # passes, which carry different columns, so both are listed; keys they
@@ -212,7 +218,7 @@ def define_key_for_plots(wildcards, string):
         rows = {}
         for s in ("unstranded", "plus"):
             wc = SimpleNamespace(ref_genome=wildcards.ref_genome, env=wildcards.env, strand=s)
-            cols = [define_key_for_plots(wc, m) for m in ("keys", "labels", "colors", "tracks")]
+            cols = [define_key_for_plots(wc, m) for m in ("keys", "labels", "colors", "tracks", "series")]
             for key, *rest in zip(*cols):
                 rows.setdefault(key, rest)
         return "\n".join("\t".join([key] + rest) for key, rest in rows.items())
@@ -239,19 +245,20 @@ def define_key_for_plots(wildcards, string):
     if strand == "nostrand":
         strand = "plus"
 
-    def add(group, row, sid, bw, label, mark, track=None, suffix=""):
+    def add(group, row, sid, bw, mark, rep="", track=None, suffix=""):
         track = track or mark
         # The key names a column in every data file (matrix, browser scratch
         # tracks) so they never depend on the label. Its last '__' field is the
         # track, which computing_matrix_scales reads back, and a minus-strand
         # key ends in '_minus', which prep_browser_on_region negates on.
-        grouped[group].append({"bw": bw, "label": label, "suffix": suffix,
-                               "mark": mark, "track": track, "key": f"{sid}__{track}",
-                               "type": row.levels_label, "assay": row.Assay, "sid": sid})
+        grouped[group].append({"bw": bw, "levels": row.Levels, "mark": mark,
+                               "assay": row.Assay, "replicate": rep, "sid": sid,
+                               "suffix": suffix, "track": track, "key": f"{sid}__{track}",
+                               "type": row.levels_label})
 
-    def add_pair(group, row, sid, bw1, bw2, label, mark):
-        add(group, row, sid, bw1, label, mark, f"{mark}_plus", "_plus")
-        add(group, row, sid, bw2, label, mark, f"{mark}_minus", "_minus")
+    def add_pair(group, row, sid, bw1, bw2, mark, rep=""):
+        add(group, row, sid, bw1, mark, rep, f"{mark}_plus", "_plus")
+        add(group, row, sid, bw2, mark, rep, f"{mark}_minus", "_minus")
 
     if globenv == "all":
         filtered_analysis_samples = analysis_samples[ analysis_samples['ref_genome'] == ref_genome ].copy()
@@ -266,12 +273,12 @@ def define_key_for_plots(wildcards, string):
             unique_chip.add(row.sample_type)
             if not plot_allreps:
                 bw = f"{RESULTS_DIR}/{row.env}/tracks/FC__merged__{row['mapped_name']}.bw" if len(rep_ids) >=2 else f"{RESULTS_DIR}/{row.env}/tracks/FC__final__{rep_ids[0]}.bw"
-                add(f"chip_{row.sample_type}", row, name, bw, f"{row.levels_label}_{row.sample_type}", row.sample_type)
+                add(f"chip_{row.sample_type}", row, name, bw, row.sample_type)
             else:
                 for sid in rep_ids:
                     bw = f"{RESULTS_DIR}/{row.env}/tracks/FC__final__{sid}.bw"
                     rep = parse_sample_name(sid)['replicate']
-                    add(f"chip_{row.sample_type}", row, sid, bw, f"{row.levels_label}_{row.sample_type}_{rep}", row.sample_type)
+                    add(f"chip_{row.sample_type}", row, sid, bw, row.sample_type, rep)
 
         elif row.env == "RNA":
             unique_rna.add(row.data_type)
@@ -279,32 +286,32 @@ def define_key_for_plots(wildcards, string):
             if strandedness == "unstranded":
                 if not plot_allreps:
                     bw = f"{RESULTS_DIR}/{row.env}/tracks/{row['mapped_name']}__unstranded.bw" if len(rep_ids) >=2 else f"{RESULTS_DIR}/{row.env}/tracks/{rep_ids[0]}__unstranded.bw"
-                    add(row.data_type, row, name, bw, f"{row.levels_label}_{row.sample_type}", row.data_type)
+                    add(row.data_type, row, name, bw, row.data_type)
                 else:
                     for sid in rep_ids:
                         bw = f"{RESULTS_DIR}/{row.env}/tracks/{sid}__unstranded.bw"
                         rep = parse_sample_name(sid)['replicate']
-                        add(row.data_type, row, sid, bw, f"{row.levels_label}_{row.sample_type}_{rep}", row.data_type)
+                        add(row.data_type, row, sid, bw, row.data_type, rep)
             elif strand == "unstranded":
                 if not plot_allreps:
                     bw1 = f"{RESULTS_DIR}/{row.env}/tracks/{row['mapped_name']}__plus.bw" if len(rep_ids) >=2 else f"{RESULTS_DIR}/{row.env}/tracks/{rep_ids[0]}__plus.bw"
                     bw2 = f"{RESULTS_DIR}/{row.env}/tracks/{row['mapped_name']}__minus.bw" if len(rep_ids) >=2 else f"{RESULTS_DIR}/{row.env}/tracks/{rep_ids[0]}__minus.bw"
-                    add_pair(row.data_type, row, name, bw1, bw2, f"{row.levels_label}_{row.sample_type}", row.data_type)
+                    add_pair(row.data_type, row, name, bw1, bw2, row.data_type)
                 else:
                     for sid in rep_ids:
                         bw1 = f"{RESULTS_DIR}/{row.env}/tracks/{sid}__plus.bw"
                         bw2 = f"{RESULTS_DIR}/{row.env}/tracks/{sid}__minus.bw"
                         rep = parse_sample_name(sid)['replicate']
-                        add_pair(row.data_type, row, sid, bw1, bw2, f"{row.levels_label}_{row.sample_type}_{rep}", row.data_type)
+                        add_pair(row.data_type, row, sid, bw1, bw2, row.data_type, rep)
             else:
                 if not plot_allreps:
                     bw = f"{RESULTS_DIR}/{row.env}/tracks/{row['mapped_name']}__{strand}.bw" if len(rep_ids) >=2 else f"{RESULTS_DIR}/{row.env}/tracks/{rep_ids[0]}__{strand}.bw"
-                    add(row.data_type, row, name, bw, f"{row.levels_label}_{row.sample_type}", row.data_type)
+                    add(row.data_type, row, name, bw, row.data_type)
                 else:
                     for sid in rep_ids:
                         bw = f"{RESULTS_DIR}/{row.env}/tracks/{sid}__{strand}.bw"
                         rep = parse_sample_name(sid)['replicate']
-                        add(row.data_type, row, sid, bw, f"{row.levels_label}_{row.sample_type}_{rep}", row.data_type)
+                        add(row.data_type, row, sid, bw, row.data_type, rep)
 
         elif row.env == "sRNA":
             for size in srna_sizes:
@@ -314,59 +321,60 @@ def define_key_for_plots(wildcards, string):
                     if not plot_allreps:
                         bw1 = f"{RESULTS_DIR}/{row.env}/tracks/{row['mapped_name']}__{size}nt__plus.bw" if len(rep_ids) >=2 else f"{RESULTS_DIR}/{row.env}/tracks/{rep_ids[0]}__{size}nt__plus.bw"
                         bw2 = f"{RESULTS_DIR}/{row.env}/tracks/{row['mapped_name']}__{size}nt__minus.bw" if len(rep_ids) >=2 else f"{RESULTS_DIR}/{row.env}/tracks/{rep_ids[0]}__{size}nt__minus.bw"
-                        add_pair(mark, row, name, bw1, bw2, f"{row.levels_label}_sRNA_{size}nt", mark)
+                        add_pair(mark, row, name, bw1, bw2, mark)
                     else:
                         for sid in rep_ids:
                             bw1 = f"{RESULTS_DIR}/{row.env}/tracks/{sid}__{size}nt__plus.bw"
                             bw2 = f"{RESULTS_DIR}/{row.env}/tracks/{sid}__{size}nt__minus.bw"
                             rep = parse_sample_name(sid)['replicate']
-                            add_pair(mark, row, sid, bw1, bw2, f"{row.levels_label}_sRNA_{rep}_{size}nt", mark)
+                            add_pair(mark, row, sid, bw1, bw2, mark, rep)
                 else:
                     if not plot_allreps:
                         bw = f"{RESULTS_DIR}/{row.env}/tracks/{row['mapped_name']}__{size}nt__{strand}.bw" if len(rep_ids) >=2 else f"{RESULTS_DIR}/{row.env}/tracks/{rep_ids[0]}__{size}nt__{strand}.bw"
-                        add(mark, row, name, bw, f"{row.levels_label}_sRNA_{size}nt", mark)
+                        add(mark, row, name, bw, mark)
                     else:
                         for sid in rep_ids:
                             bw = f"{RESULTS_DIR}/{row.env}/tracks/{sid}__{size}nt__{strand}.bw"
                             rep = parse_sample_name(sid)['replicate']
-                            add(mark, row, sid, bw, f"{row.levels_label}_sRNA_{rep}_{size}nt", mark)
+                            add(mark, row, sid, bw, mark, rep)
 
         elif row.env == "mC":
             if not plot_allreps:
                 for context in mc_contexts:
                     unique_mc.add(f"m{context}")
                     bw = f"{RESULTS_DIR}/{row.env}/tracks/{row['mapped_name']}__{context}.bw" if len(rep_ids) >=2 else f"{RESULTS_DIR}/{row.env}/tracks/{rep_ids[0]}__{context}.bw"
-                    add(f"m{context}", row, name, bw, f"{row.levels_label}_m{context}", f"m{context}")
+                    add(f"m{context}", row, name, bw, f"m{context}")
             else:
                 for sid in rep_ids:
                     for context in mc_contexts:
                         unique_mc.add(f"m{context}")
                         bw = f"{RESULTS_DIR}/{row.env}/tracks/{sid}__{context}.bw"
                         rep = parse_sample_name(sid)['replicate']
-                        add(f"m{context}", row, sid, bw, f"{row.levels_label}_{rep}_m{context}", f"m{context}")
+                        add(f"m{context}", row, sid, bw, f"m{context}", rep)
 
         elif row.env == "ATAC":
             unique_atac.add("ATAC")
             if not plot_allreps:
                 bw = f"{RESULTS_DIR}/ATAC/tracks/coverage__merged__{row['mapped_name']}.bw" if len(rep_ids) >=2 else f"{RESULTS_DIR}/ATAC/tracks/coverage__final__{rep_ids[0]}.bw"
-                add("atac", row, name, bw, f"{row.levels_label}_{row.sample_type}", "ATAC")
+                add("atac", row, name, bw, "ATAC")
             else:
                 for sid in rep_ids:
                     bw = f"{RESULTS_DIR}/ATAC/tracks/coverage__final__{sid}.bw"
                     rep = parse_sample_name(sid)['replicate']
-                    add("atac", row, sid, bw, f"{row.levels_label}_{row.sample_type}_{rep}", "ATAC")
+                    add("atac", row, sid, bw, "ATAC", rep)
 
     order = ( [f"chip_{chip}" for chip in sorted(unique_chip)] + ["atac"] + sorted(unique_rna) + sorted(unique_srna) + sorted(unique_mc) )
     entries = sum([grouped.get(group, []) for group in order], [])
     bigwigs = [e["bw"] for e in entries]
     keys = [e["key"] for e in entries]
     check_unique_labels(keys, f"the {globenv} plot keys")
-    # Labels carry Levels and mark but not the assay, so two assays profiling
-    # one mark from the same Levels collide; those get the assay (or failing
-    # that the sample id) appended. Colour stays keyed on levels_label, so the
-    # colliding samples share a colour but not a name.
-    labels = disambiguate_labels([e["label"] for e in entries], [e["assay"] for e in entries],
-                                 [e["sid"] for e in entries], [e["suffix"] for e in entries])
+    # A label shows each component that varies across this plot's samples
+    # (build_plot_labels). Colour stays keyed on the full levels_label, so a
+    # genotype keeps one colour across plots whatever its label shows.
+    labels = build_plot_labels(entries)
+    # The line name across the methylation-context panels of one plot
+    # (R_mc_profile_by_context.R): the label without its mark.
+    series = build_plot_labels(entries, omit=("mark",))
     check_unique_labels(labels, f"the {globenv} plots")
     marksforbrowser = ( sorted(unique_chip) + sorted(unique_atac) + sorted(unique_rna) + sorted(unique_srna) + sorted(unique_mc) )
 
@@ -391,6 +399,8 @@ def define_key_for_plots(wildcards, string):
         return keys
     elif string == "labels":
         return labels
+    elif string == "series":
+        return series
     elif string == "tracks":
         # The mark of each matrix column (mCG, H3K9me2, ...), in column order.
         return alignedmarks
@@ -469,10 +479,8 @@ def define_input_for_pca(wildcards, string):
     # keys name the samples in the summary matrix; labels are applied only by
     # plotPCA, so a label change reruns the plot, not the summary.
     keys = []
-    labels = []
+    entries = []
     groups = []
-    assays = []
-    sample_ids = []
     ref_genome = wildcards.ref_genome
     globenv = wildcards.env
 
@@ -482,10 +490,9 @@ def define_input_for_pca(wildcards, string):
         for _, row in filtered_samples.iterrows():
             tracks.append(f"{RESULTS_DIR}/mC/tracks/{row['mapped_name']}__{context}.bw")
             keys.append(row['mapped_name'])
-            labels.append(f"{row.levels_label}_{row.replicate}")
+            entries.append(dict(levels=row.Levels, mark=globenv, assay=row.Assay,
+                                replicate=row.replicate, sid=row.Sample_ID))
             groups.append(f"{row.levels_label}")
-            assays.append(row.Assay)
-            sample_ids.append(row.Sample_ID)
     elif globenv in ["ChIP", "ATAC", "all_chip"]:
         envs = ["ChIP", "ATAC"] if globenv == "all_chip" else [globenv]
         filtered_samples = samples[ (samples['env'].isin(envs)) & (samples['ref_genome'] == ref_genome) ]
@@ -494,13 +501,13 @@ def define_input_for_pca(wildcards, string):
             tracks.append(bam)
             indexes.append(bam + ".bai")
             keys.append(row['mapped_name'])
-            labels.append(f"{row.sample_type}_{row.levels_label}_{row.data_type}_{row.replicate}")
+            entries.append(dict(levels=row.Levels, mark=row.sample_type, assay=row.Assay,
+                                replicate=row.replicate, sid=row.Sample_ID))
             groups.append(f"{row.sample_type}_{row.levels_label}")
-            assays.append(row.Assay)
-            sample_ids.append(row.Sample_ID)
     # PCA points are replicates, controls included, so two libraries can share
-    # Levels, mark, assay and replicate (separate Inputs for two marks).
-    labels = disambiguate_labels(labels, assays, sample_ids)
+    # Levels, mark, assay and replicate (separate Inputs for two marks); the
+    # builder falls back to the Sample_ID for those.
+    labels = build_plot_labels(entries)
     check_unique_labels(labels, f"the {globenv} PCA")
 
     palette = assign_colors(groups, "tab20")
@@ -1382,7 +1389,7 @@ rule plotting_profile_on_targetfile:
         reg="$(cat {input.params_regions})"
         prof="$(cat {input.params_profile})"
         # Labels and colours, one row per matrix column in column order, looked
-        # up by the column keys (key, label, colour, track). deeptools 4 picks
+        # up by the column keys (key, label, colour, track, series). deeptools 4 picks
         # line colours by sampling a sequential colormap, which leaves
         # consecutive samples nearly identical, so use the pipeline's own
         # categorical palette instead (tab20 keyed on levels_label).
@@ -1399,7 +1406,7 @@ rule plotting_profile_on_targetfile:
             # sample's colour (colours are keyed on levels_label).
             printf "Plotting per context profile {params.matrix} for {params.env} {params.target_name} on {params.ref_genome}\n"
             plotProfile -m {input.matrix} -out "$TMPDIR/profile_data.pdf" ${{reg}} ${{lab}} ${{add}} --averageType {params.average} --outFileNameData "$TMPDIR/profile_data.tab"
-            awk -F"\t" -v OFS="\t" '{{print $2, $4, $3}}' "$TMPDIR/columns.tsv" > "$TMPDIR/profile_samples.tsv"
+            awk -F"\t" -v OFS="\t" '{{print $2, $4, $3, $5}}' "$TMPDIR/columns.tsv" > "$TMPDIR/profile_samples.tsv"
             Rscript "{params.mc_script}" "$TMPDIR/profile_data.tab" "$TMPDIR/profile_samples.tsv" {output.plot2} "{params.average} methylation"
         else
         printf "Plotting per group profile {params.matrix} for {params.env} {params.target_name} on {params.ref_genome}\n"

@@ -870,41 +870,124 @@ def get_peaktype(assay, config_override=None):
 # Plot labels
 # ---------------------------------------------------------------------------
 
-def disambiguate_labels(labels, assays, sample_ids, suffixes=None):
-    """Make plot labels unique, leaving labels that are already unique unchanged.
+def _varies(values):
+    return len(set(values)) > 1
 
-    Combined-analysis labels are built from Levels plus the mark, not the
-    assay, so a ChIP and a CUT_TAG H3K27me3 from the same Levels, or a WGBS and
-    a PBAT from the same Levels, come out with the same label. Each label
-    occurring more than once gets a discriminator appended, trying in turn the
-    assay without its peak type (WT_H3K27me3_CUT_TAG), the full assay token
-    (WT_H3K27me3_ChIP_broad), then the Sample_ID the label came from, which
-    covers two replicates sharing a Replicate_ID or two separate controls.
 
-    ``suffixes`` (e.g. '_plus'/'_minus' for stranded tracks) are kept after
-    the discriminator, so both halves of a stranded pair get the same one.
-    Returns the full labels, suffixes included.
+def _strip_peak_type(assay):
+    return re.sub(r"_(broad|narrow)$", "", assay)
+
+
+def _repeats_mark(token, mark):
+    """True when an assay token says nothing the mark doesn't (ATAC/ATAC,
+    RNAseq/RNAseq, sRNA/sRNA_24nt)."""
+    return bool(mark) and (token == mark or mark.startswith(token + "_"))
+
+
+def plot_label_parts(entries):
+    """Structured plot labels: the components that tell the plotted samples apart.
+
+    ``entries`` are the samples drawn together in one plot, one dict each:
+
+    - ``levels``: the Levels string ('genotype:WT,tissue:root')
+    - ``mark``: what was measured -- IP_target, 'mCG', the RNA type,
+      'sRNA_24nt' ('' if none)
+    - ``assay``: the combined assay token ('ChIP_broad', 'WGBS', ...)
+    - ``replicate``: the Replicate_ID, set only where replicates are plotted
+      individually ('' otherwise)
+    - ``sid``: the sample id, the last-resort tiebreaker
+    - ``suffix`` (optional): appended verbatim ('_plus'/'_minus' for the two
+      halves of a stranded track)
+
+    A component is shown on every label if its value differs between any of
+    the entries, and dropped if it is the same for all of them: each Levels
+    factor value, the mark, the assay (without its peak type, or with it when
+    only the peak type differs), and the replicate. The assay is left off an
+    entry whose mark already names it. Labels still identical after that get
+    the full assay token, then the sample id. Returns, per entry, a list of
+    ``(kind, text)`` parts in label order; ``build_plot_labels`` joins them.
     """
-    n = len(labels)
-    suffixes = list(suffixes) if suffixes is not None else [""] * n
-    base = [re.sub(r"_(broad|narrow)$", "", a) for a in assays]
-    out = [lab + suf for lab, suf in zip(labels, suffixes)]
-    for disc in (base, list(assays), list(sample_ids)):
-        counts = Counter(out)
+    n = len(entries)
+    parsed = [parse_levels(e["levels"]) for e in entries]
+    factors = list(OrderedDict.fromkeys(f for p in parsed for f in p))
+    shown_factors = [f for f in factors if _varies(p.get(f, "") for p in parsed)]
+    marks = [e.get("mark", "") for e in entries]
+    full = [e.get("assay", "") for e in entries]
+    base = [_strip_peak_type(a) for a in full]
+    assays = base if _varies(base) else full if _varies(full) else None
+    reps = [e.get("replicate", "") for e in entries]
+    show_mark, show_rep = _varies(marks), _varies(reps)
+
+    parts = []
+    for i in range(n):
+        row = [("level", parsed[i].get(f, "")) for f in shown_factors]
+        if show_mark:
+            row.append(("mark", marks[i]))
+        if assays and not _repeats_mark(assays[i], marks[i]):
+            row.append(("assay", assays[i]))
+        if show_rep:
+            row.append(("replicate", reps[i]))
+        parts.append([(k, t) for k, t in row if t])
+
+    # Two samples can agree on everything shown: ChIP_broad and ChIP_narrow of
+    # one mark beside a CUT_TAG (only the base assay was shown), two Inputs of
+    # one Levels serving different marks, two rows sharing a Replicate_ID.
+    def tiebreak(upgrade):
+        labels = _join_parts(entries, parts)
+        counts = Counter(labels)
         if all(c == 1 for c in counts.values()):
-            break
-        out = [f"{lab}_{d}{suf}" if counts[o] > 1 else o
-               for o, lab, d, suf in zip(out, labels, disc, suffixes)]
+            return False
+        for i, lab in enumerate(labels):
+            if counts[lab] > 1:
+                upgrade(i)
+        return True
+
+    def seeded(i):
+        # A label that fell back to its Levels keeps them once it grows a part.
+        return parts[i] or [("level", levels_to_label(entries[i]["levels"]))]
+
+    def full_assay(i):
+        row = [(k, t) for k, t in seeded(i) if k != "assay"]
+        if not _repeats_mark(full[i], marks[i]):
+            at = next((j for j, (k, _) in enumerate(row) if k == "replicate"), len(row))
+            row.insert(at, ("assay", full[i]))
+        parts[i] = row
+
+    if tiebreak(full_assay):
+        def sample_id(i):
+            parts[i] = seeded(i) + [("sample", entries[i]["sid"])]
+        tiebreak(sample_id)
+    return parts
+
+
+def _join_parts(entries, parts, omit=()):
+    out = []
+    for e, row in zip(entries, parts):
+        text = "_".join(t for k, t in row if k not in omit)
+        # Never empty: one sample alone, or samples differing only in what is
+        # omitted, keep their Levels.
+        out.append((text or levels_to_label(e["levels"])) + e.get("suffix", ""))
     return out
+
+
+def build_plot_labels(entries, omit=()):
+    """Plot labels for samples drawn together; see ``plot_label_parts``.
+
+    ``omit`` drops component kinds from the joined text after the labels are
+    worked out, e.g. ``("mark",)`` names a line across the methylation-context
+    panels of one plot (R_mc_profile_by_context.R), where every panel shares
+    the mark.
+    """
+    return _join_parts(entries, plot_label_parts(entries), omit)
 
 
 def check_unique_labels(labels, where):
     """Fail at DAG build if two plotted samples still share a label.
 
-    Labels name per-sample files (browser tracks) and identify samples in
-    merged peak sets, so a duplicate silently overwrites or merges one sample
-    into another rather than failing. disambiguate_labels should leave none;
-    this guards against a builder that bypasses it.
+    A duplicate label draws two samples under one name, and in the UpSet
+    plots merges them into one set. build_plot_labels should leave none; this
+    guards against a builder that bypasses it. Also used on the plot keys,
+    which name matrix columns and browser scratch files.
     """
     dups = [lab for lab, c in Counter(labels).items() if c > 1]
     if dups:
