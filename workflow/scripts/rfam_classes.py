@@ -1,6 +1,6 @@
 """Choose which Rfam families count as structural RNA for sRNA depletion.
 
-Rfam is not a structural-RNA database: alongside rRNA, tRNA and snoRNA it
+Rfam is not a structural-RNA database: alongside rRNA, tRNA and snRNA it
 holds miRNA precursors, lncRNAs, riboswitches, CRISPR repeats and more.
 Depleting every Rfam hit therefore removes reads from loci an sRNA analysis
 is usually after (miRNAs above all), so the auto-derived depletion FASTA is
@@ -24,16 +24,16 @@ family's class is the ``type`` column of ``database_files/family.txt.gz``
     Intron;
 
 A class name selects a family when it is *any* term of that path. So
-``snoRNA`` takes the C/D-box, H/ACA-box and scaRNA families but not the
-spliceosomal snRNAs, while ``snRNA`` (snoRNA's parent in Rfam's tree) takes
-both. ``Gene`` or ``Cis-reg`` select whole branches.
+``snRNA`` takes both the spliceosomal snRNAs (``snRNA; splicing``) and,
+because Rfam files snoRNA under snRNA, the C/D-box, H/ACA-box and scaRNA
+families; ``snoRNA`` alone takes only the latter. ``Gene`` or ``Cis-reg`` select whole branches.
 
 Selection modes
 ---------------
 ``structural_rna_classes`` in the options file holds exactly one of
 
 * ``filter: [classes]`` -- deplete hits to families in these classes
-  (default: rRNA, tRNA, snoRNA);
+  (default: rRNA, tRNA, snRNA -- all snRNAs, snoRNAs included);
 * ``keep: [classes]`` -- deplete every Rfam hit *except* those in these
   classes. ``keep: []`` depletes all Rfam hits (the pre-selection behaviour).
 """
@@ -46,7 +46,7 @@ from collections import Counter
 CONFIG_KEY = "structural_rna_classes"
 MODES = ("filter", "keep")
 DEFAULT_MODE = "filter"
-DEFAULT_CLASSES = ("rRNA", "tRNA", "snoRNA")
+DEFAULT_CLASSES = ("rRNA", "tRNA", "snRNA")
 
 # Every term used in the ``type`` column of Rfam 15.1's family.txt. Config
 # validation runs at startup, before family.txt has been downloaded, so it

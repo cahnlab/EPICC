@@ -1,6 +1,6 @@
 """Rfam class selection for sRNA structural-RNA depletion.
 
-Rfam holds miRNA and other non-structural families alongside rRNA/tRNA/snoRNA,
+Rfam holds miRNA and other non-structural families alongside rRNA/tRNA/snRNA,
 so the auto-derived depletion FASTA must be built from a chosen subset of
 classes (rfam_classes.py, rule select_structural_rna_classes).
 """
@@ -95,13 +95,25 @@ class TestFamilyTable:
 
 
 class TestSelection:
-    def test_default_is_rrna_trna_snorna(self):
+    def test_default_is_rrna_trna_snrna(self):
+        assert set(rc.DEFAULT_CLASSES) == {"rRNA", "tRNA", "snRNA"}
         assert depleted_names("filter", rc.DEFAULT_CLASSES) == [
-            "tRNA", "snoR71", "5S_rRNA"]
+            "tRNA", "snoR71", "U1", "5S_rRNA"]
 
-    def test_default_spares_mirna_snrna_cisreg_and_unknown(self):
+    def test_default_takes_all_snrnas_and_keeps_mirna(self):
+        """snRNA is snoRNA's parent: the default takes spliceosomal snRNAs and
+        every snoRNA subtype, and leaves miRNA alone."""
+        fam = families()
+        for acc in ("RF00003",            # Gene; snRNA; splicing;
+                    "RF00097", "RF00012",  # CD-box
+                    "RF00090",            # HACA-box
+                    "RF00286"):           # scaRNA
+            assert rc.is_depleted(fam[acc][1], "filter", rc.DEFAULT_CLASSES), acc
+        assert not rc.is_depleted(fam["RF00103"][1], "filter", rc.DEFAULT_CLASSES)
+
+    def test_default_spares_mirna_cisreg_and_unknown(self):
         names = depleted_names("filter", rc.DEFAULT_CLASSES)
-        for spared in ("mir-1", "U1", "Cobalamin", "new_fam"):
+        for spared in ("mir-1", "Cobalamin", "new_fam"):
             assert spared not in names
 
     def test_snorna_matches_all_snorna_subtypes(self):
@@ -157,7 +169,7 @@ class TestSelectionLabel:
             assert rc.parse_selection_label(label) == (mode, classes)
 
     def test_default_from_config(self):
-        assert rc.selection_from_config({}) == ("filter", ("rRNA", "snoRNA", "tRNA"))
+        assert rc.selection_from_config({}) == ("filter", ("rRNA", "snRNA", "tRNA"))
 
     def test_from_config_sorted_and_deduped(self):
         cfg = {"structural_rna_classes": {"filter": ["tRNA", "rRNA", "tRNA"]}}
@@ -248,10 +260,10 @@ def test_cli_writes_bed(tmp_path):
     res = subprocess.run(
         [sys.executable, os.path.join(SCRIPTS, "rfam_classes.py"),
          "--family-table", str(fam), "--tblout", str(tbl),
-         "--selection", "filter:rRNA,snoRNA,tRNA", "--out-bed", str(bed)],
+         "--selection", "filter:rRNA,snRNA,tRNA", "--out-bed", str(bed)],
         capture_output=True, text=True)
     assert res.returncode == 0, res.stderr
     names = [l.split("\t")[3].split("::")[0] for l in bed.read_text().splitlines()]
-    assert names == ["tRNA", "snoR71", "5S_rRNA"]
-    assert "Depleting 3 hits; sparing 4" in res.stderr
+    assert names == ["tRNA", "snoR71", "U1", "5S_rRNA"]
+    assert "Depleting 4 hits; sparing 3" in res.stderr
     assert "RF09999" in res.stderr  # warned about the unknown accession
