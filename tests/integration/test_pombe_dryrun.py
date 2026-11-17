@@ -283,7 +283,7 @@ class TestSmallRNAWorkflow:
         output = result.stdout + result.stderr
 
         assert "filter_structural_rna" in output, \
-            "Structural RNA depletion should be present (structural_rna_depletion: true)"
+            "Structural RNA depletion should be present (on by default)"
 
 
 class TestControlLinking:

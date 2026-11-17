@@ -141,7 +141,7 @@ class TestStructuralRNADepletion:
         assert result.returncode == 0, f"Dry-run failed: {result.stderr}"
         output = result.stdout + result.stderr
         assert "filter_structural_rna" in output, \
-            "Structural RNA depletion should be in the DAG when structural_rna_depletion is true"
+            "Structural RNA depletion should be in the DAG by default"
 
     def test_bt2_structural_index_in_dag(self, snakemake_available, repo_root, test_options):
         """Test that bowtie2 structural RNA index building is in the DAG."""
@@ -180,7 +180,7 @@ class TestAutoStructuralRNAClasses:
                      "select_structural_rna_classes",
                      "make_bt2_indices_for_structural_RNAs"):
             assert rule in output, f"{rule} missing from the DAG"
-        assert '--selection "keep:miRNA"' in output
+        assert '--selection "filter:rRNA,snRNA,tRNA;keep:miRNA"' in output
         assert "structural_rnas_selected.fa" in output
 
     def test_user_fasta_skips_selection(self, snakemake_available, repo_root,
@@ -193,16 +193,87 @@ class TestAutoStructuralRNAClasses:
         assert "select_structural_rna_classes" not in output
         assert "build_structural_rna_db" not in output
 
-    def test_both_modes_refused_at_startup(self, snakemake_available, repo_root,
-                                           test_options, tmp_path):
+    def test_overlap_warns_and_keep_wins(self, snakemake_available, repo_root,
+                                         test_options, tmp_path):
         if not snakemake_available:
             pytest.skip("Snakemake not installed")
         opts = _auto_structural_options(
             test_options, tmp_path / "opts.yaml",
-            "structural_rna_classes:\n  filter: [rRNA]\n  keep: [miRNA]\n")
+            "structural_rna_classes:\n  filter: [rRNA, tRNA]\n  keep: [tRNA]\n")
+        result = run_snakemake_dryrun(repo_root, opts, WT_REP1_21NT_PLUS,
+                                      ["--printshellcmds"])
+        assert result.returncode == 0, f"Dry-run failed: {result.stderr}"
+        output = result.stdout + result.stderr
+        assert "'keep' wins" in output
+        assert '--selection "filter:rRNA;keep:tRNA"' in output
+
+    def test_unknown_class_refused_at_startup(self, snakemake_available,
+                                              repo_root, test_options, tmp_path):
+        if not snakemake_available:
+            pytest.skip("Snakemake not installed")
+        opts = _auto_structural_options(
+            test_options, tmp_path / "opts.yaml",
+            "structural_rna_classes:\n  keep: [microRNA]\n")
         result = run_snakemake_dryrun(repo_root, opts, WT_REP1_21NT_PLUS)
         assert result.returncode != 0
-        assert "not both" in result.stdout + result.stderr
+        assert "microRNA" in result.stdout + result.stderr
+
+
+_DEPLETION_RULES = ("filter_structural_rna", "make_bt2_indices_for_structural_RNAs",
+                    "build_structural_rna_db", "select_structural_rna_classes",
+                    "download_rfam")
+
+
+class TestNoDepletion:
+    """filter: [] (or the deprecated structural_rna_depletion: false) skips
+    the Rfam scan and the depletion step entirely."""
+
+    def _assert_no_depletion(self, result):
+        assert result.returncode == 0, f"Dry-run failed: {result.stderr}"
+        output = result.stdout + result.stderr
+        for rule in _DEPLETION_RULES:
+            assert rule not in output, f"{rule} should not run"
+        assert "shortstack_map" in output
+        return output
+
+    @pytest.mark.parametrize("explicit_fasta", [False, True])
+    def test_empty_filter_skips_depletion(self, snakemake_available, repo_root,
+                                          test_options, tmp_path, explicit_fasta):
+        if not snakemake_available:
+            pytest.skip("Snakemake not installed")
+        extra = "structural_rna_classes:\n  filter: []\n"
+        if explicit_fasta:
+            opts = tmp_path / "opts.yaml"
+            opts.write_text(Path(test_options).read_text() + extra)
+            opts = str(opts)
+        else:
+            opts = _auto_structural_options(test_options, tmp_path / "opts.yaml", extra)
+        self._assert_no_depletion(run_snakemake_dryrun(
+            repo_root, opts, WT_REP1_21NT_PLUS, ["--printshellcmds"]))
+
+    def test_deprecated_false_skips_depletion(self, snakemake_available,
+                                              repo_root, test_options, tmp_path):
+        if not snakemake_available:
+            pytest.skip("Snakemake not installed")
+        opts = _auto_structural_options(test_options, tmp_path / "opts.yaml",
+                                        "structural_rna_depletion: false\n")
+        output = self._assert_no_depletion(run_snakemake_dryrun(
+            repo_root, opts, WT_REP1_21NT_PLUS, ["--printshellcmds"]))
+        assert "structural_rna_depletion: false is deprecated" in output
+
+    def test_deprecated_true_still_depletes(self, snakemake_available,
+                                            repo_root, test_options, tmp_path):
+        if not snakemake_available:
+            pytest.skip("Snakemake not installed")
+        opts = tmp_path / "opts.yaml"
+        opts.write_text(Path(test_options).read_text()
+                        + "structural_rna_depletion: true\n")
+        result = run_snakemake_dryrun(repo_root, str(opts), WT_REP1_21NT_PLUS,
+                                      ["--printshellcmds"])
+        assert result.returncode == 0, f"Dry-run failed: {result.stderr}"
+        output = result.stdout + result.stderr
+        assert "filter_structural_rna" in output
+        assert "structural_rna_depletion: true is deprecated" in output
 
 
 # ===========================================================================

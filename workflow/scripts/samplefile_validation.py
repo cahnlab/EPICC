@@ -7,6 +7,7 @@ import difflib
 import os
 import re
 from scripts.browser_extra_tracks import normalize_extra_tracks
+from scripts.rfam_classes import depletion_enabled
 from scripts.sample_sheet import (
     VALID_ASSAYS, ASSAY_TO_ENV, IP_PEAK_ASSAYS,
     PEAK_TYPE_ASSAYS, VALID_PEAK_TYPES, sample_id_parts,
@@ -565,7 +566,7 @@ def check_genome_config(tab, config, check_paths=True, repo_folder=None):
         # user-provided values in the options file are optional overrides
 
         # structural_rna_fafile is optional: auto-derived via Infernal when absent or "<auto>"
-        if check_paths and "sRNA" in envs and config.get("structural_rna_depletion", True):
+        if check_paths and "sRNA" in envs and depletion_enabled(config):
             srna_fa = gcfg.get("structural_rna_fafile", "<auto>")
             if (srna_fa and srna_fa != "<auto>"
                     and not _is_url(srna_fa)

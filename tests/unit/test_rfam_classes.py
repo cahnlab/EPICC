@@ -67,9 +67,13 @@ def families():
     return rc.read_family_table(FAMILY_TEXT.splitlines(keepends=True))
 
 
-def depleted_names(mode, classes):
-    bed, *_ = rc.select_hits(TBLOUT.splitlines(), families(), mode, classes)
+def depleted_names(filt, keep=()):
+    bed, *_ = rc.select_hits(TBLOUT.splitlines(), families(), filt, keep)
     return [line.split("\t")[3].split("::")[0] for line in bed]
+
+
+def cfg(**opt):
+    return {"structural_rna_classes": opt}
 
 
 class TestParseType:
@@ -94,10 +98,11 @@ class TestFamilyTable:
         assert rc.read_family_table(["junk\n", "RF1\tx\n"]) == {}
 
 
-class TestSelection:
+class TestDefaultSelection:
     def test_default_is_rrna_trna_snrna(self):
-        assert set(rc.DEFAULT_CLASSES) == {"rRNA", "tRNA", "snRNA"}
-        assert depleted_names("filter", rc.DEFAULT_CLASSES) == [
+        assert set(rc.DEFAULT_FILTER) == {"rRNA", "tRNA", "snRNA"}
+        assert rc.DEFAULT_KEEP == ()
+        assert depleted_names(rc.DEFAULT_FILTER) == [
             "tRNA", "snoR71", "U1", "5S_rRNA"]
 
     def test_default_takes_all_snrnas_and_keeps_mirna(self):
@@ -108,83 +113,165 @@ class TestSelection:
                     "RF00097", "RF00012",  # CD-box
                     "RF00090",            # HACA-box
                     "RF00286"):           # scaRNA
-            assert rc.is_depleted(fam[acc][1], "filter", rc.DEFAULT_CLASSES), acc
-        assert not rc.is_depleted(fam["RF00103"][1], "filter", rc.DEFAULT_CLASSES)
+            assert rc.is_depleted(fam[acc][1], rc.DEFAULT_FILTER), acc
+        assert not rc.is_depleted(fam["RF00103"][1], rc.DEFAULT_FILTER)
 
     def test_default_spares_mirna_cisreg_and_unknown(self):
-        names = depleted_names("filter", rc.DEFAULT_CLASSES)
+        names = depleted_names(rc.DEFAULT_FILTER)
         for spared in ("mir-1", "Cobalamin", "new_fam"):
             assert spared not in names
 
-    def test_snorna_matches_all_snorna_subtypes(self):
+    def test_snorna_matches_all_snorna_subtypes_only(self):
         fam = families()
         for acc in ("RF00097", "RF00090", "RF00286"):
-            assert rc.is_depleted(fam[acc][1], "filter", {"snoRNA"})
-        assert not rc.is_depleted(fam["RF00003"][1], "filter", {"snoRNA"})
+            assert rc.is_depleted(fam[acc][1], {"snoRNA"})
+        assert not rc.is_depleted(fam["RF00003"][1], {"snoRNA"})
 
     def test_parent_term_selects_whole_branch(self):
-        names = depleted_names("filter", {"snRNA"})
-        assert names == ["snoR71", "U1"]
+        assert depleted_names({"snRNA"}) == ["snoR71", "U1"]
 
-    def test_keep_depletes_everything_else(self):
-        names = depleted_names("keep", {"miRNA"})
+
+class TestFilterAndKeep:
+    """A family is depleted when a term is in filter and none is in keep."""
+
+    def test_keep_exempts_a_subtree(self):
+        # snRNA minus the snoRNAs leaves only the spliceosomal U1
+        assert depleted_names({"snRNA"}, {"snoRNA"}) == ["U1"]
+
+    def test_family_with_terms_in_both_lists_is_kept(self):
+        fam = families()
+        terms = fam["RF00097"][1]  # Gene; snRNA; snoRNA; CD-box
+        assert rc.is_depleted(terms, {"snRNA"})
+        assert not rc.is_depleted(terms, {"snRNA"}, {"CD-box"})
+        assert not rc.is_depleted(terms, {"CD-box"}, {"snRNA"})  # keep wins either way
+
+    def test_everything_but_mirna(self):
+        names = depleted_names({"Gene", "Cis-reg", "Intron"}, {"miRNA"})
         assert "mir-1" not in names
-        assert set(names) == {"5S_rRNA", "tRNA", "snoR71", "U1", "Cobalamin",
-                              "new_fam"}
+        assert set(names) == {"5S_rRNA", "tRNA", "snoR71", "U1", "Cobalamin"}
 
-    def test_keep_empty_depletes_all_hits(self):
-        assert len(depleted_names("keep", ())) == 7
+    def test_unclassified_accession_never_depleted(self):
+        assert "new_fam" not in depleted_names({"Gene", "Cis-reg", "Intron"})
+        assert not rc.is_depleted(None, {"Gene"})
+
+    def test_empty_filter_depletes_nothing(self):
+        assert depleted_names(()) == []
+        assert depleted_names((), {"miRNA"}) == []
+
+    def test_keep_alone_applies_to_default_filter(self):
+        assert rc.selection_from_config(cfg(keep=["snoRNA"])) == (
+            ("rRNA", "snRNA", "tRNA"), ("snoRNA",))
 
     def test_tallies_and_missing(self):
         _, dep, spared, missing = rc.select_hits(
-            TBLOUT.splitlines(), families(), "filter", rc.DEFAULT_CLASSES)
+            TBLOUT.splitlines(), families(), rc.DEFAULT_FILTER)
         assert dep["Gene; rRNA"] == 1 and dep["Gene; tRNA"] == 1
         assert spared["Gene; miRNA"] == 1
         assert spared["(not in family table)"] == 1
         assert missing == {"RF09999"}
 
 
+class TestOverlap:
+    def test_keep_wins_and_warns(self):
+        c = cfg(filter=["rRNA", "tRNA", "snRNA"], keep=["tRNA"])
+        assert rc.selection_from_config(c) == (("rRNA", "snRNA"), ("tRNA",))
+        warns = rc.structural_rna_warnings(c)
+        assert len(warns) == 1
+        assert "tRNA" in warns[0] and "'keep' wins" in warns[0]
+        assert rc.validate_structural_rna_classes(c) == []
+
+    def test_overlap_of_whole_filter_disables_depletion(self):
+        c = cfg(filter=["snRNA"], keep=["snRNA"])
+        assert rc.selection_from_config(c) == ((), ("snRNA",))
+        assert not rc.depletion_enabled(c)
+
+    def test_no_warning_without_overlap(self):
+        assert rc.structural_rna_warnings(cfg(filter=["rRNA"], keep=["miRNA"])) == []
+        assert rc.structural_rna_warnings({}) == []
+
+
+class TestEnabled:
+    def test_default_enabled(self):
+        assert rc.depletion_enabled({})
+        assert rc.depletion_enabled(cfg(keep=["miRNA"]))
+
+    def test_empty_filter_disables(self):
+        assert not rc.depletion_enabled(cfg(filter=[]))
+        assert not rc.depletion_enabled(cfg(filter=[], keep=["miRNA"]))
+
+
+class TestDeprecatedToggle:
+    def test_false_means_empty_filter(self):
+        c = {"structural_rna_depletion": False}
+        assert not rc.depletion_enabled(c)
+        assert rc.selection_from_config(c)[0] == ()
+        warns = rc.structural_rna_warnings(c)
+        assert len(warns) == 1 and "deprecated" in warns[0]
+        assert "filter: []" in warns[0]
+
+    def test_false_overrides_shipped_filter(self):
+        # the shipped options file always merges in a filter list
+        c = {"structural_rna_depletion": False,
+             "structural_rna_classes": {"filter": ["rRNA", "tRNA", "snRNA"],
+                                        "keep": []}}
+        assert not rc.depletion_enabled(c)
+
+    def test_true_is_ignored_with_warning(self):
+        c = {"structural_rna_depletion": True}
+        assert rc.selection_from_config(c) == rc.selection_from_config({})
+        warns = rc.structural_rna_warnings(c)
+        assert len(warns) == 1 and "ignored" in warns[0]
+        assert not rc.depletion_enabled(
+            {"structural_rna_depletion": True, **cfg(filter=[])})
+
+    def test_non_bool_refused(self):
+        errs = rc.validate_structural_rna_classes({"structural_rna_depletion": "no"})
+        assert errs and "true or false" in errs[0]
+
+
 class TestBedRecord:
     def test_minus_strand_coordinates_and_name(self):
-        bed, *_ = rc.select_hits(TBLOUT.splitlines(), families(), "filter",
-                                 {"tRNA"})
+        bed, *_ = rc.select_hits(TBLOUT.splitlines(), families(), {"tRNA"})
         assert bed == ["chr1\t508\t580\ttRNA::chr1:508-580(-)\t0\t-"]
 
     def test_plus_strand(self):
-        bed, *_ = rc.select_hits(TBLOUT.splitlines(), families(), "filter",
-                                 {"rRNA"})
+        bed, *_ = rc.select_hits(TBLOUT.splitlines(), families(), {"rRNA"})
         assert bed == ["chr2\t100\t220\t5S_rRNA::chr2:100-220(+)\t0\t+"]
 
     def test_sorted_by_chrom_then_start(self):
-        bed, *_ = rc.select_hits(TBLOUT.splitlines(), families(), "keep", ())
+        bed, *_ = rc.select_hits(TBLOUT.splitlines(), families(),
+                                 {"Gene", "Cis-reg"})
         keys = [(l.split("\t")[0], int(l.split("\t")[1])) for l in bed]
         assert keys == sorted(keys)
 
 
 class TestSelectionLabel:
     def test_round_trip(self):
-        for mode, classes in [("filter", ("rRNA", "snoRNA", "tRNA")),
-                              ("keep", ()), ("keep", ("miRNA",))]:
-            label = rc.selection_label(mode, classes)
-            assert rc.parse_selection_label(label) == (mode, classes)
+        for sel in [(("rRNA", "snRNA", "tRNA"), ()), ((), ("miRNA",)),
+                    (("Gene",), ("miRNA", "snoRNA")), ((), ())]:
+            label = rc.selection_label(*sel)
+            assert rc.parse_selection_label(label) == sel
 
     def test_default_from_config(self):
-        assert rc.selection_from_config({}) == ("filter", ("rRNA", "snRNA", "tRNA"))
+        assert rc.selection_from_config({}) == (("rRNA", "snRNA", "tRNA"), ())
 
-    def test_from_config_sorted_and_deduped(self):
-        cfg = {"structural_rna_classes": {"filter": ["tRNA", "rRNA", "tRNA"]}}
-        assert rc.selection_from_config(cfg) == ("filter", ("rRNA", "tRNA"))
-        cfg = {"structural_rna_classes": {"keep": []}}
-        assert rc.selection_from_config(cfg) == ("keep", ())
+    def test_sorted_and_deduped(self):
+        c = cfg(filter=["tRNA", "rRNA", "tRNA"], keep=["miRNA", "miRNA"])
+        assert rc.selection_from_config(c) == (("rRNA", "tRNA"), ("miRNA",))
 
-    def test_order_does_not_change_label(self):
-        a = rc.selection_label(*rc.selection_from_config(
-            {"structural_rna_classes": {"filter": ["tRNA", "rRNA"]}}))
-        b = rc.selection_label(*rc.selection_from_config(
-            {"structural_rna_classes": {"filter": ["rRNA", "tRNA"]}}))
-        assert a == b
+    def test_label_tracks_effective_selection_only(self):
+        def label(c):
+            return rc.selection_label(*rc.selection_from_config(c))
+        assert label(cfg(filter=["tRNA", "rRNA"])) == label(cfg(filter=["rRNA", "tRNA"]))
+        # omitted keep == empty keep; omitted filter == default filter
+        assert label(cfg(filter=["rRNA"])) == label(cfg(filter=["rRNA"], keep=[]))
+        assert label({}) == label(cfg(keep=[]))
+        # a filter class that keep cancels contributes nothing
+        assert label(cfg(filter=["rRNA", "tRNA"], keep=["tRNA"])) == \
+            label(cfg(filter=["rRNA"], keep=["tRNA"]))
+        assert label(cfg(filter=["rRNA"])) != label(cfg(filter=["rRNA"], keep=["miRNA"]))
 
-    def test_bad_mode(self):
+    def test_bad_label(self):
         with pytest.raises(ValueError):
             rc.parse_selection_label("drop:rRNA")
 
@@ -196,58 +283,76 @@ class TestValidation:
     def test_absent_or_null_is_valid(self):
         assert rc.validate_structural_rna_classes({}) == []
         assert self.v(None) == []
+        assert self.v({}) == []
 
-    def test_valid_filter_and_keep(self):
+    def test_valid_combinations(self):
         assert self.v({"filter": ["rRNA", "tRNA", "snoRNA"]}) == []
         assert self.v({"keep": ["miRNA", "lncRNA"]}) == []
-        assert self.v({"keep": []}) == []
+        assert self.v({"filter": [], "keep": []}) == []
+        assert self.v({"filter": ["Gene"], "keep": ["miRNA"]}) == []
+        assert self.v({"filter": ["rRNA"], "keep": ["rRNA"]}) == []  # warning only
 
-    def test_unknown_class(self):
+    def test_unknown_class_in_filter(self):
         errs = self.v({"filter": ["rRNA", "snorna", "microRNA"]})
         assert len(errs) == 1
+        assert "filter" in errs[0]
         assert "microRNA" in errs[0] and "snorna" in errs[0]
         assert "snoRNA" in errs[0]  # lists the known classes
 
-    def test_both_modes_refused(self):
-        errs = self.v({"filter": ["rRNA"], "keep": ["miRNA"]})
-        assert any("not both" in e for e in errs)
+    def test_unknown_class_in_keep(self):
+        errs = self.v({"keep": ["miRNAs"]})
+        assert len(errs) == 1 and "keep" in errs[0] and "miRNAs" in errs[0]
+
+    def test_unknown_in_both_reported_separately(self):
+        assert len(self.v({"filter": ["x"], "keep": ["y"]})) == 2
 
     def test_unknown_key(self):
         errs = self.v({"remove": ["rRNA"]})
         assert any("remove" in e for e in errs)
 
-    def test_neither_mode(self):
-        assert self.v({}) != []
-
     def test_not_a_mapping(self):
         assert self.v(["rRNA"]) != []
 
-    def test_string_instead_of_list(self):
-        errs = self.v({"filter": "rRNA"})
-        assert any("must be a list" in e for e in errs)
-
-    def test_empty_filter_refused(self):
-        errs = self.v({"filter": []})
-        assert any("structural_rna_depletion" in e for e in errs)
+    def test_string_or_null_instead_of_list(self):
+        assert any("must be a list" in e for e in self.v({"filter": "rRNA"}))
+        errs = self.v({"filter": None})
+        assert any("[]" in e for e in errs)
 
     def test_known_classes_cover_defaults(self):
-        assert set(rc.DEFAULT_CLASSES) <= rc.KNOWN_CLASSES
+        assert set(rc.DEFAULT_FILTER) <= rc.KNOWN_CLASSES
 
 
-def test_shipped_options_leave_the_option_commented():
-    """The default must come from code, not the options file.
-
-    Snakemake deep-merges a user --configfile over the shipped one, so a
-    shipped `filter:` plus a user's `keep:` would merge into both keys and
-    fail validation.
-    """
+def _shipped_options():
     import yaml
     path = os.path.join(os.path.dirname(__file__), "..", "..", "config",
                         "epicc-options.yaml")
     with open(path) as fh:
-        cfg = yaml.safe_load(fh)
-    assert rc.CONFIG_KEY not in cfg
-    assert rc.validate_structural_rna_classes(cfg) == []
+        return yaml.safe_load(fh)
+
+
+def test_shipped_options_match_code_defaults():
+    shipped = _shipped_options()
+    assert "structural_rna_depletion" not in shipped
+    assert rc.validate_structural_rna_classes(shipped) == []
+    assert rc.structural_rna_warnings(shipped) == []
+    assert rc.selection_from_config(shipped) == rc.selection_from_config({})
+
+
+def test_user_options_deep_merge_over_shipped():
+    """Snakemake deep-merges a user --configfile over the shipped options:
+    a user keep combines with the shipped filter, a user list replaces."""
+    update_config = pytest.importorskip("snakemake.utils").update_config
+    import copy
+
+    def merged(user):
+        c = copy.deepcopy(_shipped_options())
+        update_config(c, user)
+        return c
+
+    assert rc.selection_from_config(merged(cfg(keep=["snoRNA"]))) == (
+        ("rRNA", "snRNA", "tRNA"), ("snoRNA",))
+    assert not rc.depletion_enabled(merged(cfg(filter=[])))
+    assert not rc.depletion_enabled(merged({"structural_rna_depletion": False}))
 
 
 def test_cli_writes_bed(tmp_path):
@@ -260,10 +365,11 @@ def test_cli_writes_bed(tmp_path):
     res = subprocess.run(
         [sys.executable, os.path.join(SCRIPTS, "rfam_classes.py"),
          "--family-table", str(fam), "--tblout", str(tbl),
-         "--selection", "filter:rRNA,snRNA,tRNA", "--out-bed", str(bed)],
+         "--selection", "filter:rRNA,snRNA,tRNA;keep:snoRNA",
+         "--out-bed", str(bed)],
         capture_output=True, text=True)
     assert res.returncode == 0, res.stderr
     names = [l.split("\t")[3].split("::")[0] for l in bed.read_text().splitlines()]
-    assert names == ["tRNA", "snoR71", "U1", "5S_rRNA"]
-    assert "Depleting 4 hits; sparing 3" in res.stderr
+    assert names == ["tRNA", "U1", "5S_rRNA"]
+    assert "Depleting 3 hits; sparing 4" in res.stderr
     assert "RF09999" in res.stderr  # warned about the unknown accession

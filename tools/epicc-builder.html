@@ -3378,7 +3378,12 @@ var configState = {
   adapter1_sRNA: "TGGAATTCTCGGGTGCCAAGG",
   adapter2_sRNA: "AGATCGGAAGAGCGTCGTGTAGGGAAAGA",
   nextflex_v3_deduplication: false,
+  // UI toggle for structural RNA depletion; exported as
+  // structural_rna_classes (filter: [] when off), which replaced the
+  // structural_rna_depletion option. The class lists round-trip unchanged.
   structural_rna_depletion: true,
+  structural_rna_filter: ["rRNA", "tRNA", "snRNA"],
+  structural_rna_keep: [],
   infernal_threshold: "ga",
   srna_mapping_params: "--mmap u --dicermin 21 --dicermax 24",
   shortstack_dn_mirna: true,
@@ -4078,7 +4083,13 @@ function configStateToYAML() {
 
   // sRNA
   cfg.nextflex_v3_deduplication = configState.nextflex_v3_deduplication;
-  cfg.structural_rna_depletion = configState.structural_rna_depletion;
+  cfg.structural_rna_classes = {
+    filter: configState.structural_rna_depletion
+      ? (configState.structural_rna_filter.length
+          ? configState.structural_rna_filter.slice() : ["rRNA", "tRNA", "snRNA"])
+      : [],
+    keep: configState.structural_rna_keep.slice()
+  };
   cfg.infernal_threshold = configState.infernal_threshold;
   cfg.srna_mapping_params = configState.srna_mapping_params;
   cfg.shortstack_dn_mirna = configState.shortstack_dn_mirna;
@@ -4180,7 +4191,16 @@ function handleYAMLImport(text) {
   }
   if (cfg.custom_script_dmrs != null) configState.custom_script_dmrs = !!cfg.custom_script_dmrs;
   if (cfg.nextflex_v3_deduplication != null) configState.nextflex_v3_deduplication = !!cfg.nextflex_v3_deduplication;
-  if (cfg.structural_rna_depletion != null) configState.structural_rna_depletion = !!cfg.structural_rna_depletion;
+  if (cfg.structural_rna_classes && typeof cfg.structural_rna_classes === "object") {
+    var srcSr = cfg.structural_rna_classes;
+    if (Array.isArray(srcSr.filter)) {
+      configState.structural_rna_depletion = srcSr.filter.length > 0;
+      if (srcSr.filter.length) configState.structural_rna_filter = srcSr.filter.map(String);
+    }
+    if (Array.isArray(srcSr.keep)) configState.structural_rna_keep = srcSr.keep.map(String);
+  }
+  // Deprecated toggle: false still means no depletion.
+  if (cfg.structural_rna_depletion === false) configState.structural_rna_depletion = false;
   if (cfg.infernal_threshold != null) configState.infernal_threshold = String(cfg.infernal_threshold);
   if (cfg.srna_mapping_params != null) configState.srna_mapping_params = cfg.srna_mapping_params;
   if (cfg.shortstack_dn_mirna != null) configState.shortstack_dn_mirna = !!cfg.shortstack_dn_mirna;
@@ -4315,7 +4335,7 @@ function handleYAMLImport(text) {
       "bt2_mapping_strategy","chip_tracks","atac_tracks","chip_callpeaks","cut_callpeaks","atac_callpeaks",
       "rampage_calltss","diffpeaks_params","upset_allreps","rna_tracks","methylation_contexts","pca_bs",
       "pca_step","mC_mapping","custom_script_dmrs","dmc_methylation","dmc_dmr_method",
-      "nextflex_v3_deduplication","structural_rna_depletion","infernal_threshold","srna_mapping_params","shortstack_dn_mirna",
+      "nextflex_v3_deduplication","structural_rna_depletion","structural_rna_classes","infernal_threshold","srna_mapping_params","shortstack_dn_mirna",
       "srna_min_size","srna_max_size","srna_heatmap_sizes","plot_allreps","heatmaps_scales",
       "stranded_heatmaps","heatmaps_sort_options","heatmap_sort_mc_after_others",
       "profiles_scale","profiles_plot_params","heatmaps_plot_params","heatmaps",

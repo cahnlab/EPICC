@@ -27,7 +27,7 @@ def get_bt1_indices(wildcards):
         
 def define_input_file_for_shortstack(sample_name):
     paired = get_sample_info_from_name(sample_name, samples, 'paired')
-    rna_depletion = config['structural_rna_depletion']
+    rna_depletion = STRUCTURAL_RNA_DEPLETION
     nextflex_v3 = config['nextflex_v3_deduplication']
     if paired == "SE":
         if rna_depletion:
@@ -80,7 +80,7 @@ def define_final_srna_output(ref_genome):
     srna_min = config['srna_min_size']
     srna_max = config['srna_max_size']
     trimmed_fastqs = config['trimmed_fastqs']
-    rna_depletion = config['structural_rna_depletion']
+    rna_depletion = STRUCTURAL_RNA_DEPLETION
     nextflex_v3 = config['nextflex_v3_deduplication']
     map_files = []
     bigwig_files = []

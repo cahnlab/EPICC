@@ -26,7 +26,6 @@ trimmed_fastqs: false
 aligned_bams: false
 
 # Structural RNA depletion
-structural_rna_depletion: true
 
 # Trimming parameters (fastp)
 quality_threshold:
