@@ -48,7 +48,7 @@ def _render_filter(strand, target_file, out_file):
     start = text.index("rule making_stranded_matrix_on_targetfile:")
     block = text[start:text.index("rule merging_matrix:", start)]
     body = re.search(r'shell:\s*"""(.*?)"""', block, re.DOTALL).group(1)
-    body = body[: body.index('echo "{params.labels}"')]
+    body = body[: body.index('printf "Making {params.strand}')]
     body = body[body.index('header="$(cat'):]
 
     for placeholder, value in (

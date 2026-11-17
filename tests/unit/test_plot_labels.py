@@ -127,7 +127,7 @@ CASES = (
     [("define_key_for_plots", env, "labels", strand)
      for env in ["all", "most", "ChIP", "ATAC", "RNA", "sRNA", "mC"]
      for strand in ["unstranded", "plus", "nostrand"]]
-    + [("define_samples_for_upset", env, "pairs", None)
+    + [("define_samples_for_upset", env, "labels", None)
        for env in ["ChIP", "ATAC", "all_chip", "RAMPAGE", "sRNA"]]
     + [("define_input_for_pca", env, "labels", None)
        for env in ["mCG", "ChIP", "ATAC", "all_chip"]]
@@ -139,8 +139,7 @@ def _labels(sheet, allreps, fn, env, mode, strand, disambiguate=True):
     wc = SimpleNamespace(ref_genome=genome, env=env)
     if strand:
         wc.strand = strand
-    out = ns[fn](wc, mode)
-    return [p.split(":", 1)[0] for p in out] if mode == "pairs" else out
+    return ns[fn](wc, mode)
 
 
 @pytest.mark.parametrize("allreps", [False, True])
@@ -203,7 +202,7 @@ def test_bigwigs_stay_aligned_with_labels():
 def test_srna_label_types_follow_final_labels():
     ns, genome = _builders("test_samples_colcen.tsv", False)
     wc = SimpleNamespace(ref_genome=genome, env="sRNA")
-    prefixes = [p.split(":", 1)[0] for p in ns["define_samples_for_upset"](wc, "pairs")]
+    prefixes = ns["define_samples_for_upset"](wc, "labels")
     pairs = ns["define_samples_for_upset"](wc, "label_types").split(",")
     assert {p.rsplit("=", 1)[0].rsplit("_", 1)[0] for p in pairs} == set(prefixes)
 

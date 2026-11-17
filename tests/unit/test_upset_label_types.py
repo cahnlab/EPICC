@@ -80,7 +80,7 @@ def _map(env, allreps=False):
 
 
 def _labels(env, allreps=False):
-    return [p.split(":", 1)[0] for p in _call(env, "pairs", allreps)]
+    return _call(env, "labels", allreps)
 
 
 class TestLabelTypeMap:

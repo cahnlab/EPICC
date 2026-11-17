@@ -119,7 +119,11 @@ def define_samples_for_upset(wildcards, string):
     labels = disambiguate_labels([e[0] for e in entries], [e[3] for e in entries], [e[4] for e in entries])
     check_unique_labels(labels, f"the {globenv} UpSet plot")
     files = [e[1] for e in entries]
-    names = [f"{label}:{file}" for label, file in zip(labels, files)]
+    # The merged peak/cluster/TSS file names each sample by its sample id, not
+    # its label, so the expensive merge never depends on how labels are
+    # spelled; plotting_upset_regions swaps the ids for labels ('relabel').
+    keys = [e[4] for e in entries]
+    names = [f"{key}:{file}" for key, file in zip(keys, files)]
     if globenv == "sRNA":
         srna_min = config['srna_min_size']
         srna_max = config['srna_max_size']
@@ -129,12 +133,16 @@ def define_samples_for_upset(wildcards, string):
         # combine_clusterfiles suffixes each label with the cluster's size class
         # (clusters.bed column 4), so the plotted column is '{label}_{type}'.
         label_types = {f"{label}_{t}": t for label in labels for t in types}
+        relabel = {f"{key}_{t}": f"{label}_{t}" for key, label in zip(keys, labels) for t in types}
     else:
         ordered = ":".join(sorted(types))
         label_types = {label: e[2] for label, e in zip(labels, entries)}
+        relabel = dict(zip(keys, labels))
 
     if string == "pairs":
         return names
+    elif string == "labels":
+        return labels
     elif string == "files":
         return files
     elif string == "types":
@@ -144,6 +152,9 @@ def define_samples_for_upset(wildcards, string):
         # substring of another (H3K9me / H3K9me2), so the scripts can't
         # recover it by matching on the label text.
         return ",".join(f"{label}={t}" for label, t in label_types.items())
+    elif string == "relabel":
+        # "sample id<TAB>label" per line, for the Samples column of the merged file.
+        return "\n".join(f"{key}\t{label}" for key, label in relabel.items())
 
 def define_upset_script(wildcards):
     globenv = wildcards.env
@@ -157,6 +168,7 @@ def define_upset_script(wildcards):
     return script
 
 import colorsys
+from types import SimpleNamespace
 
 # Matplotlib tab20 and Set2 palettes as hex — avoids runtime matplotlib dependency
 _PALETTES = {
@@ -190,6 +202,20 @@ def make_it_lighter(palette, factor):
     return new_palette
 
 def define_key_for_plots(wildcards, string):
+    if string == "display":
+        # Display rows for the heatmap and profile plots, "key<TAB>label<TAB>
+        # colour<TAB>track" per matrix column, looked up by key at plot time
+        # (matrix_sample_labels.py). The plot rules don't know whether the
+        # matrix came from the unstranded pass or the plus/minus/nostrand
+        # passes, which carry different columns, so both are listed; keys they
+        # share map to the same row.
+        rows = {}
+        for s in ("unstranded", "plus"):
+            wc = SimpleNamespace(ref_genome=wildcards.ref_genome, env=wildcards.env, strand=s)
+            cols = [define_key_for_plots(wc, m) for m in ("keys", "labels", "colors", "tracks")]
+            for key, *rest in zip(*cols):
+                rows.setdefault(key, rest)
+        return "\n".join("\t".join([key] + rest) for key, rest in rows.items())
     unique_chip = set()
     unique_atac = set()
     unique_rna = set()
@@ -214,8 +240,13 @@ def define_key_for_plots(wildcards, string):
         strand = "plus"
 
     def add(group, row, sid, bw, label, mark, track=None, suffix=""):
+        track = track or mark
+        # The key names a column in every data file (matrix, browser scratch
+        # tracks) so they never depend on the label. Its last '__' field is the
+        # track, which computing_matrix_scales reads back, and a minus-strand
+        # key ends in '_minus', which prep_browser_on_region negates on.
         grouped[group].append({"bw": bw, "label": label, "suffix": suffix,
-                               "mark": mark, "track": track or mark,
+                               "mark": mark, "track": track, "key": f"{sid}__{track}",
                                "type": row.levels_label, "assay": row.Assay, "sid": sid})
 
     def add_pair(group, row, sid, bw1, bw2, label, mark):
@@ -328,6 +359,8 @@ def define_key_for_plots(wildcards, string):
     order = ( [f"chip_{chip}" for chip in sorted(unique_chip)] + ["atac"] + sorted(unique_rna) + sorted(unique_srna) + sorted(unique_mc) )
     entries = sum([grouped.get(group, []) for group in order], [])
     bigwigs = [e["bw"] for e in entries]
+    keys = [e["key"] for e in entries]
+    check_unique_labels(keys, f"the {globenv} plot keys")
     # Labels carry Levels and mark but not the assay, so two assays profiling
     # one mark from the same Levels collide; those get the assay (or failing
     # that the sample id) appended. Colour stays keyed on levels_label, so the
@@ -335,8 +368,6 @@ def define_key_for_plots(wildcards, string):
     labels = disambiguate_labels([e["label"] for e in entries], [e["assay"] for e in entries],
                                  [e["sid"] for e in entries], [e["suffix"] for e in entries])
     check_unique_labels(labels, f"the {globenv} plots")
-    marks = ( sorted(unique_chip) + sorted(unique_atac) + [f"{rna}_{strand}" for rna in sorted(unique_rna) for strand in ["plus", "minus"]] + [f"{srna}_{strand}" for srna in sorted(unique_srna) for strand in ["plus", "minus"]] + sorted(unique_mc) ) if strand == "unstranded" else ( sorted(unique_chip) + sorted(unique_atac) + sorted(unique_rna) + sorted(unique_srna) + sorted(unique_mc) )
-
     marksforbrowser = ( sorted(unique_chip) + sorted(unique_atac) + sorted(unique_rna) + sorted(unique_srna) + sorted(unique_mc) )
 
     types = sorted(filtered_analysis_samples["levels_label"].tolist())
@@ -356,10 +387,10 @@ def define_key_for_plots(wildcards, string):
 
     if string == "bigwigs":
         return bigwigs
+    elif string == "keys":
+        return keys
     elif string == "labels":
         return labels
-    elif string == "marks":
-        return marks
     elif string == "tracks":
         # The mark of each matrix column (mCG, H3K9me2, ...), in column order.
         return alignedmarks
@@ -370,19 +401,22 @@ def define_key_for_plots(wildcards, string):
         # line colours, which makes consecutive samples near-indistinguishable.
         return backcolors
     elif string == "table":
+        # What prep_browser_on_region extracts: no labels or colours, so the
+        # extraction never reruns over a label change.
         table_name = f"{RESULTS_DIR}/combined/matrix/sample_table__{wildcards.target_name}__{wildcards.regionID}__{wildcards.env}__{wildcards.analysis_name}__{wildcards.ref_genome}.tab"
         os.makedirs(os.path.dirname(table_name), exist_ok=True)
         tab = pd.DataFrame({
             "bigwigs": bigwigs,
-            "labels": labels,
-            "backcolors": backcolors,
-            "trackcolors": trackcolors,
-            "fillcolorsplus": fillcolorsplus,
-            "fillcolorsminus": fillcolorsminus,
+            "keys": keys,
             "marks": alignedmarks,
         })
         tab.to_csv(table_name, sep="\t", index=False, header=False)
         return table_name
+    elif string == "browser_display":
+        # "key<TAB>label<TAB>back<TAB>track<TAB>fill+<TAB>fill-" per browser
+        # track, joined onto the extracted tracks by make_single_loci_browser_plot.
+        return "\n".join("\t".join(r) for r in zip(keys, labels, backcolors, trackcolors,
+                                                      fillcolorsplus, fillcolorsminus))
 
 def define_individual_browser_plots(wildcards):
     ref_genome = wildcards.ref_genome
@@ -432,6 +466,9 @@ def define_input_for_pca(wildcards, string):
     # is still alive. See the note on that rule.
     tracks = []
     indexes = []
+    # keys name the samples in the summary matrix; labels are applied only by
+    # plotPCA, so a label change reruns the plot, not the summary.
+    keys = []
     labels = []
     groups = []
     assays = []
@@ -444,6 +481,7 @@ def define_input_for_pca(wildcards, string):
         context = globenv[1:]
         for _, row in filtered_samples.iterrows():
             tracks.append(f"{RESULTS_DIR}/mC/tracks/{row['mapped_name']}__{context}.bw")
+            keys.append(row['mapped_name'])
             labels.append(f"{row.levels_label}_{row.replicate}")
             groups.append(f"{row.levels_label}")
             assays.append(row.Assay)
@@ -455,6 +493,7 @@ def define_input_for_pca(wildcards, string):
             bam = f"{RESULTS_DIR}/{row.env}/mapped/final__{row['mapped_name']}.bam"
             tracks.append(bam)
             indexes.append(bam + ".bai")
+            keys.append(row['mapped_name'])
             labels.append(f"{row.sample_type}_{row.levels_label}_{row.data_type}_{row.replicate}")
             groups.append(f"{row.sample_type}_{row.levels_label}")
             assays.append(row.Assay)
@@ -471,6 +510,8 @@ def define_input_for_pca(wildcards, string):
         return tracks
     elif string == "indexes":
         return indexes
+    elif string == "keys":
+        return keys
     elif string == "labels":
         return labels
     elif string == "colors":
@@ -899,13 +940,20 @@ rule plotting_upset_regions:
         env = lambda wildcards: wildcards.env,
         types = lambda wildcards: define_samples_for_upset(wildcards, "types"),
         label_types = lambda wildcards: define_samples_for_upset(wildcards, "label_types"),
+        relabel = lambda wildcards: define_samples_for_upset(wildcards, "relabel"),
         script = lambda wildcards: define_upset_script(wildcards)
     log:
         temp(return_log_combined("{analysis_name}", "{ref_genome}", "plot_upset_{target_name}_{env}"))
     conda: CONDA_ENV
     shell:
         """
-        Rscript "{params.script}" "{input.mergedfile}" "{input.annotatedfile}" "{params.env}" "{params.types}" "{params.label_types}" "{output.plot}"
+        # The merged file names samples by id (see define_samples_for_upset);
+        # swap in the plot labels here so a label change reruns only this plot.
+        printf '%s\n' "{params.relabel}" > "$TMPDIR/relabel.tsv"
+        awk -F"\t" -v OFS="\t" 'NR==FNR {{m[$1]=$2; next}} FNR==1 {{print; next}}
+            {{n=split($5, s, ","); out=""; for (i=1; i<=n; i++) out=out (i>1 ? "," : "") (s[i] in m ? m[s[i]] : s[i]); $5=out; print}}' \
+            "$TMPDIR/relabel.tsv" {input.mergedfile} > "$TMPDIR/merged_labelled.bed"
+        Rscript "{params.script}" "$TMPDIR/merged_labelled.bed" "{input.annotatedfile}" "{params.env}" "{params.types}" "{params.label_types}" "{output.plot}"
         """
 
 ###
@@ -925,9 +973,9 @@ rule making_stranded_matrix_on_targetfile:
         ref_genome = lambda wildcards: wildcards.ref_genome,
         env = lambda wildcards: wildcards.env,
         target_name = lambda wildcards: wildcards.target_name,
-        labels = lambda wildcards: define_key_for_plots(wildcards, "labels"),
-        marks = lambda wildcards: define_key_for_plots(wildcards, "marks"),
-        colors = lambda wildcards: define_key_for_plots(wildcards, "colors"),
+        # Columns are named by stable keys, not labels: labels and colours are
+        # applied by the plot rules, so changing them never rebuilds a matrix.
+        sample_keys = lambda wildcards: define_key_for_plots(wildcards, "keys"),
         matrix = lambda wildcards: wildcards.matrix_param,
         strand = lambda wildcards: wildcards.strand,
         base = lambda wildcards: get_heatmap_param(wildcards.matrix_param, 'base'),
@@ -969,16 +1017,11 @@ rule making_stranded_matrix_on_targetfile:
             END {{ if (n > 0) print "WARNING: " n " region(s) had an unaccepted strand character in column 6; replaced with a dot" > "/dev/stderr" }}
         ' {output.temp} > "$TMPDIR/target_strand_fixed.bed"
         mv "$TMPDIR/target_strand_fixed.bed" {output.temp}
-        echo "{params.labels}" | xargs -n1 > "{config[output_dir]}/combined/matrix/labels_{params.matrix}__{params.env}__{params.analysis_name}__{params.ref_genome}__{params.target_name}.txt"
-        echo "{params.marks}" | xargs -n1 > "{config[output_dir]}/combined/matrix/marks_{params.matrix}__{params.env}__{params.analysis_name}__{params.ref_genome}__{params.target_name}.txt"
-        # Written in the same order as --samplesLabel, so it lines up with the
-        # matrix columns without needing a lookup at plot time.
-        echo "{params.colors}" | xargs -n1 > "{config[output_dir]}/combined/matrix/colors_{params.matrix}__{params.env}__{params.analysis_name}__{params.ref_genome}__{params.target_name}.txt"
         printf "Making {params.strand} strand {params.matrix} matrix for {params.env} {params.target_name} on {params.ref_genome}\n"
         if [[ "{params.env}" == "mC" ]]; then
-            computeMatrix {params.base_mc} -R {output.temp} -S {input.bigwigs} --samplesLabel {params.labels} -bs {params.bs_mc} -b {params.before} -a {params.after} {params.middle} -p {threads} -o {output.matrix}
+            computeMatrix {params.base_mc} -R {output.temp} -S {input.bigwigs} --samplesLabel {params.sample_keys} -bs {params.bs_mc} -b {params.before} -a {params.after} {params.middle} -p {threads} -o {output.matrix}
         else
-            computeMatrix {params.base} -R {output.temp} -S {input.bigwigs} --samplesLabel {params.labels} -bs {params.bs} -b {params.before} -a {params.after} {params.middle} -p {threads} -o {output.matrix}
+            computeMatrix {params.base} -R {output.temp} -S {input.bigwigs} --samplesLabel {params.sample_keys} -bs {params.bs} -b {params.before} -a {params.after} {params.middle} -p {threads} -o {output.matrix}
         fi
         }} 2>&1 | tee -a "{log}"
         """
@@ -1067,7 +1110,11 @@ rule computing_matrix_scales:
     conda: CONDA_ENV
     shell:
         """
-        {{        
+        {{
+        # The track (mark) of a column is the last '__' field of its key
+        # (define_key_for_plots), so rows of one mark are matched exactly
+        # rather than by substring: H3K9me must not pick up H3K9me2.
+        rows_of_mark() {{ awk -F"\t" -v m="$1" '{{n=split($1, f, "__"); if (n>1 && f[n]==m) print}}' "$2"; }}
         # One label per region group, counts taken from the matrix itself --
         # a stranded target can carry a separate 'nostrand' group, and
         # --skipZeros drops regions, so the target file cannot tell us either.
@@ -1091,8 +1138,8 @@ rule computing_matrix_scales:
             ymaxs=()
             while read mark
             do
-                zmini=$(grep "${{mark}}" {output.temp_values} | awk 'BEGIN {{m=999999}} {{a=$5; if (a != "nan" && a<m) m=a;}} END {{if (m != 999999) print m; else print 0}}')
-                zmaxi=$(grep "${{mark}}" {output.temp_values} | awk 'BEGIN {{m=-999999}} {{a=$6; if (a != "nan" && a>m) m=a;}} END {{if (m != -999999) print m; else print 0}}')
+                zmini=$(rows_of_mark "${{mark}}" {output.temp_values} | awk 'BEGIN {{m=999999}} {{a=$5; if (a != "nan" && a<m) m=a;}} END {{if (m != 999999) print m; else print 0}}')
+                zmaxi=$(rows_of_mark "${{mark}}" {output.temp_values} | awk 'BEGIN {{m=-999999}} {{a=$6; if (a != "nan" && a>m) m=a;}} END {{if (m != -999999) print m; else print 0}}')
                 test=$(awk -v a=${{zmini}} -v b=${{zmaxi}} 'BEGIN {{if (a==0 && b==0) c="yes"; else c="no"; print c}}')
                 if [[ "${{test}}" == "yes" && ${{mark}} == "mCG" ]]; then
                     zmini="0"
@@ -1113,7 +1160,7 @@ rule computing_matrix_scales:
                 # band gets a huge axis: ColCEN TE mCG spans 41.6-50.1 and was
                 # drawn on 33.3-60.1, filling a third of the plot. Genes were
                 # unaffected only because their mCG dips near zero.
-                ybounds=$(grep "${{mark}}" {output.temp_profile_values} | awk '{{ for (i=3;i<=NF;i++) if ($i+0==$i) {{ if (n==0 || $i+0<lo) lo=$i+0; if (n==0 || $i+0>hi) hi=$i+0; n++ }} }} END {{ if (n==0) {{ print 0, 0; exit }} pad=(hi-lo)*0.1; if (pad<=0) pad=(hi<0?-hi:hi)*0.1; if (pad<=0) pad=0.01; print lo-pad, hi+pad }}')
+                ybounds=$(rows_of_mark "${{mark}}" {output.temp_profile_values} | awk '{{ for (i=3;i<=NF;i++) if ($i+0==$i) {{ if (n==0 || $i+0<lo) lo=$i+0; if (n==0 || $i+0>hi) hi=$i+0; n++ }} }} END {{ if (n==0) {{ print 0, 0; exit }} pad=(hi-lo)*0.1; if (pad<=0) pad=(hi<0?-hi:hi)*0.1; if (pad<=0) pad=0.01; print lo-pad, hi+pad }}')
                 ymini=$(echo "${{ybounds}}" | cut -d" " -f1)
                 ymaxi=$(echo "${{ybounds}}" | cut -d" " -f2)
                 test=$(awk -v a=${{ymini}} -v b=${{ymaxi}} 'BEGIN {{if (a==0 && b==0) c="yes"; else c="no"; print c}}')
@@ -1121,7 +1168,7 @@ rule computing_matrix_scales:
                     ymini=("0")
                     ymaxi=("0.01")
                 fi
-                num=$(grep "${{mark}}" {output.temp_values} | wc -l)
+                num=$(rows_of_mark "${{mark}}" {output.temp_values} | wc -l)
                 for i in $(seq 1 ${{num}})
                 do
                     zmins+=("$zmini")
@@ -1129,7 +1176,9 @@ rule computing_matrix_scales:
                     ymins+=("$ymini")
                     ymaxs+=("$ymaxi")
                 done
-            done < {config[output_dir]}/combined/matrix/marks_{params.matrix}__{params.env}__{params.analysis_name}__{params.ref_genome}__{params.target_name}.txt
+            # Marks in column order: columns are grouped by mark, so one block
+            # of min/max per mark lines up with the columns.
+            done < <(awk -F"\t" 'NR>1 {{n=split($1, f, "__"); if (!(f[n] in seen)) {{seen[f[n]]=1; print f[n]}}}}' {output.temp_values})
             
             awk -v ORS="" -v a="${{zmins[*]}}" -v b="${{zmaxs[*]}}" 'BEGIN {{print "--zMin "a" --zMax "b}}' > {output.params_heatmap}
             awk -v ORS="" -v c="${{ymins[*]}}" -v d="${{ymaxs[*]}}" 'BEGIN {{print "--yMin "c" --yMax "d}}' > {output.params_profile}
@@ -1148,13 +1197,13 @@ rule computing_matrix_scales:
                 zmini=$(awk -F"\t" -v s="${{sample}}" '$1==s' {output.temp_values} | awk '{{if ($5 != "nan") print $5; else print 0}}')
                 zmaxi=$(awk -F"\t" -v s="${{sample}}" '$1==s' {output.temp_values} | awk '{{if ($6 != "nan") print $6; else print 0}}')
                 test=$(awk -v a=${{zmini}} -v b=${{zmaxi}} 'BEGIN {{if (a==0 && b==0) c="yes"; else c="no"; print c}}')
-                if [[ "${{test}}" == "yes" && "${{sample}}" =~ mCG ]]; then
+                if [[ "${{test}}" == "yes" && "${{sample}}" == *__mCG ]]; then
                     zmins+=("0")
                     zmaxs+=("{params.cg_scale}")
-                elif [[ "${{test}}" == "yes" && "${{sample}}" =~ mCHG ]]; then
+                elif [[ "${{test}}" == "yes" && "${{sample}}" == *__mCHG ]]; then
                     zmins+=("0")
                     zmaxs+=("{params.chg_scale}")
-                elif [[ "${{test}}" == "yes" && "${{sample}}" =~ mCHH ]]; then
+                elif [[ "${{test}}" == "yes" && "${{sample}}" == *__mCHH ]]; then
                     zmins+=("0")
                     zmaxs+=("{params.chh_scale}")
                 elif [[ "${{test}}" == "yes" ]]; then
@@ -1182,7 +1231,7 @@ rule computing_matrix_scales:
                     ymins+=("$ymini")
                     ymaxs+=("$ymaxi")
                 fi
-            done < {config[output_dir]}/combined/matrix/labels_{params.matrix}__{params.env}__{params.analysis_name}__{params.ref_genome}__{params.target_name}.txt
+            done < <(awk -F"\t" 'NR>1 {{print $1}}' {output.temp_values})
             
             awk -v ORS="" -v a="${{zmins[*]}}" -v b="${{zmaxs[*]}}" 'BEGIN {{print "--zMin "a" --zMax "b}}' > {output.params_heatmap}
             awk -v ORS="" -v c="${{ymins[*]}}" -v d="${{ymaxs[*]}}" 'BEGIN {{print "--yMin "c" --yMax "d}}' > {output.params_profile}
@@ -1213,7 +1262,9 @@ rule plotting_heatmap_on_targetfile:
         matrix = lambda wildcards: wildcards.matrix_param,
         env = lambda wildcards: wildcards.env,
         plot_params = lambda wildcards: config['heatmaps_plot_params'][wildcards.env],
-        sort = lambda wildcards: define_sort_options(wildcards)
+        sort = lambda wildcards: define_sort_options(wildcards),
+        display = lambda wildcards: define_key_for_plots(wildcards, "display"),
+        sample_labeller = os.path.join(REPO_FOLDER, "workflow", "scripts", "matrix_sample_labels.py")
     log:
         temp(return_log_combined("{analysis_name}", "{env}_{ref_genome}", "plot_heatmap_{matrix_param}_{target_name}"))
     conda: CONDA_ENV
@@ -1229,8 +1280,10 @@ rule plotting_heatmap_on_targetfile:
         reg="$(cat {input.params_regions})"
         heat="$(cat {input.params_heatmap})"
         prof="$(cat {input.params_profile})"
+        printf '%s\n' "{params.display}" > "$TMPDIR/display.tsv"
+        lab="--samplesLabel $(python3 "{params.sample_labeller}" {input.matrix} "$TMPDIR/display.tsv" | cut -f2 | tr '\n' ' ')"
         printf "Plotting heatmap {params.matrix} for {params.env} {params.target_name} on {params.ref_genome}\n"
-        plotHeatmap -m {input.matrix} -out {output.plot} {params.plot_params} {params.sort} ${{reg}} ${{heat}} ${{prof}} ${{add}} --outFileSortedRegions {output.sorted_regions}
+        plotHeatmap -m {input.matrix} -out {output.plot} {params.plot_params} {params.sort} ${{reg}} ${{heat}} ${{prof}} ${{lab}} ${{add}} --outFileSortedRegions {output.sorted_regions}
         """
 
 rule sort_heatmap:
@@ -1269,7 +1322,9 @@ rule plotting_sorted_heatmap_on_targetfile:
         ref_genome = lambda wildcards: wildcards.ref_genome,
         target_name = lambda wildcards: wildcards.target_name,
         matrix = lambda wildcards: wildcards.matrix_param,
-        plot_params = lambda wildcards: config['heatmaps_plot_params']['mC']
+        plot_params = lambda wildcards: config['heatmaps_plot_params']['mC'],
+        display = lambda wildcards: define_key_for_plots(SimpleNamespace(ref_genome=wildcards.ref_genome, env="mC"), "display"),
+        sample_labeller = os.path.join(REPO_FOLDER, "workflow", "scripts", "matrix_sample_labels.py")
     log:
         temp(return_log_combined("{analysis_name}", "mC_{ref_genome}", "plot_sorted_heatmap_{matrix_param}_{target_name}"))
     conda: CONDA_ENV
@@ -1284,8 +1339,10 @@ rule plotting_sorted_heatmap_on_targetfile:
         fi
         heat="$(cat {input.params_heatmap})"
         prof="$(cat {input.params_profile})"
+        printf '%s\n' "{params.display}" > "$TMPDIR/display.tsv"
+        lab="--samplesLabel $(python3 "{params.sample_labeller}" {input.matrix} "$TMPDIR/display.tsv" | cut -f2 | tr '\n' ' ')"
         printf "Plotting heatmap {params.matrix} for mC {params.target_name} on {params.ref_genome}\n"
-        plotHeatmap -m {input.matrix} -out {output.plot} {params.plot_params} --sortRegions 'keep' ${{heat}} ${{prof}} ${{add}}
+        plotHeatmap -m {input.matrix} -out {output.plot} {params.plot_params} --sortRegions 'keep' ${{heat}} ${{prof}} ${{lab}} ${{add}}
         """
 
 rule plotting_profile_on_targetfile:
@@ -1304,9 +1361,9 @@ rule plotting_profile_on_targetfile:
         env = lambda wildcards: wildcards.env,
         plot_params = config['profiles_plot_params'],
         average = config['profiles_scale'],
+        display = lambda wildcards: define_key_for_plots(wildcards, "display"),
+        sample_labeller = os.path.join(REPO_FOLDER, "workflow", "scripts", "matrix_sample_labels.py"),
         # mC: the per-group plot is faceted on context instead (see below).
-        mc_labels = lambda wildcards: define_key_for_plots(wildcards, "labels") if wildcards.env == "mC" else [],
-        mc_contexts = lambda wildcards: define_key_for_plots(wildcards, "tracks") if wildcards.env == "mC" else [],
         mc_script = os.path.join(REPO_FOLDER, "workflow", "scripts", "R_mc_profile_by_context.R")
     log:
         temp(return_log_combined("{analysis_name}", "{env}_{ref_genome}", "plot_profile_{matrix_param}_{target_name}"))
@@ -1324,22 +1381,25 @@ rule plotting_profile_on_targetfile:
         printf "Plotting profile {params.matrix} for {params.env} {params.target_name} on {params.ref_genome}\n"
         reg="$(cat {input.params_regions})"
         prof="$(cat {input.params_profile})"
-        # deeptools 4 picks line colours by sampling a sequential colormap, which
-        # leaves consecutive samples nearly identical. Use the pipeline's own
-        # categorical palette instead (tab20 keyed on levels_label), written in
-        # matrix column order by making_stranded_matrix_on_targetfile.
-        colorfile="{config[output_dir]}/combined/matrix/colors_{params.matrix}__{params.env}__{params.analysis_name}__{params.ref_genome}__{params.target_name}.txt"
-        col="--colors $(tr '\n' ' ' < "${{colorfile}}")"
-        plotProfile -m {input.matrix} -out {output.plot1} {params.plot_params} ${{reg}} ${{prof}} ${{col}} ${{add}}
+        # Labels and colours, one row per matrix column in column order, looked
+        # up by the column keys (key, label, colour, track). deeptools 4 picks
+        # line colours by sampling a sequential colormap, which leaves
+        # consecutive samples nearly identical, so use the pipeline's own
+        # categorical palette instead (tab20 keyed on levels_label).
+        printf '%s\n' "{params.display}" > "$TMPDIR/display.tsv"
+        python3 "{params.sample_labeller}" {input.matrix} "$TMPDIR/display.tsv" > "$TMPDIR/columns.tsv"
+        lab="--samplesLabel $(cut -f2 "$TMPDIR/columns.tsv" | tr '\n' ' ')"
+        col="--colors $(cut -f3 "$TMPDIR/columns.tsv" | tr '\n' ' ')"
+        plotProfile -m {input.matrix} -out {output.plot1} {params.plot_params} ${{reg}} ${{prof}} ${{lab}} ${{col}} ${{add}}
         
-        if [[ -n "{params.mc_contexts}" ]]; then
+        if [[ "{params.env}" == "mC" ]]; then
             # Methylation: one panel per context (CG | CHG | CHH in one row), a
             # line per sample. --perGroup makes panels only by region group, so
             # it put every context of a sample in one panel, all in that
             # sample's colour (colours are keyed on levels_label).
             printf "Plotting per context profile {params.matrix} for {params.env} {params.target_name} on {params.ref_genome}\n"
-            plotProfile -m {input.matrix} -out "$TMPDIR/profile_data.pdf" ${{reg}} ${{add}} --averageType {params.average} --outFileNameData "$TMPDIR/profile_data.tab"
-            paste <(printf "%s\n" {params.mc_labels}) <(printf "%s\n" {params.mc_contexts}) "${{colorfile}}" > "$TMPDIR/profile_samples.tsv"
+            plotProfile -m {input.matrix} -out "$TMPDIR/profile_data.pdf" ${{reg}} ${{lab}} ${{add}} --averageType {params.average} --outFileNameData "$TMPDIR/profile_data.tab"
+            awk -F"\t" -v OFS="\t" '{{print $2, $4, $3}}' "$TMPDIR/columns.tsv" > "$TMPDIR/profile_samples.tsv"
             Rscript "{params.mc_script}" "$TMPDIR/profile_data.tab" "$TMPDIR/profile_samples.tsv" {output.plot2} "{params.average} methylation"
         else
         printf "Plotting per group profile {params.matrix} for {params.env} {params.target_name} on {params.ref_genome}\n"
@@ -1349,9 +1409,9 @@ rule plotting_profile_on_targetfile:
         # that legend below the axes in a single column without growing the
         # figure -- so past ~8 samples the axes collapse to a sliver and the plot
         # comes out blank. Grow the panel to cover the legend it will carry.
-        nsample=$(wc -l < "${{colorfile}}")
+        nsample=$(wc -l < "$TMPDIR/columns.tsv")
         height=$(awk -v n="${{nsample}}" 'BEGIN {{h=7+0.55*n; if (h>50) h=50; printf "%.1f", h}}')
-        plotProfile -m {input.matrix} -out {output.plot2} {params.plot_params} ${{reg}} --yMin ${{ymin}} --yMax ${{ymax}} ${{col}} --plotHeight ${{height}} ${{add}} --perGroup
+        plotProfile -m {input.matrix} -out {output.plot2} {params.plot_params} ${{reg}} --yMin ${{ymin}} --yMax ${{ymax}} ${{lab}} ${{col}} --plotHeight ${{height}} ${{add}} --perGroup
         fi
         }} 2>&1 | tee -a "{log}"
         """
@@ -1400,7 +1460,9 @@ rule prep_browser_on_region:
         analysis_name = config['analysis_name'],
         ref_genome = lambda wildcards: wildcards.ref_genome,
         target_name = lambda wildcards: wildcards.target_name,
-        labels = lambda wildcards: define_key_for_plots(wildcards, "labels"),
+        # Tracks are extracted under their stable keys; labels and colours are
+        # joined on at plot time by make_single_loci_browser_plot.
+        sample_keys = lambda wildcards: define_key_for_plots(wildcards, "keys"),
         sample_table = lambda wildcards: define_key_for_plots(wildcards, "table"),
         trackfolder = lambda wildcards: f"{RESULTS_DIR}/combined/matrix/tracks_{wildcards.target_name}__{wildcards.regionID}__{wildcards.env}__{wildcards.analysis_name}__{wildcards.ref_genome}",
         regionID = lambda wildcards: wildcards.regionID,
@@ -1488,15 +1550,15 @@ rule prep_browser_on_region:
             printf "Extra track %s: %s features in the region\n" "${{label}}" "$(wc -l < "${{path}}")"
             printf "%s\t%s\t%s\n" "${{label}}" "${{color}}" "${{path}}" >> {output.extras}
         done <<< "{params.extra_tracks}"
-        while read bw lab back track plus minus mark
+        while read bw key mark
         do
-            path="{params.trackfolder}/${{lab}}_empty"
+            path="{params.trackfolder}/${{key}}_empty"
             bigWigToBedGraph -chrom=${{chr}} -start=${{start}} -end=${{end}} ${{bw}} "${{path}}.bg"
             if [[ -s "${{path}}.bg" ]]; then
-                printf "${{lab}} has data on ${{chr}}:${{start}}-${{end}}\n"
+                printf "${{key}} has data on ${{chr}}:${{start}}-${{end}}\n"
                 filelist2+=("${{bw}}")
             else
-                printf "${{lab}} is empty on ${{chr}}:${{start}}-${{end}}\n"
+                printf "${{key}} is empty on ${{chr}}:${{start}}-${{end}}\n"
                 awk -v OFS="\t" -v c="${{chr}}" '$1==c {{print $1,"1",$2,"0"}}' {input.chrom_sizes} | bedtools sort -i - > "${{path}}.bg"
                 bedGraphToBigWig "${{path}}.bg" {input.chrom_sizes} "${{path}}.bw"
                 filelist2+=("${{path}}.bw")
@@ -1504,24 +1566,23 @@ rule prep_browser_on_region:
             rm -f "${{path}}.bg"            
         done < {params.sample_table}
         printf "Summarize bigwigs in binsize of ${{binsize}} bp on {params.regionID}\n"
-        multiBigwigSummary bins -b ${{filelist2[@]}} -l {params.labels} -r ${{region}} -p {threads} -bs ${{binsize}} -out {output.temparray} --outRawCounts {output.tempvalues}
+        multiBigwigSummary bins -b ${{filelist2[@]}} -l {params.sample_keys} -r ${{region}} -p {threads} -bs ${{binsize}} -out {output.temparray} --outRawCounts {output.tempvalues}
 
         # --outRawCounts writes one column per bigwig, in -b order, after
         # chr/start/end; -b was built from the sample table's rows in order, so
-        # row n is column n+3. Positional rather than by label: two samples can
-        # share a label (same Levels and IP_target under different assays).
+        # row n is column n+3.
         ncols=$(head -1 {output.tempvalues} | awk '{{print NF}}')
         if [[ ${{ncols}} -ne $(( ${{#filelist2[@]}} + 3 )) ]]; then
             printf "Error: {output.tempvalues} has ${{ncols}} columns for ${{#filelist2[@]}} bigwigs\n"
             exit 1
         fi
         col=3
-        while read bw lab back track plus minus mark
+        while read bw key mark
         do
-            path="{params.trackfolder}/${{lab}}_${{mark}}"
-            printf "Making bw for ${{lab}}\n"
+            path="{params.trackfolder}/${{key}}"
+            printf "Making bw for ${{key}}\n"
             col=$(( col + 1 ))
-            if [[ "${{lab}}" == *_minus ]]; then
+            if [[ "${{key}}" == *_minus ]]; then
                 awk -v OFS="\t" -v a=${{col}} 'NR>1 {{if ($a == "nan") b=0; else b=-$a; print $1,$2,$3,b}}' {output.tempvalues} | bedtools sort -g {input.chrom_sizes} > "${{path}}.bedGraph"
             else
                 awk -v OFS="\t" -v a=${{col}} 'NR>1 {{if ($a == "nan") b=0; else b=$a; print $1,$2,$3,b}}' {output.tempvalues} | bedtools sort -g {input.chrom_sizes} > "${{path}}.bedGraph"
@@ -1529,16 +1590,18 @@ rule prep_browser_on_region:
             bedGraphToBigWig "${{path}}.bedGraph" {input.chrom_sizes} "${{path}}.bw"
         done < {params.sample_table}
         
-        printf "Name\tPath\tBackcolor\tTrackcolor\tFillcolorplus\tFillcolorminus\tYmin\tYmax\n" > {output.filenames}
-        while read bw lab back track plus minus mark
+        # Name is the track key; make_single_loci_browser_plot joins the label
+        # and colours onto it.
+        printf "Name\tPath\tYmin\tYmax\n" > {output.filenames}
+        while read bw key mark
         do
-            path="{params.trackfolder}/${{lab}}_${{mark}}"
+            path="{params.trackfolder}/${{key}}"
             if [[ {params.browser_scales} == "sample" ]]; then
                 ymin=$(cat "${{path}}.bedGraph" | awk 'BEGIN {{a=9999}} {{if ($4<a) a=$4;}} END {{if (a<0) b=a*1.2; else b=a*0.8; print b}}')
                 ymax=$(cat "${{path}}.bedGraph" | awk 'BEGIN {{a=-9999}} {{if ($4>a) a=$4;}} END {{if (a>0) b=a*1.2; else b=a*0.8; print b}}')
             elif [[ {params.browser_scales} == "type" ]]; then
-                ymin=$(cat {params.trackfolder}/*_${{mark}}.bedGraph | awk 'BEGIN {{a=9999}} {{if ($4<a) a=$4;}} END {{if (a<0) b=a*1.2; else b=a*0.8; print b}}')
-                ymax=$(cat {params.trackfolder}/*_${{mark}}.bedGraph | awk 'BEGIN {{a=-9999}} {{if ($4>a) a=$4;}} END {{if (a>0) b=a*1.2; else b=a*0.8; print b}}')
+                ymin=$(cat {params.trackfolder}/*__${{mark}}.bedGraph | awk 'BEGIN {{a=9999}} {{if ($4<a) a=$4;}} END {{if (a<0) b=a*1.2; else b=a*0.8; print b}}')
+                ymax=$(cat {params.trackfolder}/*__${{mark}}.bedGraph | awk 'BEGIN {{a=-9999}} {{if ($4>a) a=$4;}} END {{if (a>0) b=a*1.2; else b=a*0.8; print b}}')
             fi
             if [[ {params.mc_scales} == "True" ]]; then
                 if [[ ${{mark}} == "mCG" ]]; then
@@ -1552,7 +1615,7 @@ rule prep_browser_on_region:
                     ymax={params.chh_scale}
                 fi
             fi
-            printf "${{lab}}\t${{path}}.bw\t${{back}}\t${{track}}\t${{plus}}\t${{minus}}\t${{ymin}}\t${{ymax}}\n" >> {output.filenames}
+            printf "${{key}}\t${{path}}.bw\t${{ymin}}\t${{ymax}}\n" >> {output.filenames}
         done < {params.sample_table}
         rm -f {params.trackfolder}/*.bedGraph
         
@@ -1574,6 +1637,7 @@ rule make_single_loci_browser_plot:
         regionID = lambda wildcards: wildcards.regionID,
         title = lambda wildcards: f"{RESULTS_DIR}/combined/plots/single_browser__{wildcards.target_name}__{wildcards.regionID}__{wildcards.env}__{wildcards.analysis_name}__{wildcards.ref_genome}.pdf",
         script = os.path.join(REPO_FOLDER,"workflow","scripts","R_browser_plot.R"),
+        display = lambda wildcards: define_key_for_plots(wildcards, "browser_display"),
         trackfolder = lambda wildcards: f"{RESULTS_DIR}/combined/matrix/tracks_{wildcards.target_name}__{wildcards.regionID}__{wildcards.env}__{wildcards.analysis_name}__{wildcards.ref_genome}"
     log:
         temp(return_log_combined("{analysis_name}", "{env}_{ref_genome}", "single_browser_{target_name}_{regionID}"))
@@ -1585,7 +1649,15 @@ rule make_single_loci_browser_plot:
         # Empty highlight files and a header-only extras table mean "none";
         # the script checks, so the call is the same either way.
         printf "\nPlotting browser on {params.regionID}\n\n"
-        Rscript "{params.script}" "{input.filenames}" "{input.genes}" "{input.tes}" "${{name}}" "{params.title}" "{input.htstart}" "{input.htwidth}" "{input.extras}"
+        # The extracted tracks are named by key; join on each track's label and
+        # colours, keeping the extraction's row order.
+        printf '%s\n' "{params.display}" > "$TMPDIR/display.tsv"
+        awk -F"\t" -v OFS="\t" 'NR==FNR {{d[$1]=$2 OFS $3 OFS $4 OFS $5 OFS $6; next}}
+            FNR==1 {{print "Name", "Path", "Backcolor", "Trackcolor", "Fillcolorplus", "Fillcolorminus", "Ymin", "Ymax"; next}}
+            !($1 in d) {{print "No label for browser track " $1 > "/dev/stderr"; exit 1}}
+            {{split(d[$1], v, OFS); print v[1], $2, v[2], v[3], v[4], v[5], $3, $4}}' \
+            "$TMPDIR/display.tsv" {input.filenames} > "$TMPDIR/filenames.tsv"
+        Rscript "{params.script}" "$TMPDIR/filenames.tsv" "{input.genes}" "{input.tes}" "${{name}}" "{params.title}" "{input.htstart}" "{input.htwidth}" "{input.extras}"
         rm -rf {params.trackfolder}
         }} 2>&1 | tee -a "{log}"
         """
@@ -1618,7 +1690,9 @@ rule summarize_tracks_pca:
     output:
         array = f"{RESULTS_DIR}/combined/matrix/pca_matrix__{{env}}__{{analysis_name}}__{{ref_genome}}.npz"
     params:
-        labels = lambda wildcards: define_input_for_pca(wildcards, "labels"),
+        # Samples are named by mapped_name here and labelled by plotPCA, so a
+        # label change reruns the plot only.
+        sample_keys = lambda wildcards: define_input_for_pca(wildcards, "keys"),
         bs = config['pca_bs'],
         step = config['pca_step']
     log:
@@ -1629,10 +1703,10 @@ rule summarize_tracks_pca:
         {{
         if [[ {wildcards.env} == "mCG" || {wildcards.env} == "mCHG" || {wildcards.env} == "mCHH" ]]; then
             printf "Summarizing bigwigs for {wildcards.analysis_name} {wildcards.ref_genome} for mC samples in {wildcards.env} sequence context\n"
-            multiBigwigSummary bins -b {input.tracks} -o {output.array} -l {params.labels} -bs {params.bs} -n {params.step} -p {threads}
+            multiBigwigSummary bins -b {input.tracks} -o {output.array} -l {params.sample_keys} -bs {params.bs} -n {params.step} -p {threads}
         else
             printf "Summarizing bams for {wildcards.analysis_name} {wildcards.ref_genome} for {wildcards.env} samples\n"
-            multiBamSummary bins -b {input.tracks} -o {output.array} -l {params.labels} -bs {params.bs} -n {params.step} -p {threads}
+            multiBamSummary bins -b {input.tracks} -o {output.array} -l {params.sample_keys} -bs {params.bs} -n {params.step} -p {threads}
         fi
         }} 2>&1 | tee -a "{log}"
         """
@@ -1643,6 +1717,7 @@ rule plot_PCA_correlation:
     output:
         plot = f"{RESULTS_DIR}/combined/plots/PCA__{{env}}__{{analysis_name}}__{{ref_genome}}.pdf"
     params:
+        labels = lambda wildcards: define_input_for_pca(wildcards, "labels"),
         colors = lambda wildcards: define_input_for_pca(wildcards, "colors"),
         bs = config['pca_bs']
     log:
@@ -1652,7 +1727,7 @@ rule plot_PCA_correlation:
         """
         {{
         printf "Plotting PCA for {wildcards.analysis_name} {wildcards.ref_genome} for {wildcards.env} samples\n"
-        if ! plotPCA -in {input.array} -T "PCA for {wildcards.env} in {params.bs}bp bins" -o {output.plot} --colors {params.colors:q} --transpose; then
+        if ! plotPCA -in {input.array} -T "PCA for {wildcards.env} in {params.bs}bp bins" -o {output.plot} --labels {params.labels:q} --colors {params.colors:q} --transpose; then
             printf "WARNING: plotPCA failed (insufficient data for PCA) — creating placeholder\n"
             touch {output.plot}
         fi
