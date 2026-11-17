@@ -24,6 +24,10 @@ dependencies:
   - r-rcolorbrewer
   - r-purrr
   - r-complexupset
+  - r-jsonlite
+  - r-data.table
+  - r-scales
+  - bioconductor-complexheatmap
   - bioconductor-gviz
   - bioconductor-genomicfeatures
   - bioconductor-rtracklayer

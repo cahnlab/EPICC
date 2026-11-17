@@ -26,11 +26,18 @@
 # Override rules: a key the theme doesn't define is an error (a typo must not
 # be silently ignored), and a value must have the type of the default it
 # replaces. `heatmap_colors` is the one open map -- it may gain entries for
-# data types the defaults don't name.
+# data types the defaults don't name. A `heatmap_colors` entry is either a list
+# of at least two colours or one matplotlib colour-map name ("viridis",
+# "RdBu_r"), looked up in plot_colormaps.json beside this file.
 
 suppressPackageStartupMessages({
   library(ggplot2)
 })
+
+# This file's directory, for plot_colormaps.json. source() records the path
+# it was called with; Rscript scripts source this file by absolute path.
+.EPICC_THEME_DIR <- tryCatch(dirname(normalizePath(sys.frame(1)$ofile)),
+                             error = function(e) NULL)
 
 # matplotlib colour maps deeptools used, as hex, so the R heatmaps keep the
 # look of the deeptools ones until a theme changes it.
@@ -49,6 +56,7 @@ suppressPackageStartupMessages({
   base_family = "",          # "" = the PDF device default (Helvetica)
   # Lines
   line_width = 0.6,          # mm (ggplot2 linewidth) for profile lines
+  profile_type = "lines",    # lines | fill | se | std (deeptools --plotType)
   dash_cycle = c("solid", "dashed", "dotted", "dotdash", "longdash", "twodash"),
   # Panels and facets
   grid_minor = FALSE,
@@ -97,6 +105,36 @@ EPICC_THEMES <- list(
 # Keys whose value is an open name -> value map rather than a fixed record.
 .EPICC_OPEN_MAPS <- c("heatmap_colors")
 
+# Keys that take one of a fixed set of values.
+.EPICC_CHOICES <- list(
+  profile_type = c("lines", "fill", "se", "std"),
+  legend_position = c("right", "bottom", "top", "left", "none")
+)
+
+.epicc_colormap_table <- NULL
+
+# matplotlib colour maps by name, as hex stops (plot_colormaps.json).
+epicc_colormaps <- function() {
+  if (is.null(.epicc_colormap_table)) {
+    path <- if (!is.null(.EPICC_THEME_DIR)) file.path(.EPICC_THEME_DIR, "plot_colormaps.json")
+    if (is.null(path) || !file.exists(path)) {
+      stop("plot_colormaps.json not found next to plot_theme.R")
+    }
+    .epicc_colormap_table <<- jsonlite::fromJSON(path)$maps
+  }
+  .epicc_colormap_table
+}
+
+# Hex stops of a named colour map; a `_r` suffix reverses it, as in matplotlib.
+epicc_colormap <- function(name) {
+  maps <- epicc_colormaps()
+  base <- sub("_r$", "", name)
+  if (!is.null(maps[[name]])) return(maps[[name]])
+  if (base != name && !is.null(maps[[base]])) return(rev(maps[[base]]))
+  stop("Unknown colour map '", name, "'. Known maps: ",
+       paste(names(maps), collapse = ", "), " (add _r to reverse)")
+}
+
 .epicc_same_type <- function(default, value) {
   if (is.numeric(default)) return(is.numeric(value))
   if (is.logical(default)) return(is.logical(value))
@@ -123,16 +161,23 @@ epicc_merge_theme <- function(base, overrides, where = "plot_theme_overrides") {
     if (key %in% .EPICC_OPEN_MAPS) {
       if (!is.list(value) || is.null(names(value))) stop(at, " must be a mapping")
       for (entry in names(value)) {
-        if (!is.character(value[[entry]]) || length(value[[entry]]) < 2) {
-          stop(at, ".", entry, " must be a list of at least two colours")
+        v <- value[[entry]]
+        if (!is.character(v) || length(v) < 1) {
+          stop(at, ".", entry, " must be a colour-map name or a list of at least two colours")
         }
-        base[[key]][[entry]] <- value[[entry]]
+        if (length(v) == 1) epicc_colormap(v)   # errors on an unknown name
+        base[[key]][[entry]] <- v
       }
     } else if (is.list(base[[key]])) {
       base[[key]] <- epicc_merge_theme(base[[key]], value, at)
     } else {
       if (!.epicc_same_type(base[[key]], value)) {
         stop(at, " must be ", class(base[[key]])[1], ", got ", class(value)[1])
+      }
+      allowed <- .EPICC_CHOICES[[key]]
+      if (!is.null(allowed) && !(length(value) == 1 && value %in% allowed)) {
+        stop(at, " must be one of ", paste(allowed, collapse = ", "), ", got ",
+             paste(value, collapse = ", "))
       }
       base[[key]] <- value
     }
@@ -202,16 +247,18 @@ epicc_dashes <- function(th, colours) {
   setNames(cycle[(rank - 1) %% length(cycle) + 1], names(colours))
 }
 
-# Colour ramp for a heatmap of one data type: the type's own entry, else its
-# family (mCG/mCHG/mCHH -> mC, ChIP_broad -> ChIP), else 'default' (e.g. a
-# mark name such as H3K9me2 that has no entry of its own).
+# Colour ramp (hex stops) for a heatmap of one data type: the type's own
+# entry, else its family (mCG/mCHG/mCHH -> mC, ChIP_broad -> ChIP), else
+# 'default' (e.g. a mark name such as H3K9me2 that has no entry of its own).
+# A colour-map name is expanded to its stops.
 epicc_heatmap_colors <- function(th, type) {
   maps <- th$heatmap_colors
-  if (!is.null(maps[[type]])) return(maps[[type]])
-  if (grepl("^mC", type) && !is.null(maps[["mC"]])) return(maps[["mC"]])
   family <- sub("_.*$", "", type)
-  if (!is.null(maps[[family]])) return(maps[[family]])
-  maps[["default"]]
+  v <- if (!is.null(maps[[type]])) maps[[type]]
+       else if (grepl("^mC", type) && !is.null(maps[["mC"]])) maps[["mC"]]
+       else if (!is.null(maps[[family]])) maps[[family]]
+       else maps[["default"]]
+  if (length(v) == 1) epicc_colormap(v) else v
 }
 
 # Write a ggplot to PDF at the given size in inches.

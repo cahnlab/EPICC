@@ -20,7 +20,12 @@ MC_SCRIPT = REPO / "workflow" / "scripts" / "R_mc_profile_by_context.R"
 SMK = REPO / "workflow" / "rules" / "combined_analysis.smk"
 
 sys.path.insert(0, os.path.join(REPO, "workflow", "scripts"))
-from config_validation import plot_theme_spec  # noqa: E402
+from config_validation import legacy_plot_params, plot_theme_spec  # noqa: E402
+
+
+def spec_json(cfg, r_drawn=()):
+    text, _ = plot_theme_spec(cfg, r_drawn)
+    return json.loads(text)
 
 
 def _have_r():
@@ -48,19 +53,19 @@ def _r(code, theme_spec=None, tmp_path=None):
 
 class TestPlotThemeSpec:
     def test_defaults_when_unset(self):
-        assert json.loads(plot_theme_spec({})) == {"theme": "default", "overrides": {}}
+        assert spec_json({}) == {"theme": "default", "overrides": {}}
 
     def test_passes_name_and_overrides(self):
         cfg = {"plot_theme": "presentation",
                "plot_theme_overrides": {"base_size": 12,
                                         "heatmap_colors": {"RNA": ["white", "darkgreen"]}}}
-        assert json.loads(plot_theme_spec(cfg)) == {
+        assert spec_json(cfg) == {
             "theme": "presentation",
             "overrides": {"base_size": 12, "heatmap_colors": {"RNA": ["white", "darkgreen"]}}}
 
     def test_null_overrides_block_is_empty(self):
         # A YAML key with every child commented out parses as None.
-        assert json.loads(plot_theme_spec({"plot_theme_overrides": None}))["overrides"] == {}
+        assert spec_json({"plot_theme_overrides": None})["overrides"] == {}
 
     def test_overrides_must_be_a_mapping(self):
         with pytest.raises(ValueError, match="plot_theme_overrides"):
@@ -76,6 +81,108 @@ class TestPlotThemeSpec:
         a = plot_theme_spec({"plot_theme_overrides": {"base_size": 12, "line_width": 1.0}})
         b = plot_theme_spec({"plot_theme_overrides": {"line_width": 1.0, "base_size": 12}})
         assert a == b
+
+
+# --- deprecated heatmaps_plot_params / profiles_plot_params -------------------
+
+SHIPPED_HEATMAP_PARAMS = {
+    env: "--colorMap seismic --interpolationMethod bilinear"
+    for env in ("all", "most", "ChIP", "TF", "RNA", "sRNA", "ATAC")
+}
+SHIPPED_HEATMAP_PARAMS["mC"] = "--colorMap Oranges --missingDataColor 0.9 --interpolationMethod nearest"
+SHIPPED = {"heatmaps_plot_params": SHIPPED_HEATMAP_PARAMS,
+           "profiles_plot_params": "--plotType lines"}
+BOTH = ("heatmaps", "profiles")
+
+
+class TestLegacyPlotParams:
+    def test_shipped_options_file_matches_these_defaults(self):
+        import yaml
+        cfg = yaml.safe_load((REPO / "config" / "epicc-options.yaml").read_text())
+        assert cfg["heatmaps_plot_params"] == SHIPPED_HEATMAP_PARAMS
+        assert cfg["profiles_plot_params"] == SHIPPED["profiles_plot_params"]
+
+    def test_nothing_translated_while_deeptools_draws(self):
+        cfg = {"heatmaps_plot_params": {"RNA": "--colorMap viridis --kmeans 3"},
+               "profiles_plot_params": "--plotType overlapped_lines"}
+        assert legacy_plot_params(cfg) == ({}, [])
+        assert spec_json(cfg)["overrides"] == {}
+
+    def test_shipped_defaults_add_no_overrides(self):
+        overrides, warnings = legacy_plot_params(SHIPPED, BOTH)
+        assert overrides == {}
+        assert len(warnings) == 2
+        assert all("deprecated" in w and "match the theme defaults" in w for w in warnings)
+
+    def test_colour_maps_lists_and_missing_colour(self):
+        cfg = {"heatmaps_plot_params": {
+            "RNA": "--colorMap viridis --interpolationMethod nearest",
+            "ChIP": "--colorList white,darkgreen",
+            "TF": "--colorMap seismic",
+            "mC": "--colorMap Reds_r --missingDataColor 0.5"}}
+        overrides, warnings = legacy_plot_params(cfg, ("heatmaps",))
+        assert overrides == {
+            "heatmap_colors": {"RNA": "viridis", "ChIP": ["white", "darkgreen"], "mC": "Reds_r"},
+            "heatmap_missing_color": "#808080"}
+        assert "Translated to plot_theme_overrides" in warnings[0]
+
+    def test_unknown_colour_map(self):
+        with pytest.raises(ValueError, match="unknown colour map 'nonesuch'"):
+            legacy_plot_params({"heatmaps_plot_params": {"RNA": "--colorMap nonesuch"}},
+                               ("heatmaps",))
+
+    def test_flag_without_theme_equivalent_stops_the_run(self):
+        with pytest.raises(ValueError, match=r"heatmaps_plot_params\.RNA: '--kmeans'"):
+            legacy_plot_params({"heatmaps_plot_params": {"RNA": "--colorMap seismic --kmeans 3"}},
+                               ("heatmaps",))
+        with pytest.raises(ValueError, match="'--yAxisLabel'"):
+            legacy_plot_params({"profiles_plot_params": "--yAxisLabel x"}, ("profiles",))
+
+    def test_per_sample_colour_maps_are_refused(self):
+        with pytest.raises(ValueError, match="one colour map per data type"):
+            legacy_plot_params({"heatmaps_plot_params": {"RNA": "--colorMap Reds Blues"}},
+                               ("heatmaps",))
+
+    def test_conflicting_missing_colours(self):
+        cfg = {"heatmaps_plot_params": {"RNA": "--missingDataColor black",
+                                        "mC": "--missingDataColor white"}}
+        with pytest.raises(ValueError, match="differs between envs"):
+            legacy_plot_params(cfg, ("heatmaps",))
+
+    def test_plot_type(self):
+        overrides, _ = legacy_plot_params({"profiles_plot_params": "--plotType se"}, ("profiles",))
+        assert overrides == {"profile_type": "se"}
+        with pytest.raises(ValueError, match="--plotType heatmap is not drawn in R"):
+            legacy_plot_params({"profiles_plot_params": "--plotType heatmap"}, ("profiles",))
+
+    def test_only_drawn_families_are_translated(self):
+        cfg = {"heatmaps_plot_params": {"RNA": "--colorMap viridis"},
+               "profiles_plot_params": "--plotType fill"}
+        assert legacy_plot_params(cfg, ("profiles",))[0] == {"profile_type": "fill"}
+        assert legacy_plot_params(cfg, ("heatmaps",))[0] == {"heatmap_colors": {"RNA": "viridis"}}
+
+    def test_user_overrides_win(self):
+        cfg = {"heatmaps_plot_params": {"RNA": "--colorMap viridis", "sRNA": "--colorMap magma"},
+               "profiles_plot_params": "--plotType fill",
+               "plot_theme_overrides": {"profile_type": "se",
+                                        "heatmap_colors": {"RNA": ["white", "red"]}}}
+        assert spec_json(cfg, BOTH)["overrides"] == {
+            "profile_type": "se",
+            "heatmap_colors": {"RNA": ["white", "red"], "sRNA": "magma"}}
+
+    def test_snakefile_translates_nothing_yet(self):
+        # Phase 1: every family is still drawn by deeptools.
+        text = (REPO / "workflow" / "Snakefile").read_text()
+        assert "R_DRAWN_PLOT_FAMILIES = ()" in text
+
+
+def test_colour_map_table_is_sorted_and_complete():
+    table = json.loads((REPO / "workflow" / "scripts" / "plot_colormaps.json").read_text())
+    maps = table["maps"]
+    assert {"seismic", "Oranges", "viridis", "RdBu", "coolwarm"} <= set(maps)
+    assert all(len(v) == 17 and all(c.startswith("#") and len(c) == 7 for c in v)
+               for v in maps.values())
+    assert not any(n.endswith("_r") for n in maps)
 
 
 def test_profile_rule_hands_the_theme_to_the_mc_script():
@@ -144,11 +251,36 @@ class TestTheme:
         assert proc.returncode == 0, proc.stderr
         assert proc.stdout.split() == ["white", "black", "|", "#FFF5EB"]
 
-    def test_heatmap_colour_needs_two_colours(self, tmp_path):
+    def test_heatmap_colour_single_name_must_be_a_colour_map(self, tmp_path):
+        # One string is a colour-map name; a single colour is not a ramp.
         spec = {"theme": "default", "overrides": {"heatmap_colors": {"RNA": "red"}}}
         proc = _r("", spec, tmp_path)
         assert proc.returncode != 0
-        assert "heatmap_colors.RNA" in proc.stderr
+        assert "Unknown colour map 'red'" in proc.stderr
+
+    def test_heatmap_colour_by_map_name(self, tmp_path):
+        spec = {"theme": "default",
+                "overrides": {"heatmap_colors": {"RNA": "viridis", "sRNA": "viridis_r"}}}
+        proc = _r("r <- epicc_heatmap_colors(th, 'RNA'); s <- epicc_heatmap_colors(th, 'sRNA'); "
+                  "cat(length(r), r[1], r[17], identical(rev(r), s))", spec, tmp_path)
+        assert proc.returncode == 0, proc.stderr
+        assert proc.stdout.split() == ["17", "#440154", "#fde725", "TRUE"]
+
+    def test_colour_map_table_matches_the_seismic_default(self, tmp_path):
+        # plot_colormaps.json samples matplotlib; the theme's exact seismic
+        # stops are its 0, 1/4, 3/4 and 1 points.
+        proc = _r("m <- toupper(epicc_colormap('seismic')); cat(m[c(1, 5, 13, 17)])")
+        assert proc.returncode == 0, proc.stderr
+        assert proc.stdout.split() == ["#00004C", "#0101FF", "#FE0000", "#800000"]
+
+    def test_profile_type_choices(self, tmp_path):
+        ok = _r("cat(th$profile_type)", {"theme": "default", "overrides": {"profile_type": "se"}},
+                tmp_path)
+        assert ok.returncode == 0, ok.stderr
+        assert ok.stdout.strip() == "se"
+        bad = _r("", {"theme": "default", "overrides": {"profile_type": "heatmap"}}, tmp_path)
+        assert bad.returncode != 0
+        assert "profile_type must be one of lines, fill, se, std" in bad.stderr
 
     @pytest.mark.parametrize("dtype,first", [
         ("mCHG", "#FFF5EB"),        # context -> mC

@@ -18,7 +18,8 @@ Additional variants (e.g. another theme) are rendered next to "new".
 Usage:
   python dev/plot_compare.py --out cmp/ --old-ref REF [--family mc_profile]
 
-Needs Rscript (ggplot2, jsonlite), pdftoppm (poppler) and Pillow. Each new
+Needs Rscript (ggplot2, jsonlite, data.table), pdftoppm (poppler) and Pillow;
+the `scales` family also needs deeptools on PATH. Each new
 conversion phase adds a family to FAMILIES; dev/docs/r-plotting-plan.md lists
 which family covers which plot.
 """
@@ -46,9 +47,10 @@ def run(cmd, **kw):
 
 
 def scripts_at(ref, dest):
-    """Extract workflow/scripts as of `ref` into dest; return the scripts dir."""
-    data = subprocess.run(["git", "-C", str(REPO), "archive", ref, "workflow/scripts"],
-                          capture_output=True, check=True).stdout
+    """Extract workflow/scripts (and the rule files) as of `ref` into dest;
+    return the scripts dir."""
+    data = subprocess.run(["git", "-C", str(REPO), "archive", ref, "workflow/scripts",
+                           "workflow/rules"], capture_output=True, check=True).stdout
     with tarfile.open(fileobj=BytesIO(data)) as tar:
         tar.extractall(dest, filter="data")
     return Path(dest) / "workflow" / "scripts"
@@ -116,7 +118,7 @@ def mc_profile_fixture(d):
         f"{s}_{c}\t{c}\t{colours[s]}\t{s}\n" for c in contexts for s in series))
 
 
-def family_mc_profile(work, old_scripts):
+def family_mc_profile(work, old_scripts, old_smk):
     """Profile_pergroup__*__mC: R_mc_profile_by_context.R, old ref vs now."""
     mc_profile_fixture(work)
     args = [str(work / "profile.tab"), str(work / "samples.tsv")]
@@ -135,8 +137,73 @@ def family_mc_profile(work, old_scripts):
     return renders
 
 
+def scales_fixture(path, nregions=300, nbins=30):
+    """A `most`-style matrix: two marks two orders of magnitude apart, H3K9me
+    next to H3K9me2, and a stranded RNA track whose plus/minus columns
+    interleave by sample."""
+    import gzip
+    import random
+    rnd = random.Random(7)
+    keys = ["WT__H3K9me2", "ddm1__H3K9me2", "WT__H3K9me", "WT__H3K4me3", "ddm1__H3K4me3",
+            "WT__RNA_plus", "WT__RNA_minus", "ddm1__RNA_plus", "ddm1__RNA_minus"]
+    scale = {"H3K9me2": 60, "H3K9me": 6, "H3K4me3": 0.5, "RNA_plus": 30, "RNA_minus": 3}
+
+    def values(key, r):
+        mark = key.split("__")[-1]
+        hump = [math.exp(-((b - nbins / 2) / (nbins / 5)) ** 2) for b in range(nbins)]
+        level = scale[mark] * (0.5 if key.startswith("ddm1") else 1) * (r / nregions)
+        return [max(0.0, level * (0.3 + h) + rnd.gauss(0, scale[mark] * 0.05)) for h in hump]
+
+    half = nregions // 2
+    header = {
+        "upstream": [1000] * len(keys), "downstream": [1000] * len(keys),
+        "body": [1000] * len(keys), "bin size": [100] * len(keys),
+        "ref point": [None] * len(keys), "verbose": False, "bin avg type": "mean",
+        "missing data as zero": True, "min threshold": None, "max threshold": None,
+        "scale": 1, "skip zeros": False, "nan after end": False, "proc number": 1,
+        "sort regions": "keep", "sort using": "mean",
+        "unscaled 5 prime": [0] * len(keys), "unscaled 3 prime": [0] * len(keys),
+        "group_labels": ["genes", "genes_nostrand"],
+        "group_boundaries": [0, half, nregions], "sample_labels": keys,
+        "sample_boundaries": [i * nbins for i in range(len(keys) + 1)],
+    }
+    with gzip.open(path, "wt") as fh:
+        fh.write("@" + json.dumps(header, separators=(",", ":")) + "\n")
+        for r in range(nregions):
+            vals = [v for k in keys for v in values(k, r)]
+            fh.write(f"chr1\t{r * 5000}\t{r * 5000 + 1000}\tg{r}\t0\t{'+-'[r % 2] if r < half else '.'}\t"
+                     + "\t".join(f"{v:.4f}" for v in vals) + "\n")
+
+
+def family_scales(work, old_scripts, old_smk):
+    """heatmaps_scales: type -- scales from the bash computing_matrix_scales at
+    the old ref vs plot_scales.R, each drawn by plotHeatmap on the same matrix.
+    Needs deeptools on PATH."""
+    sys.path.insert(0, str(REPO / "dev"))
+    from scales_rule import run_scales_rule
+    matrix = work / "most.gz"
+    scales_fixture(matrix)
+    heat, prof = run_scales_rule(matrix, work / "rule", "type", "mean", smk_text=old_smk,
+                                 scripts_dir=old_scripts)
+    r = run(["Rscript", "-e", f'''
+        source("{SCRIPTS / "matrix_io.R"}"); source("{SCRIPTS / "plot_scales.R"}")
+        f <- scale_flags(matrix_scales(read_matrix("{matrix}"), "type", "mean"))
+        cat(f[["heatmap"]], "\\n", f[["profile"]], "\\n", sep = "")'''])
+    new_heat, new_prof = r.stdout.splitlines()[:2]
+    (work / "flags.txt").write_text(
+        f"old (bash rule):\n  {heat}\n  {prof}\nnew (plot_scales.R):\n  {new_heat}\n  {new_prof}\n")
+    renders = []
+    for name, h, p in (("old", heat, prof), ("new", new_heat, new_prof)):
+        out = work / f"{name}.pdf"
+        run(["plotHeatmap", "-m", str(matrix), "-o", str(out), "--colorMap", "seismic",
+             "--startLabel", "start", "--endLabel", "end", *h.split(), *p.split()])
+        renders.append((f"{name}: " + ("bash rule scales" if name == "old" else "plot_scales.R scales"), out))
+    return renders
+
+
 FAMILIES = {
     "mc_profile": family_mc_profile,
+    "scales": family_scales,
 }
 
 
@@ -153,7 +220,8 @@ def main():
         for fam in a.family or sorted(FAMILIES):
             work = a.out / fam
             work.mkdir(parents=True, exist_ok=True)
-            renders = FAMILIES[fam](work, old_scripts)
+            old_smk = (old_scripts.parent / "rules" / "combined_analysis.smk").read_text()
+            renders = FAMILIES[fam](work, old_scripts, old_smk)
             pngs = [(t, rasterise(p)) for t, p in renders]
             side_by_side(pngs, work / "compare.png")
             old_md5 = pixels_md5(pngs[0][1])

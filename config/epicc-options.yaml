@@ -424,7 +424,7 @@ plot_theme: "default" # look of the plots drawn in R (workflow/scripts/plot_them
 #   base_size: 12
 #   line_width: 0.8
 #   heatmap_colors:
-#     RNA: ["white", "darkgreen"]
+#     RNA: ["white", "darkgreen"] # a colour list, or one matplotlib map name: RNA: "viridis"
 plot_allreps: false # whether to use data from all individual replicates or from merged samples when multiple replicates are present. Default to false (using merged replicates).
 # For deeptools heatmaps and profiles
 heatmaps_scales: "type" # options: [ 'default' = default scaling from deeptools, one scale for all samples | 'sample' = each sample on its own scale | 'type' = each type of data on a different scale (each ChIP mark + each TF + RNA + sRNA + each mC context) ]
