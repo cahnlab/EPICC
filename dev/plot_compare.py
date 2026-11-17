@@ -176,28 +176,33 @@ def scales_fixture(path, nregions=300, nbins=30):
 
 
 def family_scales(work, old_scripts, old_smk):
-    """heatmaps_scales: type -- scales from the bash computing_matrix_scales at
-    the old ref vs plot_scales.R, each drawn by plotHeatmap on the same matrix.
-    Needs deeptools on PATH."""
+    """heatmaps_scales: type -- computing_matrix_scales as it was (bash +
+    deeptools dataRange/plotProfile, frozen in dev/reference/) vs the rule as
+    it now stands (R_matrix_scales.R), each drawn by plotHeatmap on the same
+    matrix. flags.txt lists both and the largest difference per flag. Needs
+    deeptools on PATH."""
     sys.path.insert(0, str(REPO / "dev"))
-    from scales_rule import run_scales_rule
+    from scales_rule import parse_flags, run_scales_rule
     matrix = work / "most.gz"
     scales_fixture(matrix)
-    heat, prof = run_scales_rule(matrix, work / "rule", "type", "mean", smk_text=old_smk,
-                                 scripts_dir=old_scripts)
-    r = run(["Rscript", "-e", f'''
-        source("{SCRIPTS / "matrix_io.R"}"); source("{SCRIPTS / "plot_scales.R"}")
-        f <- scale_flags(matrix_scales(read_matrix("{matrix}"), "type", "mean"))
-        cat(f[["heatmap"]], "\\n", f[["profile"]], "\\n", sep = "")'''])
-    new_heat, new_prof = r.stdout.splitlines()[:2]
+    heat, prof = run_scales_rule(matrix, work / "old_rule", "type", "mean")
+    smk = (REPO / "workflow" / "rules" / "combined_analysis.smk").read_text()
+    new_heat, new_prof = run_scales_rule(matrix, work / "new_rule", "type", "mean", smk_text=smk)
+    diffs = []
+    for o, n in ((heat, new_heat), (prof, new_prof)):
+        o, n = parse_flags(o), parse_flags(n)
+        for flag in o:
+            d = max(abs(a - b) / max(abs(a), 1e-300) for a, b in zip(o[flag], n[flag]))
+            diffs.append(f"  {flag}: largest relative difference {d:.2e}")
     (work / "flags.txt").write_text(
-        f"old (bash rule):\n  {heat}\n  {prof}\nnew (plot_scales.R):\n  {new_heat}\n  {new_prof}\n")
+        f"old (bash + dataRange/plotProfile):\n  {heat}\n  {prof}\n"
+        f"new (R_matrix_scales.R):\n  {new_heat}\n  {new_prof}\n" + "\n".join(diffs) + "\n")
     renders = []
     for name, h, p in (("old", heat, prof), ("new", new_heat, new_prof)):
         out = work / f"{name}.pdf"
         run(["plotHeatmap", "-m", str(matrix), "-o", str(out), "--colorMap", "seismic",
              "--startLabel", "start", "--endLabel", "end", *h.split(), *p.split()])
-        renders.append((f"{name}: " + ("bash rule scales" if name == "old" else "plot_scales.R scales"), out))
+        renders.append((f"{name}: " + ("bash + deeptools scales" if name == "old" else "R scales"), out))
     return renders
 
 

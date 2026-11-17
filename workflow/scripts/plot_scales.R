@@ -37,13 +37,31 @@ column_marks <- function(keys) {
   vapply(strsplit(keys, "__", fixed = TRUE), function(f) f[length(f)], "")
 }
 
+# numpy's percentile (method "linear", R's quantile type 7), computed with
+# numpy's own interpolation formula so the result is the same double, not
+# merely the same to the last bit or two: a + (b - a) * t, or b - (b - a) *
+# (1 - t) when t >= 0.5.
+np_percentile <- function(v, q) {
+  v <- sort(v)
+  n <- length(v)
+  vapply(q, function(qq) {
+    h <- (n - 1) * (qq / 100)
+    lo <- floor(h)
+    t <- h - lo
+    a <- v[lo + 1]
+    b <- v[min(lo + 2, n)]
+    d <- b - a
+    if (t >= 0.5) b - d * (1 - t) else a + d * t
+  }, 0)
+}
+
 # dataRange's 10th and 90th percentiles of each column's values (NA when the
-# column holds a NaN). numpy's default percentile is R's quantile type 7.
+# column holds a NaN, as numpy's percentile propagates it).
 column_ranges <- function(m) {
   t(vapply(seq_len(nrow(m$samples)), function(i) {
     v <- m$values[, sample_columns(m, i)]
     if (length(v) == 0 || anyNA(v)) return(c(NA_real_, NA_real_))
-    unname(stats::quantile(v, c(0.1, 0.9), type = 7, names = FALSE))
+    np_percentile(as.vector(v), c(10, 90))
   }, c(0, 0)))
 }
 
@@ -76,6 +94,13 @@ matrix_scales <- function(m, mode = "type", average = "mean",
   rng <- column_ranges(m)
   prof <- group_means(m, average)
   prof_of <- function(cols) prof$value[as.character(prof$sample) %in% keys[cols]]
+  # The bash matched a mark only in keys that have a '__' (every key the
+  # pipeline builds does); in type mode a key without one found no data.
+  if (mode == "type") {
+    bare <- !grepl("__", keys, fixed = TRUE)
+    rng[bare, ] <- NA_real_
+    prof$value[as.character(prof$sample) %in% keys[bare]] <- NA_real_
+  }
   units <- if (mode == "type") split(seq_along(keys), factor(marks, levels = unique(marks)))
            else as.list(seq_along(keys))
   for (cols in units) {
@@ -132,7 +157,28 @@ shared_ylim <- function(scales) {
 # numbers (%.6g).
 scale_flags <- function(scales) {
   if (all(is.na(scales$zmin))) return(c(heatmap = "", profile = ""))
-  f <- function(x, d) paste(trimws(formatC(x, format = "g", digits = d)), collapse = " ")
-  c(heatmap = paste0("--zMin ", f(scales$zmin, 15), " --zMax ", f(scales$zmax, 15)),
-    profile = paste0("--yMin ", f(scales$ymin, 6), " --yMax ", f(scales$ymax, 6)))
+  z <- function(x) paste(vapply(x, .shortest, ""), collapse = " ")
+  y <- function(x) paste(trimws(formatC(x, format = "g", digits = 6)), collapse = " ")
+  c(heatmap = paste0("--zMin ", z(scales$zmin), " --zMax ", z(scales$zmax)),
+    profile = paste0("--yMin ", y(scales$ymin), " --yMax ", y(scales$ymax)))
+}
+
+# A number with as few digits as identify its double (at most 17), in plain
+# notation for the magnitudes scales take, as dataRange printed them. The text
+# can still differ from Python's (R's own string-to-number parser is not
+# always correctly rounded at 16-17 digits, so R may keep a digit Python
+# drops), but deeptools and R read both back as the same double.
+.shortest <- function(x) {
+  if (x == 0) return("0")
+  for (d in 1:17) {
+    s <- trimws(formatC(x, format = "g", digits = d))
+    if (as.numeric(s) == x) break
+  }
+  e <- floor(log10(abs(x)))
+  if (e >= -4 && e < 16) {
+    s <- formatC(x, format = "f", digits = max(d - 1 - e, 0))
+    if (grepl(".", s, fixed = TRUE)) s <- sub("0+$", "", s)
+    s <- sub("\\.$", "", s)
+  }
+  trimws(s)
 }

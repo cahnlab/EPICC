@@ -312,10 +312,32 @@ PR leaves `epibutton.yaml` untouched and no env is rebuilt.
   The `scales` comparison family draws a `type`-mode `most` heatmap with the
   rule's limits and with R's. The two are pixel-identical.
 
-  The rule itself still runs in bash, and still calls `plotProfile`, until
-  phase 2. Until then, `group_means()`'s parity test against `plotProfile
-  --outFileNameData` (`test_matrix_io.py`) keeps the R and deeptools
-  averages in step.
+  **The rule now runs it.** At the user's call, all scaling moved to R in
+  phase 1: `computing_matrix_scales` runs `R_matrix_scales.R`, which writes
+  the same flag files, and no longer calls `dataRange` or `plotProfile`.
+  Rule connections changed in two ways:
+  - its `temp_values`, `temp_profile` and `temp_profile_values` outputs are
+    gone (nothing else read them);
+  - its code changed, so Snakemake reruns it, and the plots that read its
+    files, once. No matrix is rebuilt.
+
+  The old bash is frozen in
+  `dev/reference/computing_matrix_scales_deeptools.sh` and run beside the new
+  rule by `test_plot_scales.py` and the `scales` comparison family. The
+  comparison covered three fixtures plus two matrices `computeMatrix` built
+  from bigwigs (one with NaNs, one `--missingDataAsZero --skipZeros`
+  reference-point), in every mode with mean and median. Results:
+  - **z:** every value is the same double. Where the text differs, it is the
+    spelling: `dataRange` prints `0.0` where R prints `0`, and Python may use
+    16 digits where R uses 17.
+  - **y:** text-identical everywhere. There was no deeptools-average
+    difference to explain, because `group_means()` equals `plotProfile`'s
+    averages (checked in `test_matrix_io.py`).
+  - **Rendered check:** a heatmap drawn with either set of limits is
+    pixel-identical.
+
+  Phase 2's R profile takes its limits from the same functions, either by
+  reading these files or by calling `matrix_scales()` directly.
 - **Behaviours of today's rule found while porting**, to settle in phase 2:
   - `Profile__` is drawn with deeptools' default mean even when
     `profiles_scale: median`, while its y-limits come from the median. Its
@@ -339,16 +361,8 @@ PR leaves `epibutton.yaml` untouched and no env is rebuilt.
 - Limits come from `plot_scales.R` on the matrix being drawn. The y bounds
   must come from the same `group_means()` call that produces the curves, so
   the plot cannot run past its own limits.
-- `computing_matrix_scales` stops calling `plotProfile`. That call renders a
-  throwaway PDF only to get `--outFileNameData`, and it is the last deeptools
-  *plotting* call outside the plot rules. The y bounds come from
-  `matrix_scales()` instead, which averages with `group_means()`, the same
-  function the R profile draws with. `scale_flags()` writes the same file
-  format, so deeptools can keep drawing the heatmaps from those files until
-  phase 3.
-- `dataRange` is deeptools data work and may stay as the z source: the goal is
-  to take plotting off deeptools, not to remove deeptools. `matrix_scales()`
-  computes z the same way, so switching z to R is optional (phase 5).
+- Scales are already in R (phase 1). Each R profile must take its y-limits
+  from `matrix_scales()` with the same `profiles_scale` it draws with.
 - Tests must check that the R profile gives matrix column *i* the y-limits of
   column *i* (look up by key with `scale_for_column`, never by position within
   a mark), on an interleaved stranded matrix. Phase 3 adds the same check for
@@ -368,12 +382,11 @@ PR leaves `epibutton.yaml` untouched and no env is rebuilt.
   scatter + scree, patchwork), colours/labels from the display table. Keep the
   empty-placeholder behaviour when PCA fails.
 
-### Phase 5: z ranges into R (optional)
-- `plot_scales.R` (phase 1) already computes z as `dataRange` does. Phase 2
-  moves only the y bounds off `plotProfile`. Replacing `dataRange` as well
-  would make the scales rule pure R. That is optional: `dataRange` is data
-  work, and deeptools stays in the pipeline for `computeMatrix`,
-  `computeMatrixOperations`, `bamCoverage`/`bamCompare` and the like.
+### Phase 5: scales into R (done in phase 1)
+- `computing_matrix_scales` runs `R_matrix_scales.R`. The aim is to take
+  plotting off deeptools, not to remove it. deeptools stays for
+  `computeMatrix`, `computeMatrixOperations` (rbind, sort, relabel),
+  `bamCoverage`/`bamCompare` and the like.
 
 ### Phase 6: existing R plots adopt the theme
 - UpSet, mapping/peak/size stats, expression, MDS (ggplot2 from `plotMDS(...,
@@ -411,7 +424,7 @@ fixture matrix. Small fixtures are generated in the script; real matrices
 | `mc_profile` (groundwork; rerun in phase 1) | `Profile_pergroup__*__mC__*` | `R_mc_profile_by_context.R` at the #112 head (phase 1: at the #113 head) | the same script on `plot_theme.R`, default theme + `presentation` | `mc_profile/compare.png`: the default theme is pixel-identical both times. Phase 1 draws no new plot. |
 | `profile` (phase 2) | `Profile__`, `Profile_pergroup__` (non-mC and mC) | `plotProfile` / `--perGroup` | `R_profile.R` | `profile/compare.png`, one row per plot type |
 | `heatmap` (phase 3) | `Heatmap__`, `Heatmap_sorted__` | `plotHeatmap` | `R_heatmap.R` | `heatmap/compare.png`; also diff the `_sorted_regions.bed` |
-| `scales` (phase 1) | `heatmaps_scales: type` limits on a `most` heatmap (H3K9me2 0–60 next to H3K4me3 0–0.5, H3K9me, interleaved RNA plus/minus) | `computing_matrix_scales` bash at the base branch, drawn by `plotHeatmap` | `plot_scales.R` limits, drawn by the same `plotHeatmap` | `scales/compare.png` + `scales/flags.txt`: pixel-identical. Needs deeptools on PATH |
+| `scales` (phase 1) | `heatmaps_scales: type` limits on a `most` heatmap (H3K9me2 0–60 next to H3K4me3 0–0.5, H3K9me, interleaved RNA plus/minus) | `computing_matrix_scales` as bash + `dataRange`/`plotProfile` (`dev/reference/`), drawn by `plotHeatmap` | the rule as it stands (`R_matrix_scales.R`), drawn by the same `plotHeatmap` | `scales/compare.png` + `scales/flags.txt` (both flag sets, largest difference per flag): pixel-identical. Needs deeptools on PATH |
 | `pca` (phase 4) | `PCA__` | `plotPCA` | `R_pca.R` | `pca/compare.png` |
 | `stats` / `upset` / `deg` / `browser` (phase 6) | existing R plots | current script | themed script | one `compare.png` per family |
 | `fingerprint` (phase 7) | `Fingerprint__` | `plotFingerprint` PNG | R PDF | `fingerprint/compare.png` |

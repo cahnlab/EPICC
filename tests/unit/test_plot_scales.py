@@ -283,3 +283,39 @@ class TestAgainstTheRule:
     def test_default_writes_nothing(self, matrix, tmp_path):
         path, _ = matrix
         assert run_scales_rule(path, tmp_path / "rule", "default") == ("", "")
+
+    @pytest.mark.parametrize("mode", ["type", "sample", "default"])
+    @pytest.mark.parametrize("average", ["mean", "median"])
+    def test_new_rule_writes_what_the_old_one_did(self, matrix, tmp_path, mode, average):
+        """The rule as it now stands (Rscript R_matrix_scales.R) against the
+        frozen bash + deeptools version, file for file."""
+        path, _ = matrix
+        smk = (REPO / "workflow" / "rules" / "combined_analysis.smk").read_text()
+        old = run_scales_rule(path, tmp_path / "old", mode, average, MC)
+        new = run_scales_rule(path, tmp_path / "new", mode, average, MC, smk_text=smk)
+        # The same doubles, value for value (y is even the same text; z can be
+        # spelled differently -- "0.0" from dataRange vs "0" -- but reads back
+        # identically, as deeptools reads it).
+        for o, n in zip(old, new):
+            assert parse_flags(n) == parse_flags(o)
+
+
+@needs_r
+@pytest.mark.parametrize("mode", ["type", "sample", "default"])
+def test_rule_runs_without_deeptools(matrix, tmp_path, mode):
+    """The rule needs only R and Python now: its flags, in column order."""
+    path, rows = matrix
+    smk = (REPO / "workflow" / "rules" / "combined_analysis.smk").read_text()
+    assert "plotProfile" not in smk[smk.index("rule computing_matrix_scales:"):
+                                   smk.index("rule plotting_heatmap_on_targetfile:")]
+    heat, prof = run_scales_rule(path, tmp_path / "new", mode, "mean", MC, smk_text=smk)
+    if mode == "default":
+        assert (heat, prof) == ("", "")
+        return
+    h, p = parse_flags(heat), parse_flags(prof)
+    want = expected(rows, mode)
+    assert h["--zMin"] == pytest.approx([w[0] for w in want], rel=1e-12)
+    assert h["--zMax"] == pytest.approx([w[1] for w in want], rel=1e-12)
+    # y is written as awk wrote it, %.6g
+    assert p["--yMin"] == pytest.approx([w[2] for w in want], rel=1e-5, abs=1e-9)
+    assert p["--yMax"] == pytest.approx([w[3] for w in want], rel=1e-5, abs=1e-9)
