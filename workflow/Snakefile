@@ -14,6 +14,11 @@ from scripts.config_validation import (
     find_quoted_params,
     format_quoted_params_error,
 )
+from scripts.rfam_classes import (
+    validate_structural_rna_classes,
+    selection_from_config as rfam_selection_from_config,
+    selection_label as rfam_selection_label,
+)
 from scripts.samplefile_validation import (
     check_table, check_genome_config, check_extra_output_files, resolve_data_path,
 )
@@ -162,6 +167,14 @@ if "genomes" not in config:
 _quoted_params = find_quoted_params(config)
 if _quoted_params:
     sys.exit(format_quoted_params_error(_quoted_params))
+
+# ---------------------------------------------------------------------------
+# Rfam classes depleted from sRNA libraries (auto-derived structural RNAs)
+# ---------------------------------------------------------------------------
+_rfam_class_errors = validate_structural_rna_classes(config)
+if _rfam_class_errors:
+    sys.exit("ERROR: " + "\nERROR: ".join(_rfam_class_errors))
+STRUCTURAL_RNA_SELECTION = rfam_selection_label(*rfam_selection_from_config(config))
 
 # ---------------------------------------------------------------------------
 # Intermediate file retention

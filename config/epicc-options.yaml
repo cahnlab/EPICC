@@ -412,6 +412,26 @@ dmc_dmr_method: "dmrcaller"
 nextflex_v3_deduplication: false # additional deduplication if nextflex v3 kit was used for sRNA library preparation
 structural_rna_depletion: true # to filter structural RNA (rRNAs, tRNAs, snoRNAs) before mapping. Recommended step when studying microRNAs and small interfering RNAs.
 infernal_threshold: "ga" # threshold for Infernal structural RNA annotation: "ga" (Rfam gathering threshold, recommended) or a numeric E-value (e.g. 1e-5 for more aggressive filtering). Only used when structural_rna_fafile is auto-derived.
+# ADVANCED: which Rfam classes the auto-derived structural RNA FASTA depletes.
+# Rfam also holds miRNA, lncRNA, riboswitch, CRISPR and other families, so not
+# every Rfam hit is a structural RNA. Default (option absent): deplete only
+#   filter: ["rRNA", "tRNA", "snoRNA"]
+# Set exactly ONE of the two keys below (they cannot be combined):
+#   filter: [...]  deplete hits to families in these classes only
+#   keep:   [...]  deplete every Rfam hit EXCEPT these classes
+#                  (keep: [] depletes all Rfam hits, as EPICC did before this option)
+# Classes are terms of Rfam's family `type` field, and a class selects every
+# family whose type path contains it (Rfam nests snoRNA under snRNA, so
+# "snoRNA" takes C/D-box, H/ACA-box and scaRNA families, while "snRNA" also
+# adds the spliceosomal snRNAs). Valid classes: Gene, rRNA, tRNA, snRNA,
+# snoRNA, CD-box, HACA-box, scaRNA, splicing, miRNA, sRNA, lncRNA, antisense,
+# ribozyme, CRISPR, antitoxin, Cis-reg, riboswitch, leader, thermoregulator,
+# IRES, frameshift_element, Intron.
+# Ignored for genomes with an explicit structural_rna_fafile (used as given).
+# Keep this commented out unless you need it: the default is applied in code.
+#structural_rna_classes:
+#  filter: ["rRNA", "tRNA", "snoRNA"]
+#  #keep: ["miRNA"]
 srna_mapping_params: "--mmap u --dicermin 21 --dicermax 24" # consider adding --known_miRNAs KNOWN_MIRNAS.fa (fetching miRNAs sequences from miRBase)
 shortstack_dn_mirna: true # enable ShortStack de novo miRNA discovery; set false when libraries lack true small RNA size profiles (e.g. rRNA-depleted total RNA)
 srna_min_size: 21 # these sizes in nucleotide will be used for filtering bigiwg and creating an individual file for each nucleotide size in between (e.g. 20 21 22 23 24). Also used in the Upset plots (if within the dicer calls above)

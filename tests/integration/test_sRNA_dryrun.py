@@ -154,6 +154,57 @@ class TestStructuralRNADepletion:
             "Structural RNA bt2 index should be in the DAG"
 
 
+def _auto_structural_options(src, dest, extra=""):
+    """Copy an options file without structural_rna_fafile (auto-derived path)."""
+    lines = [l for l in Path(src).read_text().splitlines(keepends=True)
+             if "structural_rna_fafile" not in l]
+    dest.write_text("".join(lines) + extra)
+    return str(dest)
+
+
+class TestAutoStructuralRNAClasses:
+    """Auto-derived structural RNAs go through the Rfam class selection."""
+
+    def test_auto_path_selects_classes(self, snakemake_available, repo_root,
+                                       test_options, tmp_path):
+        if not snakemake_available:
+            pytest.skip("Snakemake not installed")
+        opts = _auto_structural_options(
+            test_options, tmp_path / "opts.yaml",
+            "structural_rna_classes:\n  keep: [\"miRNA\"]\n")
+        result = run_snakemake_dryrun(repo_root, opts, WT_REP1_21NT_PLUS,
+                                      ["--printshellcmds"])
+        assert result.returncode == 0, f"Dry-run failed: {result.stderr}"
+        output = result.stdout + result.stderr
+        for rule in ("build_structural_rna_db", "download_rfam_family_table",
+                     "select_structural_rna_classes",
+                     "make_bt2_indices_for_structural_RNAs"):
+            assert rule in output, f"{rule} missing from the DAG"
+        assert '--selection "keep:miRNA"' in output
+        assert "structural_rnas_selected.fa" in output
+
+    def test_user_fasta_skips_selection(self, snakemake_available, repo_root,
+                                        test_options):
+        if not snakemake_available:
+            pytest.skip("Snakemake not installed")
+        result = run_snakemake_dryrun(repo_root, test_options, WT_REP1_21NT_PLUS)
+        assert result.returncode == 0, f"Dry-run failed: {result.stderr}"
+        output = result.stdout + result.stderr
+        assert "select_structural_rna_classes" not in output
+        assert "build_structural_rna_db" not in output
+
+    def test_both_modes_refused_at_startup(self, snakemake_available, repo_root,
+                                           test_options, tmp_path):
+        if not snakemake_available:
+            pytest.skip("Snakemake not installed")
+        opts = _auto_structural_options(
+            test_options, tmp_path / "opts.yaml",
+            "structural_rna_classes:\n  filter: [rRNA]\n  keep: [miRNA]\n")
+        result = run_snakemake_dryrun(repo_root, opts, WT_REP1_21NT_PLUS)
+        assert result.returncode != 0
+        assert "not both" in result.stdout + result.stderr
+
+
 # ===========================================================================
 # TestSizeFiltering
 # ===========================================================================

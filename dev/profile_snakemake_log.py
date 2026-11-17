@@ -72,6 +72,7 @@ PHASE_MAP = {
     "check_chrom_sizes": "Setup", "compute_genome_stats": "Setup",
     "resolve_taxid": "Setup", "prep_region_file": "Setup",
     "download_rfam": "Setup", "build_structural_rna_db": "Setup",
+    "download_rfam_family_table": "Setup", "select_structural_rna_classes": "Setup",
     "check_te_file": "Setup", "make_bt2_indices": "Setup",
     "make_chromap_index": "Setup", "make_bismark_indices": "Setup",
     "make_STAR_indices": "Setup", "make_bowtie1_indices": "Setup",
