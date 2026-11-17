@@ -28,25 +28,27 @@ LABELS = ["WT_mCG", "ddm1_mCG", "WT_mCHG", "ddm1_mCHG", "WT_mCHH", "ddm1_mCHH"]
 NBINS = 6
 
 
-def _profile(path, groups):
+def _profile(path, groups, labels=LABELS):
     ticks = ["-2.0Kb", "", "start", "end", "", "2.0Kb"]
-    lines = ["bin labels\t\t" + "\t".join(ticks * len(LABELS)),
+    lines = ["bin labels\t\t" + "\t".join(ticks * len(labels)),
              "bins\t\t" + "\t".join(str(float(i + 1)) for i in range(NBINS))]
-    for label in LABELS:
+    for label in labels:
         for g in groups:
             vals = ["nan" if i == 2 and g.endswith("nostrand") else str(10.0 + i) for i in range(NBINS)]
             lines.append(f"{label}\t{g}\t" + "\t".join(vals))
     path.write_text("\n".join(lines) + "\n")
 
 
-def _samples(path, labels=LABELS):
-    path.write_text("".join(f"{l}\t{l.split('_')[-1]}\t#1f77b4\n" for l in labels))
+def _samples(path, labels=LABELS, contexts=None, series=None):
+    contexts = contexts or [l.split("_")[-1] for l in labels]
+    series = series or [l.split("_")[0] for l in labels]
+    path.write_text("".join(f"{l}\t{c}\t#1f77b4\t{s}\n" for l, c, s in zip(labels, contexts, series)))
 
 
-def _run(tmp_path, groups, labels=LABELS):
+def _run(tmp_path, groups, labels=LABELS, **samples_kw):
     data, samples, out = tmp_path / "p.tab", tmp_path / "s.tsv", tmp_path / "out.pdf"
-    _profile(data, groups)
-    _samples(samples, labels)
+    _profile(data, groups, labels)
+    _samples(samples, labels, **samples_kw)
     proc = subprocess.run(["Rscript", str(SCRIPT), str(data), str(samples), str(out), "mean methylation"],
                           capture_output=True, text=True)
     return proc, out
@@ -59,7 +61,30 @@ def test_draws_a_pdf(tmp_path, groups):
     assert out.read_bytes().startswith(b"%PDF")
 
 
+def test_one_context_whose_labels_dropped_it(tmp_path):
+    # methylation_contexts: [CG] -- the context is invariant, so
+    # build_plot_labels leaves it off the labels; the series is the label.
+    proc, out = _run(tmp_path, ["all_genes"], labels=["WT", "ddm1"],
+                     contexts=["mCG", "mCG"], series=["WT", "ddm1"])
+    assert proc.returncode == 0, proc.stderr
+    assert out.read_bytes().startswith(b"%PDF")
+
+
+def test_missing_series_is_an_error(tmp_path):
+    data, samples, out = tmp_path / "p.tab", tmp_path / "s.tsv", tmp_path / "out.pdf"
+    _profile(data, ["all_genes"])
+    samples.write_text("".join(f"{l}\t{l.split('_')[-1]}\t#1f77b4\n" for l in LABELS))
+    proc = subprocess.run(["Rscript", str(SCRIPT), str(data), str(samples), str(out), "y"],
+                          capture_output=True, text=True)
+    assert proc.returncode != 0
+    assert "series" in proc.stderr
+
+
 def test_column_without_a_context_is_an_error(tmp_path):
-    proc, _ = _run(tmp_path, ["all_genes"], labels=LABELS[:-1])
+    data, samples, out = tmp_path / "p.tab", tmp_path / "s.tsv", tmp_path / "out.pdf"
+    _profile(data, ["all_genes"])
+    _samples(samples, LABELS[:-1])
+    proc = subprocess.run(["Rscript", str(SCRIPT), str(data), str(samples), str(out), "y"],
+                          capture_output=True, text=True)
     assert proc.returncode != 0
     assert "ddm1_mCHH" in proc.stderr

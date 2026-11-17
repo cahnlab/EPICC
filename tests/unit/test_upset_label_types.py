@@ -23,7 +23,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "workflow" / "scripts"))
-from sample_sheet import check_unique_labels, disambiguate_labels  # noqa: E402
+from sample_sheet import build_plot_labels, check_unique_labels  # noqa: E402
 SMK = REPO / "workflow" / "rules" / "combined_analysis.smk"
 SCRIPTS = REPO / "workflow" / "scripts"
 UPSET_SCRIPTS = ["R_Upset_plot_peaks.R", "R_Upset_plot_TSS.R",
@@ -49,7 +49,8 @@ def _load_define_samples_for_upset(allreps):
 
     analysis_samples = pd.DataFrame(
         [{"sample_name": n, "mapped_name": n, "Assay": n.split("__")[0],
-          "env": e, "sample_type": t, "levels_label": lv, "ref_genome": "Spombe"}
+          "env": e, "sample_type": t, "levels_label": lv, "Levels": f"strain:{lv}",
+          "ref_genome": "Spombe"}
          for n, e, t, lv, _ in ROWS])
     reps = {n: [f"{n}_{r}" for r in rr] for n, _, _, _, rr in ROWS}
     ns = {
@@ -62,7 +63,7 @@ def _load_define_samples_for_upset(allreps):
         "parse_sample_name": lambda sid: {"replicate": sid.rsplit("_", 1)[1]},
         "get_peaktype_for_env": lambda name, env: "broad",
         "get_sample_info_from_name": lambda name, df, field: "PE",
-        "disambiguate_labels": disambiguate_labels,
+        "build_plot_labels": build_plot_labels,
         "check_unique_labels": check_unique_labels,
     }
     exec(compile(m.group(0), str(SMK), "exec"), ns)
@@ -80,7 +81,7 @@ def _map(env, allreps=False):
 
 
 def _labels(env, allreps=False):
-    return [p.split(":", 1)[0] for p in _call(env, "pairs", allreps)]
+    return _call(env, "labels", allreps)
 
 
 class TestLabelTypeMap:
@@ -101,8 +102,10 @@ class TestLabelTypeMap:
 
     def test_all_chip_spans_chip_and_atac(self):
         m = _map("all_chip")
+        # The assay varies here, so ChIP labels carry it; ATAC's mark already
+        # says ATAC, so it isn't repeated.
         assert m["WT_ATAC"] == "ATAC"
-        assert m["WT_H3K9me2"] == "H3K9me2"
+        assert m["WT_H3K9me2_ChIP"] == "H3K9me2"
 
     @pytest.mark.parametrize("allreps", [False, True])
     def test_rampage_maps_to_levels(self, allreps):
@@ -128,12 +131,33 @@ class TestLabelTypeMap:
         assert set(m) == set(_labels(env, allreps))
         assert set(m.values()) <= set(_call(env, "types", allreps).split(":"))
 
+    @pytest.mark.parametrize("env,allreps", [("ChIP", False), ("ChIP", True), ("RAMPAGE", True)])
+    def test_merge_names_samples_by_id_and_plot_relabels(self, env, allreps):
+        # The merged peak file is built from 'id:file' pairs, so a label change
+        # doesn't rerun the merge; the plot rule maps ids to labels.
+        ids = [p.split(":", 1)[0] for p in _call(env, "pairs", allreps)]
+        relabel = dict(p.rsplit("=", 1) for p in _call(env, "relabel", allreps).split(","))
+        assert list(relabel) == ids
+        assert list(relabel.values()) == _labels(env, allreps)
+
+    @pytest.mark.skipif(shutil.which("Rscript") is None, reason="Rscript not on PATH")
+    def test_srna_size_class_columns_recode_to_mapped_labels(self):
+        # combine_clusterfiles writes '{id}_{class}'; the plotted columns must
+        # be exactly the labels the label->type map knows.
+        relabel = _call("sRNA", "relabel")
+        types = _call("sRNA", "types").split(":")
+        ids = [p.split(":", 1)[0] for p in _call("sRNA", "pairs")]
+        cells = [",".join(f"{i}_{t}" for i in ids) for t in types]
+        got = _r_recode(cells, relabel, types)
+        assert set(",".join(got).split(",")) == set(_map("sRNA"))
+
     def test_rule_passes_map_to_script(self):
         text = SMK.read_text()
         start = text.index("rule plotting_upset_regions:")
         block = text[start:text.index("\nrule ", start + 1)]
         assert 'define_samples_for_upset(wildcards, "label_types")' in block
-        assert ('"{params.types}" "{params.label_types}" "{output.plot}"'
+        assert 'define_samples_for_upset(wildcards, "relabel")' in block
+        assert ('"{params.types}" "{params.label_types}" "{params.relabel}" "{output.plot}"'
                 in block)
 
 
@@ -158,6 +182,21 @@ def _r_type_cols(types, label_arg, sampleslist):
             for k, v in (l.split("\t", 1) for l in out.splitlines())}
 
 
+def _r_recode(cells, relabel, suffixes=None):
+    """Recode Samples cells with recode_sample_ids; returns (stdout lines) or raises."""
+    code = "\n".join([
+        "args<-commandArgs(trailingOnly=TRUE)",
+        f"source({str(COMMON_R)!r})",
+        "sfx<-if (nzchar(args[3])) unlist(strsplit(args[3], ':')) else NULL",
+        "cat(recode_sample_ids(unlist(strsplit(args[1], ';')), parse_label_types(args[2]), sfx), sep='\\n')",
+    ])
+    proc = subprocess.run(["Rscript", "-e", code, ";".join(cells), relabel, ":".join(suffixes or [])],
+                          capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr)
+    return proc.stdout.splitlines()
+
+
 def _arg(label_types):
     return ",".join(f"{k}={v}" for k, v in label_types.items())
 
@@ -167,6 +206,8 @@ def test_scripts_use_the_shared_helpers(script):
     src = (SCRIPTS / script).read_text()
     assert 'source(file.path(script_dir, "upset_common.R"))' in src
     assert "parse_label_types(args[5])" in src
+    assert "recode_sample_ids(merged$Samples, parse_label_types(args[6])" in src
+    assert "output<-args[7]" in src
     assert "upset_type_cols(types, label_types, sampleslist)" in src
     assert "colnames(mat))" not in src  # no pattern match over mat's columns
 
@@ -195,6 +236,20 @@ class TestRLookup:
         got = _r_type_cols(["H3K9me2"], "dose=1_H3K9me2=H3K9me2",
                            ["dose=1_H3K9me2"])
         assert got == {"H3K9me2": ["dose=1_H3K9me2"]}
+
+    def test_recode_ids_to_labels(self):
+        got = _r_recode(["A__G,B__G", "B__G"], "A__G=WT_H3K9me,B__G=WT_H3K9me2")
+        assert got == ["WT_H3K9me,WT_H3K9me2", "WT_H3K9me2"]
+
+    def test_recode_unknown_id_is_an_error(self):
+        with pytest.raises(RuntimeError, match="stale__G"):
+            _r_recode(["A__G,stale__G"], "A__G=WT")
+
+    def test_recode_size_class_only_with_suffixes(self):
+        assert _r_recode(["A__G_24nt"], "A__G=WT", ["21nt", "24nt"]) == ["WT_24nt"]
+        # Peaks/TSS pass no suffixes, so a suffixed id is not guessed at.
+        with pytest.raises(RuntimeError, match="A__G_24nt"):
+            _r_recode(["A__G_24nt"], "A__G=WT")
 
     def test_empty_map(self):
         got = _r_type_cols(["H3K9me2"], "", ["WT_H3K9me2"])

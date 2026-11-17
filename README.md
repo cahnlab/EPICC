@@ -378,6 +378,7 @@ More details can be found in the `config/epicc-options.yaml` file (all options a
 
 ###  Plotting parameters
 - `plot_allreps`: When `true`, all individual replicates are shown on heatmaps, metaplots and browsers (can be heavy). When `false` (default), one sample with all merged replicates is used for each sample.
+- Sample labels on the combined plots (heatmaps, metaplots, browsers, PCA and UpSet) show only what tells the samples in that plot apart. A label is built from each `Levels` value, the mark (IP_target, methylation context or RNA type), the assay (with its peak type only when that is what differs) and, when replicates are plotted individually, the replicate. A part that differs between any of the plotted samples appears on every label; a part that is the same for all of them is left off. So with `genotype:Col0,tissue:seedling` and `genotype:Col0,tissue:flower` methylomes from EMseq and WGBS, the labels read `seedling_mCG_WGBS`, `flower_mCG_EMseq` and so on: the genotype is dropped, the assay is shown on every label. The assay is never repeated when the mark already names it (`ATAC`, `RNAseq`, `sRNA_24nt`), a plot of one sample is labelled by its full `Levels`, and two samples that still match get their Sample_ID appended. Colours follow the full `Levels`, so a genotype keeps its colour whatever its label shows. Labels are cosmetic: changing how samples are labelled reruns only the plots, never the matrices or summaries behind them.
 
 ### ChIP Mapping Parameters
 - `default`: Standard mapping parameters
