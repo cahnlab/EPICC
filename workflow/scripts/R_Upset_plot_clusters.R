@@ -22,7 +22,9 @@ annotated<-read.delim(args[2], header = TRUE) %>%
 env<-args[3]
 types<-unlist(strsplit(args[4], ":"))
 label_types<-parse_label_types(args[5])
-output<-args[6]
+output<-args[7]
+# Samples are named by sample id in the merged file; plot them by label.
+merged$Samples<-recode_sample_ids(merged$Samples, parse_label_types(args[6]), types)
 
 sampleslist<-unique(unlist(strsplit(as.character(merged$Samples), ",")))
 

@@ -139,11 +139,9 @@ def define_samples_for_upset(wildcards, string):
         # combine_clusterfiles suffixes each label with the cluster's size class
         # (clusters.bed column 4), so the plotted column is '{label}_{type}'.
         label_types = {f"{label}_{t}": t for label in labels for t in types}
-        relabel = {f"{key}_{t}": f"{label}_{t}" for key, label in zip(keys, labels) for t in types}
     else:
         ordered = ":".join(sorted(types))
         label_types = {label: e["type"] for label, e in zip(labels, entries)}
-        relabel = dict(zip(keys, labels))
 
     if string == "pairs":
         return names
@@ -159,8 +157,10 @@ def define_samples_for_upset(wildcards, string):
         # recover it by matching on the label text.
         return ",".join(f"{label}={t}" for label, t in label_types.items())
     elif string == "relabel":
-        # "sample id<TAB>label" per line, for the Samples column of the merged file.
-        return "\n".join(f"{key}\t{label}" for key, label in relabel.items())
+        # "id=label,id=label" for the Samples column of the merged file
+        # (recode_sample_ids in upset_common.R; sRNA's '{id}_{class}' columns
+        # are resolved there).
+        return ",".join(f"{key}={label}" for key, label in zip(keys, labels))
 
 def define_upset_script(wildcards):
     globenv = wildcards.env
@@ -214,14 +214,41 @@ def define_key_for_plots(wildcards, string):
         # (matrix_sample_labels.py). The plot rules don't know whether the
         # matrix came from the unstranded pass or the plus/minus/nostrand
         # passes, which carry different columns, so both are listed; keys they
-        # share map to the same row.
+        # share map to the same row. One pass per strand layout builds every
+        # column at once.
         rows = {}
         for s in ("unstranded", "plus"):
-            wc = SimpleNamespace(ref_genome=wildcards.ref_genome, env=wildcards.env, strand=s)
-            cols = [define_key_for_plots(wc, m) for m in ("keys", "labels", "colors", "tracks", "series")]
-            for key, *rest in zip(*cols):
+            c = _plot_columns(SimpleNamespace(ref_genome=wildcards.ref_genome, env=wildcards.env, strand=s))
+            for key, *rest in zip(c["keys"], c["labels"], c["colors"], c["tracks"], c["series"]):
                 rows.setdefault(key, rest)
         return "\n".join("\t".join([key] + rest) for key, rest in rows.items())
+    c = _plot_columns(wildcards)
+    if string == "table":
+        # What prep_browser_on_region extracts: no labels or colours, so the
+        # extraction never reruns over a label change.
+        table_name = f"{RESULTS_DIR}/combined/matrix/sample_table__{wildcards.target_name}__{wildcards.regionID}__{wildcards.env}__{wildcards.analysis_name}__{wildcards.ref_genome}.tab"
+        os.makedirs(os.path.dirname(table_name), exist_ok=True)
+        tab = pd.DataFrame({
+            "bigwigs": c["bigwigs"],
+            "keys": c["keys"],
+            "marks": c["tracks"],
+        })
+        tab.to_csv(table_name, sep="\t", index=False, header=False)
+        return table_name
+    if string == "browser_display":
+        # "key<TAB>label<TAB>back<TAB>track<TAB>fill+<TAB>fill-" per browser
+        # track, joined onto the extracted tracks by make_single_loci_browser_plot.
+        return "\n".join("\t".join(r) for r in zip(c["keys"], c["labels"], c["colors"], c["trackcolors"],
+                                                      c["fillcolorsplus"], c["fillcolorsminus"]))
+    return c[string]
+
+def _plot_columns(wildcards):
+    """Every per-column list of one plot, in column order, built in one pass:
+    bigwigs, keys, labels, series, tracks (each column's mark: mCG, H3K9me2,
+    RNAseq_plus, ...), colors (tab20 keyed on levels_label, the browser
+    backgrounds too, so a genotype keeps one colour everywhere -- deeptools 4's
+    default line colours sample a sequential colormap and leave consecutive
+    samples near-identical), and the browser's track/fill colours."""
     unique_chip = set()
     unique_atac = set()
     unique_rna = set()
@@ -393,40 +420,11 @@ def define_key_for_plots(wildcards, string):
     fillcolorsminus = [minus_palette[e["mark"]] for e in entries]
     alignedmarks = [e["track"] for e in entries]
 
-    if string == "bigwigs":
-        return bigwigs
-    elif string == "keys":
-        return keys
-    elif string == "labels":
-        return labels
-    elif string == "series":
-        return series
-    elif string == "tracks":
-        # The mark of each matrix column (mCG, H3K9me2, ...), in column order.
-        return alignedmarks
-    elif string == "colors":
-        # The same tab20-keyed-on-levels_label assignment the browser uses for
-        # its backgrounds, so a genotype keeps one colour everywhere it appears.
-        # deeptools 4 samples a sequential colormap ('gnuplot') for its default
-        # line colours, which makes consecutive samples near-indistinguishable.
-        return backcolors
-    elif string == "table":
-        # What prep_browser_on_region extracts: no labels or colours, so the
-        # extraction never reruns over a label change.
-        table_name = f"{RESULTS_DIR}/combined/matrix/sample_table__{wildcards.target_name}__{wildcards.regionID}__{wildcards.env}__{wildcards.analysis_name}__{wildcards.ref_genome}.tab"
-        os.makedirs(os.path.dirname(table_name), exist_ok=True)
-        tab = pd.DataFrame({
-            "bigwigs": bigwigs,
-            "keys": keys,
-            "marks": alignedmarks,
-        })
-        tab.to_csv(table_name, sep="\t", index=False, header=False)
-        return table_name
-    elif string == "browser_display":
-        # "key<TAB>label<TAB>back<TAB>track<TAB>fill+<TAB>fill-" per browser
-        # track, joined onto the extracted tracks by make_single_loci_browser_plot.
-        return "\n".join("\t".join(r) for r in zip(keys, labels, backcolors, trackcolors,
-                                                      fillcolorsplus, fillcolorsminus))
+    return {
+        "bigwigs": bigwigs, "keys": keys, "labels": labels, "series": series,
+        "tracks": alignedmarks, "colors": backcolors, "trackcolors": trackcolors,
+        "fillcolorsplus": fillcolorsplus, "fillcolorsminus": fillcolorsminus,
+    }
 
 def define_individual_browser_plots(wildcards):
     ref_genome = wildcards.ref_genome
@@ -955,12 +953,9 @@ rule plotting_upset_regions:
     shell:
         """
         # The merged file names samples by id (see define_samples_for_upset);
-        # swap in the plot labels here so a label change reruns only this plot.
-        printf '%s\n' "{params.relabel}" > "$TMPDIR/relabel.tsv"
-        awk -F"\t" -v OFS="\t" 'NR==FNR {{m[$1]=$2; next}} FNR==1 {{print; next}}
-            {{n=split($5, s, ","); out=""; for (i=1; i<=n; i++) out=out (i>1 ? "," : "") (s[i] in m ? m[s[i]] : s[i]); $5=out; print}}' \
-            "$TMPDIR/relabel.tsv" {input.mergedfile} > "$TMPDIR/merged_labelled.bed"
-        Rscript "{params.script}" "$TMPDIR/merged_labelled.bed" "{input.annotatedfile}" "{params.env}" "{params.types}" "{params.label_types}" "{output.plot}"
+        # the script swaps in the plot labels, so a label change reruns only
+        # this plot.
+        Rscript "{params.script}" "{input.mergedfile}" "{input.annotatedfile}" "{params.env}" "{params.types}" "{params.label_types}" "{params.relabel}" "{output.plot}"
         """
 
 ###
@@ -1139,10 +1134,12 @@ rule computing_matrix_scales:
             computeMatrixOperations dataRange -m {input.matrix} > {output.temp_values}
             plotProfile -m {input.matrix} -out {output.temp_profile} --averageType {params.profile} --outFileNameData {output.temp_profile_values}
             
-            mins=()
-            maxs=()
-            ymins=()
-            ymaxs=()
+            # One range per mark, then one value per matrix column in column
+            # order. Columns are not grouped by mark: an unstranded matrix of a
+            # stranded track interleaves each sample's columns (s1__X_plus,
+            # s1__X_minus, s2__X_plus, ...), so emitting a block per mark would
+            # hand plus columns the minus scale and vice versa.
+            declare -A zlo zhi ylo yhi
             while read mark
             do
                 zmini=$(rows_of_mark "${{mark}}" {output.temp_values} | awk 'BEGIN {{m=999999}} {{a=$5; if (a != "nan" && a<m) m=a;}} END {{if (m != 999999) print m; else print 0}}')
@@ -1175,17 +1172,23 @@ rule computing_matrix_scales:
                     ymini=("0")
                     ymaxi=("0.01")
                 fi
-                num=$(rows_of_mark "${{mark}}" {output.temp_values} | wc -l)
-                for i in $(seq 1 ${{num}})
-                do
-                    zmins+=("$zmini")
-                    zmaxs+=("$zmaxi")
-                    ymins+=("$ymini")
-                    ymaxs+=("$ymaxi")
-                done
-            # Marks in column order: columns are grouped by mark, so one block
-            # of min/max per mark lines up with the columns.
+                zlo[${{mark}}]=${{zmini}}; zhi[${{mark}}]=${{zmaxi}}
+                ylo[${{mark}}]=${{ymini}}; yhi[${{mark}}]=${{ymaxi}}
             done < <(awk -F"\t" 'NR>1 {{n=split($1, f, "__"); if (!(f[n] in seen)) {{seen[f[n]]=1; print f[n]}}}}' {output.temp_values})
+
+            zmins=()
+            zmaxs=()
+            ymins=()
+            ymaxs=()
+            # dataRange lists the columns in matrix order; each one's mark is
+            # its key's last '__' field.
+            while read mark
+            do
+                zmins+=("${{zlo[${{mark}}]}}")
+                zmaxs+=("${{zhi[${{mark}}]}}")
+                ymins+=("${{ylo[${{mark}}]}}")
+                ymaxs+=("${{yhi[${{mark}}]}}")
+            done < <(awk -F"\t" 'NR>1 {{n=split($1, f, "__"); print f[n]}}' {output.temp_values})
             
             awk -v ORS="" -v a="${{zmins[*]}}" -v b="${{zmaxs[*]}}" 'BEGIN {{print "--zMin "a" --zMax "b}}' > {output.params_heatmap}
             awk -v ORS="" -v c="${{ymins[*]}}" -v d="${{ymaxs[*]}}" 'BEGIN {{print "--yMin "c" --yMax "d}}' > {output.params_profile}

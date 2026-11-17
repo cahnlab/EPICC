@@ -13,14 +13,13 @@ Usage: matrix_region_labels.py <matrix.gz>
   -> --regionsLabel all_TEs(42296) all_TEs_nostrand(631)
 """
 
-import gzip
-import json
 import sys
+
+from matrix_header import read_matrix_header
 
 
 def region_labels(matrix_path):
-    with gzip.open(matrix_path, "rt") as fh:
-        header = json.loads(fh.readline().lstrip("@"))
+    header = read_matrix_header(matrix_path)
     bounds = header["group_boundaries"]
     labels = header["group_labels"]
     if len(bounds) != len(labels) + 1:

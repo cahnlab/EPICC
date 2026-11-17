@@ -227,22 +227,6 @@ def test_browser_plot_joins_labels_onto_extracted_tracks(tmp_path):
     assert proc.returncode != 0 and "stale__H3K9me2" in proc.stderr
 
 
-def test_upset_plot_relabels_merged_samples(tmp_path):
-    body = _shell("plotting_upset_regions")
-    snippet = body[:body.index("Rscript")]
-    merged = tmp_path / "merged.bed"
-    merged.write_text("Chr\tStart\tStop\tPeakID\tSamples\n"
-                      "chr1\t1\t10\tp1\tA__G,B__G\n"
-                      "chr1\t20\t30\tp2\tB__G\n")
-    relabel = "A__G\tWT_H3K9me\nB__G\tWT_H3K9me2"
-    proc = _bash(_fill(snippet, {"{params.relabel}": relabel, "{input.mergedfile}": str(merged)})
-                 + 'cat "$TMPDIR/merged_labelled.bed"', tmp_path)
-    assert proc.returncode == 0, proc.stderr
-    rows = [l.split("\t") for l in proc.stdout.splitlines()]
-    assert rows[0][4] == "Samples"
-    assert rows[1][4] == "WT_H3K9me,WT_H3K9me2" and rows[2][4] == "WT_H3K9me2"
-
-
 @pytest.mark.requires_deeptools
 @pytest.mark.skipif(shutil.which("computeMatrixOperations") is None, reason="deeptools not found")
 def _scales(tmp_path, mode, keys, values):
@@ -287,3 +271,16 @@ def test_sample_scales_one_range_per_column(tmp_path):
     assert len(zmin) == len(zmax) == 3
     assert zmin[1] == "0" and zmax[1] == "1"
     assert float(zmax[0]) < float(zmax[2])
+
+
+@pytest.mark.requires_deeptools
+@pytest.mark.skipif(shutil.which("computeMatrixOperations") is None, reason="deeptools not found")
+def test_type_scales_follow_interleaved_stranded_columns(tmp_path):
+    # An unstranded matrix of a stranded track interleaves each sample's plus
+    # and minus columns; each column must get its own mark's range.
+    keys = ["s1__RNAseq_plus", "s1__RNAseq_minus", "s2__RNAseq_plus", "s2__RNAseq_minus"]
+    zmin, zmax = _scales(tmp_path, "type", keys, [1, 50, 2, 60])
+    assert len(zmin) == len(zmax) == 4
+    assert zmin[0] == zmin[2] and zmax[0] == zmax[2]
+    assert zmin[1] == zmin[3] and zmax[1] == zmax[3]
+    assert float(zmax[0]) < 10 < float(zmin[1])

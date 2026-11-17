@@ -17,15 +17,13 @@ Usage: matrix_sample_labels.py <matrix.gz> <display.tsv>
   -> the display line of each matrix column, in column order
 """
 
-import gzip
-import json
 import sys
+
+from matrix_header import read_matrix_header
 
 
 def sample_keys(matrix_path):
-    with gzip.open(matrix_path, "rt") as fh:
-        header = json.loads(fh.readline().lstrip("@"))
-    return header["sample_labels"]
+    return read_matrix_header(matrix_path)["sample_labels"]
 
 
 def read_display(path):
