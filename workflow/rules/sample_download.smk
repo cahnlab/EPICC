@@ -299,7 +299,7 @@ rule run_fastqc:
     threads: 1
     shell:
         """
-        fastqc -o "{config[output_dir]}/{params.data_type}/reports/" "{input.fastq}"
+        fastqc --outdir "{config[output_dir]}/{params.data_type}/reports/" "{input.fastq}"
         """
 
 rule process_fastq_pe:
