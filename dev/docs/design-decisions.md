@@ -211,6 +211,16 @@ A reference for architectural choices in the pipeline. Intended for contributors
 
 ---
 
+### The mC per-group metaplot is faceted on context, in R
+
+**Decision**: For methylation, `Profile_pergroup__` is drawn by `workflow/scripts/R_mc_profile_by_context.R` (ggplot2) instead of `plotProfile --perGroup`. It reads `plotProfile --outFileNameData` from the usual single mC matrix and draws one panel per context in one row (CG | CHG | CHH), each with its own y-axis and a line per sample. A target with a `nostrand` region group gets a second row. Line colours are the same `colors_*.txt` assignment `--perGroup` used; samples that share a colour (same `levels_label`, differing only in assay or replicate) get distinct dash patterns so their lines can still be told apart. The heatmaps, `Profile__` and every non-mC plot are unchanged, and there is still one mC matrix and one PDF per plot.
+
+**Rationale**: The mC matrix's columns are sample × context, and line colours are keyed on `levels_label` so a genotype keeps one colour across plots. `--perGroup` makes panels only by region group, so it drew all of a sample's contexts as same-coloured lines in one panel. deeptools cannot facet on a sample property. The R plot needs no new matrices or jobs: the ColCEN dry-run plans the same 609 jobs as before. Free y-axes matter because CG sits at tens of percent and CHH at a few.
+
+**Alternatives considered**: (1) One matrix and PDF per context (`mCG` / `mCHG` / `mCHH` envs). This was implemented first and then dropped at the user's request, because the contexts are easier to compare in one PDF. It also tripled the mC matrix jobs. (2) Rebinding the matrix so that contexts become region groups (relabel samples, set the group to the context, `rbind`) and keeping `--perGroup`. Rejected: that duplicates regions across groups, collides with the `nostrand` group, and needs per-panel y-limits that deeptools takes only as positional lists. (3) Colouring lines by context. Rejected: colour already identifies the sample.
+
+---
+
 ## Configuration Naming
 
 ### "Options file" replaces "config file" for the pipeline YAML

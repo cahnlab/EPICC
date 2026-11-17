@@ -503,7 +503,7 @@ epicc output --plot-type metaplot \
   --env all
 ```
 `--matrix` and `--env` options are identical to the heatmap above. Use `--env all` to include all samples including mC.\
-Output is two pdf files, where the samples are grouped by regions or not.\
+Output is two pdf files, where the samples are grouped by regions or not. For mC, the grouped one (`Profile_pergroup__`) has one panel per methylation context (CG, CHG, CHH side by side, each on its own y-axis) with a line per sample, so the contexts are never overlaid.\
 By default, profiles are scaled by data type (`heatmaps_scales: "type"`; change to `"default"` or `"sample"`).
 By default, profiles represent the mean across all regions (`profiles_scale: "mean"`; change to `"median"`).
 Plot type defaults to `"lines"`. See deeptools documentation for other options; edit `profiles_plot_params` in the options file.

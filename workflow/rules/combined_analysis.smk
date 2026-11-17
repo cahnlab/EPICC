@@ -360,6 +360,9 @@ def define_key_for_plots(wildcards, string):
         return labels
     elif string == "marks":
         return marks
+    elif string == "tracks":
+        # The mark of each matrix column (mCG, H3K9me2, ...), in column order.
+        return alignedmarks
     elif string == "colors":
         # The same tab20-keyed-on-levels_label assignment the browser uses for
         # its backgrounds, so a genotype keeps one colour everywhere it appears.
@@ -1299,7 +1302,12 @@ rule plotting_profile_on_targetfile:
         target_name = lambda wildcards: wildcards.target_name,
         matrix = lambda wildcards: wildcards.matrix_param,
         env = lambda wildcards: wildcards.env,
-        plot_params = config['profiles_plot_params']
+        plot_params = config['profiles_plot_params'],
+        average = config['profiles_scale'],
+        # mC: the per-group plot is faceted on context instead (see below).
+        mc_labels = lambda wildcards: define_key_for_plots(wildcards, "labels") if wildcards.env == "mC" else [],
+        mc_contexts = lambda wildcards: define_key_for_plots(wildcards, "tracks") if wildcards.env == "mC" else [],
+        mc_script = os.path.join(REPO_FOLDER, "workflow", "scripts", "R_mc_profile_by_context.R")
     log:
         temp(return_log_combined("{analysis_name}", "{env}_{ref_genome}", "plot_profile_{matrix_param}_{target_name}"))
     conda: CONDA_ENV
@@ -1324,6 +1332,16 @@ rule plotting_profile_on_targetfile:
         col="--colors $(tr '\n' ' ' < "${{colorfile}}")"
         plotProfile -m {input.matrix} -out {output.plot1} {params.plot_params} ${{reg}} ${{prof}} ${{col}} ${{add}}
         
+        if [[ -n "{params.mc_contexts}" ]]; then
+            # Methylation: one panel per context (CG | CHG | CHH in one row), a
+            # line per sample. --perGroup makes panels only by region group, so
+            # it put every context of a sample in one panel, all in that
+            # sample's colour (colours are keyed on levels_label).
+            printf "Plotting per context profile {params.matrix} for {params.env} {params.target_name} on {params.ref_genome}\n"
+            plotProfile -m {input.matrix} -out "$TMPDIR/profile_data.pdf" ${{reg}} ${{add}} --averageType {params.average} --outFileNameData "$TMPDIR/profile_data.tab"
+            paste <(printf "%s\n" {params.mc_labels}) <(printf "%s\n" {params.mc_contexts}) "${{colorfile}}" > "$TMPDIR/profile_samples.tsv"
+            Rscript "{params.mc_script}" "$TMPDIR/profile_data.tab" "$TMPDIR/profile_samples.tsv" {output.plot2} "{params.average} methylation"
+        else
         printf "Plotting per group profile {params.matrix} for {params.env} {params.target_name} on {params.ref_genome}\n"
         ymin=$(cat {input.params_profile} | awk 'BEGIN {{y=99999}} {{for (i=1; i<=NF; i++) {{if ($i == "--yMin") {{for (j=i+1; j<=NF && $j !~ /^--/; j++) {{if ($j<y) y=$j}} break}} }} }} END {{print y}}' )
         ymax=$(cat {input.params_profile} | awk 'BEGIN {{y=-99999}} {{for (i=1; i<=NF; i++) {{if ($i == "--yMax") {{for (j=i+1; j<=NF && $j !~ /^--/; j++) {{if ($j>y) y=$j}} break}} }} }} END {{print y}}' )
@@ -1334,6 +1352,7 @@ rule plotting_profile_on_targetfile:
         nsample=$(wc -l < "${{colorfile}}")
         height=$(awk -v n="${{nsample}}" 'BEGIN {{h=7+0.55*n; if (h>50) h=50; printf "%.1f", h}}')
         plotProfile -m {input.matrix} -out {output.plot2} {params.plot_params} ${{reg}} --yMin ${{ymin}} --yMax ${{ymax}} ${{col}} --plotHeight ${{height}} ${{add}} --perGroup
+        fi
         }} 2>&1 | tee -a "{log}"
         """
 
