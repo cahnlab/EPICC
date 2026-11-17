@@ -312,7 +312,10 @@ PR leaves `epibutton.yaml` untouched and no env is rebuilt.
   The `scales` comparison family draws a `type`-mode `most` heatmap with the
   rule's limits and with R's. The two are pixel-identical.
 
-  The rule itself still runs in bash until phase 2.
+  The rule itself still runs in bash, and still calls `plotProfile`, until
+  phase 2. Until then, `group_means()`'s parity test against `plotProfile
+  --outFileNameData` (`test_matrix_io.py`) keeps the R and deeptools
+  averages in step.
 - **Behaviours of today's rule found while porting**, to settle in phase 2:
   - `Profile__` is drawn with deeptools' default mean even when
     `profiles_scale: median`, while its y-limits come from the median. Its
@@ -336,12 +339,16 @@ PR leaves `epibutton.yaml` untouched and no env is rebuilt.
 - Limits come from `plot_scales.R` on the matrix being drawn. The y bounds
   must come from the same `group_means()` call that produces the curves, so
   the plot cannot run past its own limits.
-- `computing_matrix_scales` moves to R (`matrix_scales()` + `scale_flags()`,
-  writing the same files). That drops its `dataRange` and `plotProfile`
-  passes, and deeptools still draws the heatmaps from those files until
-  phase 3. This was phase 5. It cannot stay optional if deeptools is to stop
-  plotting, because the rule's `plotProfile` call is a deeptools plot run only
-  for its numbers.
+- `computing_matrix_scales` stops calling `plotProfile`. That call renders a
+  throwaway PDF only to get `--outFileNameData`, and it is the last deeptools
+  *plotting* call outside the plot rules. The y bounds come from
+  `matrix_scales()` instead, which averages with `group_means()`, the same
+  function the R profile draws with. `scale_flags()` writes the same file
+  format, so deeptools can keep drawing the heatmaps from those files until
+  phase 3.
+- `dataRange` is deeptools data work and may stay as the z source: the goal is
+  to take plotting off deeptools, not to remove deeptools. `matrix_scales()`
+  computes z the same way, so switching z to R is optional (phase 5).
 - Tests must check that the R profile gives matrix column *i* the y-limits of
   column *i* (look up by key with `scale_for_column`, never by position within
   a mark), on an interleaved stranded matrix. Phase 3 adds the same check for
@@ -361,10 +368,12 @@ PR leaves `epibutton.yaml` untouched and no env is rebuilt.
   scatter + scree, patchwork), colours/labels from the display table. Keep the
   empty-placeholder behaviour when PCA fails.
 
-### Phase 5: scales into R (folded into phases 1–2)
-- Done in phase 1 as `plot_scales.R`. The rule switches to it in phase 2 (see
-  above). Not optional: the rule's `plotProfile` call is a deeptools plotting
-  dependency.
+### Phase 5: z ranges into R (optional)
+- `plot_scales.R` (phase 1) already computes z as `dataRange` does. Phase 2
+  moves only the y bounds off `plotProfile`. Replacing `dataRange` as well
+  would make the scales rule pure R. That is optional: `dataRange` is data
+  work, and deeptools stays in the pipeline for `computeMatrix`,
+  `computeMatrixOperations`, `bamCoverage`/`bamCompare` and the like.
 
 ### Phase 6: existing R plots adopt the theme
 - UpSet, mapping/peak/size stats, expression, MDS (ggplot2 from `plotMDS(...,
