@@ -428,6 +428,8 @@ The combined tokens remain as an **internal** representation: `add_compat_column
 
 ### Old deeptools plot flags are translated only once R draws that plot
 
+**Status**: deferred to phase 2. Review of #114 noted that `R_DRAWN_PLOT_FAMILIES` is empty in phase 1, so this code would not run there. It is parked on branch `claude/r-plot-legacy-flags` (commit `fc1130c`) and returns with the first family R draws.
+
 **Decision**: `heatmaps_plot_params` and `profiles_plot_params` are translated onto plot-theme keys by `legacy_plot_params()` (`config_validation.py`), one family at a time.
 - **Translated flags:**
   - `--colorMap NAME` becomes `heatmap_colors.<env>: NAME`;
@@ -460,3 +462,11 @@ The combined tokens remain as an **internal** representation: `add_compat_column
 - **Rendered check:** a plotHeatmap render with either set of limits is pixel-identical.
 
 **Alternatives considered**: (1) Keep the bash rule and have R read its files. Rejected: it keeps a deeptools `plotProfile` run in the pipeline, and the bounds would come from different code than the curves. (1b) Move only y and keep `dataRange` for z. Workable, since `dataRange` is data work, but the user chose to move all scaling, which leaves one implementation. (2) Recompute scales differently in R, e.g. min/max instead of percentiles. Rejected: it would change every heatmap's colours. Any such change should be a separate, visible decision.
+
+### R plotting rules get their own conda env
+
+**Decision**: The packages the R plots and scales need (r-data.table, r-jsonlite, r-scales, r-ggplot2, bioconductor-complexheatmap, plus python and gzip) go in a new env, `workflow/envs/epibutton_plots.yaml` (`CONDA_ENV_PLOTS`). `epibutton.yaml` is left unchanged. `computing_matrix_scales` moves to the new env now, and each plot rule follows when R starts drawing it.
+
+**Rationale**: `epibutton.yaml` is shared by 38 rules: 11 genome-prep, 6 download and trim, and 21 combined-analysis. Snakemake's software-env rerun trigger reruns every job whose env definition changed, and everything downstream of it. Adding four plotting packages there would have rerun genome prep, downloads and trimming on every resumed run. A separate env limits a plotting-package change to plotting jobs. `computing_matrix_scales` needs only `python3`, `Rscript` and `gzip` once it runs in R, so it fits the new env completely. A dry-run against an existing run showed no rerun reason changed for any job except that rule.
+
+**Alternatives considered**: (1) Adding the packages to `epibutton.yaml`, as phase 1 first did. Rejected for the reruns above. (2) Moving every R-drawing rule (UpSet, stats, browser) to the new env now. Deferred: they need packages the new env doesn't have yet (ComplexUpset, Gviz, ...), and moving them gains nothing until they change.

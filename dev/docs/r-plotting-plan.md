@@ -2,7 +2,8 @@
 
 Status: groundwork landed (shared theme module `workflow/scripts/plot_theme.R`;
 the mC per-context metaplot uses it). Phase 1 done (env, `matrix_io.R`, the
-flag translation, wired but inert; per-mark scales ported to R). Phases 2–7
+per-mark scales computed in R; the flag translation is parked for phase 2).
+Phases 2–7
 are still to do.
 
 The goal is for every plot EPICC draws to take its look from one editable theme
@@ -221,18 +222,28 @@ that we depend on them directly: **r-jsonlite** (theme, matrix header),
 **bioconductor-complexheatmap** (pulls in r-circlize, r-getoptlong,
 r-globaloptions, r-clue). Optional: r-patchwork (already transitive) for
 composing ggplot panels (PCA scatter + scree). The theme module itself needs
-only ggplot2 and jsonlite; the env change is part of phase 1 so the groundwork
-PR leaves `epibutton.yaml` untouched and no env is rebuilt.
+only ggplot2 and jsonlite; phase 1 put the new packages in a separate env,
+`epibutton_plots.yaml`, so `epibutton.yaml` stays untouched and nothing that
+shares it is rerun.
 
 ---
 
 ## 4. Phased plan (one PR per plot family)
 
 ### Phase 1: env + matrix reader (done)
-- `epibutton.yaml` declares r-jsonlite, r-data.table, r-scales and
-  bioconductor-complexheatmap. Every rule in that env gets a one-time env
-  rebuild. The env solves and builds (R 4.5, data.table 1.18, ComplexHeatmap
-  2.26, deeptools 4.0.0).
+- A new env, `workflow/envs/epibutton_plots.yaml` (python, gzip, R with
+  data.table, jsonlite, scales, ggplot2 and ComplexHeatmap), serves the R
+  plotting and plot-scale rules. In phase 1 that is only
+  `computing_matrix_scales`, which calls nothing but `python3`, `Rscript` and
+  `gzip`. `epibutton.yaml` is unchanged, so the 38 rules that share it (genome
+  prep, downloads, trimming, combined analysis) keep their software env and
+  are not rerun. A dry-run against the existing pombe run gave the same rerun
+  reason for every job under #113's workflow and this one, except
+  `computing_matrix_scales`. That run is stale and reruns end to end either
+  way, so the env claim rests on `epibutton.yaml` being byte-identical. The
+  env solves and builds (R 4.5, data.table 1.18, ComplexHeatmap 2.26). Each
+  later phase moves its plot rule to this env when R starts drawing that
+  plot; the plot rules that still call deeptools stay where they are.
 - `workflow/scripts/matrix_io.R`: `read_matrix_header()`, `read_matrix()`
   (regions, values with `nan` → `NA`, sample and group ranges, per-sample bin
   layout), `sample_columns()`, `row_summary()`/`col_summary()` (NaN-aware like
@@ -249,26 +260,28 @@ PR leaves `epibutton.yaml` untouched and no env is rebuilt.
   run, so it needs no completed pipeline run. Under `--sortUsing max`/`min`,
   rows with exactly equal summaries can come out in a different order, because
   numpy's float sort is not stable. EPICC sorts only by mean or median.
-- `legacy_plot_params()` (`config_validation.py`) translates
-  `heatmaps_plot_params`/`profiles_plot_params`:
+- **Flag translation: deferred to phase 2.** `legacy_plot_params()`
+  translates `heatmaps_plot_params`/`profiles_plot_params` onto theme keys:
   - `--colorMap NAME` → `heatmap_colors.<env>: NAME`;
   - `--colorList` → a list;
-  - `--missingDataColor` → `heatmap_missing_color` (a grey level becomes hex);
+  - `--missingDataColor` → `heatmap_missing_color`;
   - `--interpolationMethod` is dropped;
-  - `--plotType` → the new `profile_type` key.
+  - `--plotType` → `profile_type`.
 
   Each translated setting gets a deprecation warning, and any other flag stops
-  the run. It applies only to families listed in `R_DRAWN_PLOT_FAMILIES`
-  (Snakefile), which is empty: while deeptools draws a plot its flags must
-  reach deeptools unchanged. Phase 2 adds `"profiles"`, phase 3 `"heatmaps"`.
-  Translations equal to the defaults are dropped, so the shipped options file
-  adds nothing to the theme JSON. Once a family is in the list, phase 2/3
-  should drop its key from `config/epicc-options.yaml` and the builder.
+  the run. It is gated per family by a Snakefile `R_DRAWN_PLOT_FAMILIES`.
+  Review of #114 noted that it would never run in phase 1, so it was taken
+  out. The code and its tests are parked on branch
+  `claude/r-plot-legacy-flags` (commit `fc1130c`, in `config_validation.py`,
+  `workflow/Snakefile` and `tests/unit/test_plot_theme.py`). Phase 2 brings it
+  back with `R_DRAWN_PLOT_FAMILIES = ("profiles",)`, and phase 3 adds
+  `"heatmaps"`. Once a family is listed, drop its key from
+  `config/epicc-options.yaml` and the builder.
 - A `heatmap_colors` entry may now be one matplotlib colour-map name
   (`viridis`, `RdBu_r`), resolved through `workflow/scripts/plot_colormaps.json`
   (all 91 matplotlib maps, 17 stops each; regenerate with
-  `dev/gen_plot_colormaps.py`). Both `plot_theme.R` and the Python translation
-  check names against it.
+  `dev/gen_plot_colormaps.py`). `plot_theme.R` checks names against it, and so
+  will the translation when it returns.
 - Open for phase 3: `heatmaps_plot_params` has `all`/`most` entries, which
   translate to `heatmap_colors.all`/`.most`. Decide whether the cross-type
   heatmaps use those or colour each column by its data type.
@@ -348,6 +361,12 @@ PR leaves `epibutton.yaml` untouched and no env is rebuilt.
     instead.
   - Because of the NaN propagation above, mC heatmap scales come from config
     (`heat_m*`), never from the data.
+  - In `type` mode, the awk search for a mark's range starts from the
+    sentinels 999999 and −999999. A mark whose 10th percentile is ≥ 999999 (or
+    whose 90th is ≤ −999999) therefore gets 0 on that side. Large raw counts
+    can hit this.
+  - y bounds are written as awk printed them: integral values in full
+    (`900000`), anything else with `%.6g`.
 
 ### Phase 2: profiles (`Profile__`, `Profile_pergroup__`) + scales
 - `R_profile.R`, reading the matrix (option A) and the `params_regions` /

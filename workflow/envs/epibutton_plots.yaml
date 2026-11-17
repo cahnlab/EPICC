@@ -1,0 +1,18 @@
+name: epibutton_plots
+# R plotting and plot-scale rules (computing_matrix_scales; the R heatmaps and
+# profiles as they move off deeptools, dev/docs/r-plotting-plan.md). Kept apart
+# from epibutton.yaml, which genome prep, downloads and trimming share, so
+# adding a plotting package never changes their software env and reruns them.
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python>=3.9
+  - gzip
+  - r-base>=4.3
+  - r-data.table
+  - r-jsonlite
+  - r-scales
+  - r-ggplot2
+  - bioconductor-complexheatmap

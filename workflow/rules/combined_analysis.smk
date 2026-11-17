@@ -1107,7 +1107,7 @@ rule computing_matrix_scales:
         chh_scale = config['heat_mchh']
     log:
         temp(return_log_combined("{analysis_name}", "{env}_{ref_genome}", "getting_scales_matrix_{matrix_param}_{target_name}"))
-    conda: CONDA_ENV
+    conda: CONDA_ENV_PLOTS
     shell:
         """
         {{

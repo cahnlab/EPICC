@@ -22,6 +22,8 @@
 #   heatmaps_scales: sample  one range per column
 #   heatmaps_scales: default no per-column limits: deeptools then uses one
 #                            scale for the whole plot (default_scales below)
+# In type mode a mark's zMin ignores 10th percentiles >= 999999 and its zMax
+# 90th percentiles <= -999999 (the bash's search sentinels), giving 0 instead.
 # zMin/zMax are dataRange's 10th/90th percentiles of a column's values; a
 # column holding any NaN gets NaN there (numpy's percentile propagates it), so
 # it counts as having no range -- which is why mC columns, which always carry
@@ -94,17 +96,23 @@ matrix_scales <- function(m, mode = "type", average = "mean",
   rng <- column_ranges(m)
   prof <- group_means(m, average)
   prof_of <- function(cols) prof$value[as.character(prof$sample) %in% keys[cols]]
-  # The bash matched a mark only in keys that have a '__' (every key the
-  # pipeline builds does); in type mode a key without one found no data.
-  if (mode == "type") {
-    bare <- !grepl("__", keys, fixed = TRUE)
-    rng[bare, ] <- NA_real_
-    prof$value[as.character(prof$sample) %in% keys[bare]] <- NA_real_
+  # Every key the pipeline builds is {sid}__{track} (define_key_for_plots);
+  # without the '__' there is no mark to scale by.
+  if (mode == "type" && any(!grepl("__", keys, fixed = TRUE))) {
+    stop("heatmaps_scales: type needs column keys of the form <sample>__<mark>; got ",
+         paste(keys[!grepl("__", keys, fixed = TRUE)], collapse = ", "))
   }
   units <- if (mode == "type") split(seq_along(keys), factor(marks, levels = unique(marks)))
            else as.list(seq_along(keys))
   for (cols in units) {
     lo <- rng[cols, 1]; hi <- rng[cols, 2]
+    if (mode == "type") {
+      # The bash searched a mark's range from the sentinels 999999 / -999999,
+      # so a 10th percentile >= 999999 (or a 90th <= -999999) was never taken
+      # and the mark fell back to 0 on that side. Kept as it was.
+      lo[!is.na(lo) & lo >= 999999] <- NA_real_
+      hi[!is.na(hi) & hi <= -999999] <- NA_real_
+    }
     z <- c(if (all(is.na(lo))) 0 else min(lo, na.rm = TRUE),
            if (all(is.na(hi))) 0 else max(hi, na.rm = TRUE))
     if (z[1] == 0 && z[2] == 0) z <- .z_fallback(marks[cols[1]], mc_zmax)
@@ -158,9 +166,16 @@ shared_ylim <- function(scales) {
 scale_flags <- function(scales) {
   if (all(is.na(scales$zmin))) return(c(heatmap = "", profile = ""))
   z <- function(x) paste(vapply(x, .shortest, ""), collapse = " ")
-  y <- function(x) paste(trimws(formatC(x, format = "g", digits = 6)), collapse = " ")
+  y <- function(x) paste(vapply(x, .awk_number, ""), collapse = " ")
   c(heatmap = paste0("--zMin ", z(scales$zmin), " --zMax ", z(scales$zmax)),
     profile = paste0("--yMin ", y(scales$ymin), " --yMax ", y(scales$ymax)))
+}
+
+# A number as awk prints it (the old rule wrote the y bounds with awk's
+# print): an integral value in full, anything else with OFMT %.6g.
+.awk_number <- function(x) {
+  if (x == round(x) && abs(x) < 2^53) return(formatC(x, format = "d", big.mark = ""))
+  trimws(formatC(x, format = "g", digits = 6))
 }
 
 # A number with as few digits as identify its double (at most 17), in plain

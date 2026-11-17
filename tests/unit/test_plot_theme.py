@@ -20,12 +20,11 @@ MC_SCRIPT = REPO / "workflow" / "scripts" / "R_mc_profile_by_context.R"
 SMK = REPO / "workflow" / "rules" / "combined_analysis.smk"
 
 sys.path.insert(0, os.path.join(REPO, "workflow", "scripts"))
-from config_validation import legacy_plot_params, plot_theme_spec  # noqa: E402
+from config_validation import plot_theme_spec  # noqa: E402
 
 
-def spec_json(cfg, r_drawn=()):
-    text, _ = plot_theme_spec(cfg, r_drawn)
-    return json.loads(text)
+def spec_json(cfg):
+    return json.loads(plot_theme_spec(cfg))
 
 
 def _have_r():
@@ -81,99 +80,6 @@ class TestPlotThemeSpec:
         a = plot_theme_spec({"plot_theme_overrides": {"base_size": 12, "line_width": 1.0}})
         b = plot_theme_spec({"plot_theme_overrides": {"line_width": 1.0, "base_size": 12}})
         assert a == b
-
-
-# --- deprecated heatmaps_plot_params / profiles_plot_params -------------------
-
-SHIPPED_HEATMAP_PARAMS = {
-    env: "--colorMap seismic --interpolationMethod bilinear"
-    for env in ("all", "most", "ChIP", "TF", "RNA", "sRNA", "ATAC")
-}
-SHIPPED_HEATMAP_PARAMS["mC"] = "--colorMap Oranges --missingDataColor 0.9 --interpolationMethod nearest"
-SHIPPED = {"heatmaps_plot_params": SHIPPED_HEATMAP_PARAMS,
-           "profiles_plot_params": "--plotType lines"}
-BOTH = ("heatmaps", "profiles")
-
-
-class TestLegacyPlotParams:
-    def test_shipped_options_file_matches_these_defaults(self):
-        import yaml
-        cfg = yaml.safe_load((REPO / "config" / "epicc-options.yaml").read_text())
-        assert cfg["heatmaps_plot_params"] == SHIPPED_HEATMAP_PARAMS
-        assert cfg["profiles_plot_params"] == SHIPPED["profiles_plot_params"]
-
-    def test_nothing_translated_while_deeptools_draws(self):
-        cfg = {"heatmaps_plot_params": {"RNA": "--colorMap viridis --kmeans 3"},
-               "profiles_plot_params": "--plotType overlapped_lines"}
-        assert legacy_plot_params(cfg) == ({}, [])
-        assert spec_json(cfg)["overrides"] == {}
-
-    def test_shipped_defaults_add_no_overrides(self):
-        overrides, warnings = legacy_plot_params(SHIPPED, BOTH)
-        assert overrides == {}
-        assert len(warnings) == 2
-        assert all("deprecated" in w and "match the theme defaults" in w for w in warnings)
-
-    def test_colour_maps_lists_and_missing_colour(self):
-        cfg = {"heatmaps_plot_params": {
-            "RNA": "--colorMap viridis --interpolationMethod nearest",
-            "ChIP": "--colorList white,darkgreen",
-            "TF": "--colorMap seismic",
-            "mC": "--colorMap Reds_r --missingDataColor 0.5"}}
-        overrides, warnings = legacy_plot_params(cfg, ("heatmaps",))
-        assert overrides == {
-            "heatmap_colors": {"RNA": "viridis", "ChIP": ["white", "darkgreen"], "mC": "Reds_r"},
-            "heatmap_missing_color": "#808080"}
-        assert "Translated to plot_theme_overrides" in warnings[0]
-
-    def test_unknown_colour_map(self):
-        with pytest.raises(ValueError, match="unknown colour map 'nonesuch'"):
-            legacy_plot_params({"heatmaps_plot_params": {"RNA": "--colorMap nonesuch"}},
-                               ("heatmaps",))
-
-    def test_flag_without_theme_equivalent_stops_the_run(self):
-        with pytest.raises(ValueError, match=r"heatmaps_plot_params\.RNA: '--kmeans'"):
-            legacy_plot_params({"heatmaps_plot_params": {"RNA": "--colorMap seismic --kmeans 3"}},
-                               ("heatmaps",))
-        with pytest.raises(ValueError, match="'--yAxisLabel'"):
-            legacy_plot_params({"profiles_plot_params": "--yAxisLabel x"}, ("profiles",))
-
-    def test_per_sample_colour_maps_are_refused(self):
-        with pytest.raises(ValueError, match="one colour map per data type"):
-            legacy_plot_params({"heatmaps_plot_params": {"RNA": "--colorMap Reds Blues"}},
-                               ("heatmaps",))
-
-    def test_conflicting_missing_colours(self):
-        cfg = {"heatmaps_plot_params": {"RNA": "--missingDataColor black",
-                                        "mC": "--missingDataColor white"}}
-        with pytest.raises(ValueError, match="differs between envs"):
-            legacy_plot_params(cfg, ("heatmaps",))
-
-    def test_plot_type(self):
-        overrides, _ = legacy_plot_params({"profiles_plot_params": "--plotType se"}, ("profiles",))
-        assert overrides == {"profile_type": "se"}
-        with pytest.raises(ValueError, match="--plotType heatmap is not drawn in R"):
-            legacy_plot_params({"profiles_plot_params": "--plotType heatmap"}, ("profiles",))
-
-    def test_only_drawn_families_are_translated(self):
-        cfg = {"heatmaps_plot_params": {"RNA": "--colorMap viridis"},
-               "profiles_plot_params": "--plotType fill"}
-        assert legacy_plot_params(cfg, ("profiles",))[0] == {"profile_type": "fill"}
-        assert legacy_plot_params(cfg, ("heatmaps",))[0] == {"heatmap_colors": {"RNA": "viridis"}}
-
-    def test_user_overrides_win(self):
-        cfg = {"heatmaps_plot_params": {"RNA": "--colorMap viridis", "sRNA": "--colorMap magma"},
-               "profiles_plot_params": "--plotType fill",
-               "plot_theme_overrides": {"profile_type": "se",
-                                        "heatmap_colors": {"RNA": ["white", "red"]}}}
-        assert spec_json(cfg, BOTH)["overrides"] == {
-            "profile_type": "se",
-            "heatmap_colors": {"RNA": ["white", "red"], "sRNA": "magma"}}
-
-    def test_snakefile_translates_nothing_yet(self):
-        # Phase 1: every family is still drawn by deeptools.
-        text = (REPO / "workflow" / "Snakefile").read_text()
-        assert "R_DRAWN_PLOT_FAMILIES = ()" in text
 
 
 def test_colour_map_table_is_sorted_and_complete():

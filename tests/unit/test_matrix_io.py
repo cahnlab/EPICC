@@ -192,6 +192,21 @@ class TestRead:
         assert proc.returncode != 0
         assert "not a deeptools matrix" in proc.stderr
 
+    def test_quote_in_region_name(self, tmp_path):
+        # BED names are free text; a leading double quote must not start a
+        # quoted field that swallows the tabs after it.
+        rows = [(("chr1", 0, 10, '"odd name', 0, "+"), [1.0, 2.0]),
+                (("chr1", 20, 30, 'r"1', 0, "-"), [3.0, 4.0])]
+        path = tmp_path / "q.gz"
+        write_matrix(path, [("genes", 2)], ["A"], rows, body=200, bin_size=100,
+                     upstream=0, downstream=0)
+        out = run_r_ok(f'''
+            m <- read_matrix("{path}")
+            cat(m$regions$name, sep = "|"); cat("\\n"); cat(m$values[2, ], m$regions$strand, "\\n")
+        ''').splitlines()
+        assert out[0] == '"odd name|r"1'
+        assert out[1].split() == ["3", "4", "+", "-"]
+
     def test_empty_group(self, tmp_path):
         rows = fixture_rows()[:7]
         path = tmp_path / "e.gz"

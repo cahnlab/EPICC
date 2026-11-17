@@ -75,7 +75,8 @@ read_matrix <- function(path) {
     body <- data.table(matrix(numeric(0), 0, 6 + ncols))
   } else {
     body <- fread(cmd = paste("gzip -dc", shQuote(path)), skip = 1, header = FALSE,
-                  sep = "\t", na.strings = c("nan", "NaN", "-nan", "inf", "-inf"),
+                  sep = "\t", quote = "",
+                  na.strings = c("nan", "NaN", "-nan", "inf", "-inf"),
                   colClasses = c(rep("character", 6), rep("numeric", ncols)),
                   showProgress = FALSE)
   }
