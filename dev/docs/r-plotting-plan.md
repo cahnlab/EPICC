@@ -525,20 +525,37 @@ smoothed in their ramps next to mC columns as blocks in Oranges with a grey
 because of the different interpolation method. If it can be one, then no need
 for specific plot or specific sort." So there is no separate mC heatmap and no
 separate mC sort, in any configuration.
-- **Inputs: the `most` matrix and the mC matrix, joined in R.** The `all`
-  matrix holds every data type, but today `computing_matrix` builds it with the
-  non-mC options (`heatmaps.<mp>.base`: `--missingDataAsZero --skipZeros`,
-  `bs` 50), so its mC columns read uncovered cytosines as 0 % methylation and
-  use the non-mC bin size. The mC matrix (`base_mc`, `bs_mc`) keeps NaN.
-  `--skipZeros` makes the `most` regions a subset of the mC ones, so each
-  `most` row has an mC row: join on (group, chrom, start, end, name, strand),
-  duplicates matched in order, in `most`'s sorted order. The two halves keep
-  their own bin sizes (each `Heatmap` has its own columns). A separate session
-  is fixing the `all` matrix's mC columns; if that lands with mC NaN kept and
-  the mC bin size, the combined heatmap reads the fixed `all` matrix directly
-  and the join is not needed. Either way the figure and its name are the same.
-- **Sorting.** The combined heatmap always sorts its rows
-  (`heatmaps_sort_options`, within each group) on the non-mC columns. A run
+- **Input: the `all` matrix, built by #119.** The user: "the plan is just
+  most and mC matrix and then merge results. No need for all (except as a
+  placeholder to say I want both together)". `all` is that placeholder: the
+  env that means "both together". PR #119 (`fix/all-env-mc-matrix`) builds
+  `final_matrix_*__all__*` by joining the `most` and mC final matrices
+  (`workflow/scripts/matrix_join_all.py`, rule `joining_all_matrix`) instead
+  of running computeMatrix for `all`, which had read mC gaps as 0 % with
+  `--missingDataAsZero` and the non-mC bin size. That join is the only join
+  implementation: the R heatmap reads the `all` matrix and does not join a
+  second time. What #119's join gives the heatmap:
+  - columns: the `most` columns, then the mC columns;
+  - rows: per region group, joined on (chrom, start, end, name, strand),
+    duplicates matched in order, in the mC matrix's (target-file) order with
+    `most`-only rows appended; a region `--skipZeros` dropped from `most` is
+    filled with 0 there, a region missing from mC with NaN; a row with no data
+    anywhere is dropped. So the combined heatmap can show regions that the old
+    `Heatmap_sorted__` (which kept only `most`'s rows) did not: regions with
+    methylation data and all-zero signal elsewhere;
+  - one bin size, the gcd of `bs` and `bs_mc` (50 by default), mC bins
+    repeated to fill it. Under `nearest` (mC's default) a repeated bin draws
+    as one wider block, so the look is the same as at the mC bin size. Under
+    `bilinear`, should a user set it for mC, the repeated bins give flat
+    stretches with ramps between them; the never-across-NaN rule applies as
+    everywhere.
+  - Profiles of `all` (`Profile__…__all__`) read the same matrix.
+
+  **Phase 3 depends on #119 merging first.**
+- **Sorting.** The combined heatmap always sorts its rows itself
+  (`heatmaps_sort_options`, within each group) on the non-mC columns of the
+  `all` matrix (`sort_rows(samples = <non-mC keys>)`, deeptools'
+  `--sortUsingSamples`), so it needs no sorted BED from another plot. A run
   with only mC samples has no non-mC columns, so it sorts on the mC columns. A
   run with no mC is the `most` heatmap as today.
 - **mC sorted on itself: the mC-only heatmap.** The user: "If people want
@@ -583,7 +600,8 @@ separate mC sort, in any configuration.
     that gap.
   - Reruns: every heatmap plot reruns once anyway in phase 3 (new rule code
     and env). The combined figure is a new output, so it is built, not rerun;
-    it needs no new data job (both matrices exist). Nothing upstream of the
+    its one data job is #119's `joining_all_matrix` (a join of two matrices
+    that already exist, no computeMatrix). Nothing upstream of the
     matrices changes. `heatmap_interpolation` lives in the theme JSON, so
     changing it reruns plots only. Removing `heatmap_sort_mc_after_others`
     touches no rule's params (it only chose targets), so it reruns nothing.
