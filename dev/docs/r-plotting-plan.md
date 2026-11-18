@@ -537,26 +537,32 @@ separate mC sort, in any configuration.
   is fixing the `all` matrix's mC columns; if that lands with mC NaN kept and
   the mC bin size, the combined heatmap reads the fixed `all` matrix directly
   and the join is not needed. Either way the figure and its name are the same.
-- **Sorting.** Rows are sorted (`heatmaps_sort_options`, within each group) on
-  the non-mC columns. A run with only mC samples has no non-mC columns, so it
-  sorts on the mC columns. A run with no mC is the `most` heatmap as today.
+- **Sorting.** The combined heatmap always sorts its rows
+  (`heatmaps_sort_options`, within each group) on the non-mC columns. A run
+  with only mC samples has no non-mC columns, so it sorts on the mC columns. A
+  run with no mC is the `most` heatmap as today.
+- **mC sorted on itself: the mC-only heatmap.** The user: "If people want
+  sorted on mC, they generate a heatmap of just mC." The per-env
+  `Heatmap__{mp}__mC__…` stays, made on demand (`epicc output --plot-type
+  heatmap --env mC`), and sorts on its own (mC) columns with the normal
+  `heatmaps_sort_options`. That is the whole replacement for
+  `heatmap_sort_mc_after_others: false`.
 - **`heatmap_sort_mc_after_others` is deprecated.** Setting it (to either
-  value) prints a warning that it no longer has an effect, and it is ignored.
-  Phase 3 removes it from the shipped options file, the builder and the
-  docs. The old `false` (mC in its own order, its own figure) has no
-  replacement: mC always follows the other columns' order.
+  value) prints a warning (main process only, like the plot-flag warnings)
+  that it no longer has an effect and is ignored: the combined heatmap sorts
+  on the non-mC columns, and mC sorted on itself is the mC-only heatmap,
+  `epicc output --plot-type heatmap --env mC`. Phase 3 removes the key from the
+  shipped options file, the builder and the docs.
 - **Retired:** `Heatmap_sorted__{mp}__mC__…`, `sort_heatmap`,
   `plotting_sorted_heatmap_on_targetfile` and the
   `sorted_final_matrix_*__mC__*` / `temp_sorted_final_matrix_*` files.
 - **Outputs.** The default heatmap target is one combined figure per matrix
   kind and target file, `Heatmap__{mp}__all__…` (the env that means every
   data type), in every run, whatever mix of samples it has.
-  - **`Heatmap__…__mC__…`: recommended dropped from the default targets**,
-    kept available on demand (`epicc output --plot-type heatmap --env mC`,
-    which the generic per-env rule already serves) as an mC-only view sorted
-    on mC. By default it would repeat the combined figure's mC columns in a
-    different order and bring back the second figure the user wanted gone;
-    on demand it costs no code, since the rule is per env.
+  - **`Heatmap__…__mC__…` is kept as the mC-only heatmap** (user decision),
+    made on demand rather than by default: by default it would repeat the
+    combined figure's mC columns in another order. The generic per-env rule
+    already serves it, so it costs no code.
   - `Heatmap__…__most__…` likewise leaves the default targets (the combined
     figure contains its columns in the same order) and stays available with
     `--env most`. `test_pombe_postrun.py` checks
