@@ -140,6 +140,7 @@ epicc run --samples config/my_samples.tsv --profile profiles/uge
    - `--options FILE` — options YAML (default: `config/epicc-options.yaml`)
    - `--output-dir DIR` — results directory prefix (default: `results`)
    - `--genome-dir DIR` — genome directory prefix (default: `genomes`)
+   - `--analysis-name NAME` — override `analysis_name` from the options file (also on `epicc validate` and `epicc output`). It names the run's combined outputs, so it must not contain `__`, `/`, whitespace or shell-special characters, or start/end with `_`
    - `--keep-intermediates TIER` — intermediate file retention: `none`, `standard` (default), `custom`, `all`
    - `--use-node-tmpdir` — skip the workflow's TMPDIR override and use the cluster's default (see TMPDIR routing below)
    - `--no-rerun-incomplete` — skip re-running Snakemake-flagged incomplete jobs from prior interrupted runs
