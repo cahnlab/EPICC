@@ -22,8 +22,9 @@
 #   heatmaps_scales: sample  one range per column
 #   heatmaps_scales: default no per-column limits: deeptools then uses one
 #                            scale for the whole plot (default_scales below)
-# In type mode a mark's zMin ignores 10th percentiles >= 999999 and its zMax
-# 90th percentiles <= -999999 (the bash's search sentinels), giving 0 instead.
+# One difference from the bash: its type-mode search started from the sentinels
+# +-999999, so a mark whose 10th percentile was >= 999999 got zMin 0. Here the
+# mark keeps its range.
 # zMin/zMax are dataRange's 10th/90th percentiles of a column's values; a
 # column holding any NaN gets NaN there (numpy's percentile propagates it), so
 # it counts as having no range -- which is why mC columns, which always carry
@@ -106,13 +107,10 @@ matrix_scales <- function(m, mode = "type", average = "mean",
            else as.list(seq_along(keys))
   for (cols in units) {
     lo <- rng[cols, 1]; hi <- rng[cols, 2]
-    if (mode == "type") {
-      # The bash searched a mark's range from the sentinels 999999 / -999999,
-      # so a 10th percentile >= 999999 (or a 90th <= -999999) was never taken
-      # and the mark fell back to 0 on that side. Kept as it was.
-      lo[!is.na(lo) & lo >= 999999] <- NA_real_
-      hi[!is.na(hi) & hi <= -999999] <- NA_real_
-    }
+    # The bash searched a mark's range from the sentinels 999999 / -999999,
+    # so in type mode a 10th percentile >= 999999 (or a 90th <= -999999) was
+    # never taken and the mark fell back to 0 on that side. That was a bug,
+    # not a choice (raw counts reach it); it is not reproduced.
     z <- c(if (all(is.na(lo))) 0 else min(lo, na.rm = TRUE),
            if (all(is.na(hi))) 0 else max(hi, na.rm = TRUE))
     if (z[1] == 0 && z[2] == 0) z <- .z_fallback(marks[cols[1]], mc_zmax)

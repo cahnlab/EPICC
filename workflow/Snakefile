@@ -173,10 +173,17 @@ if _quoted_params:
 
 # Plot theme for the R plotting scripts (workflow/scripts/plot_theme.R).
 # Plot rules take it as a param, so changing it reruns plots only.
+# R_DRAWN_PLOT_FAMILIES lists the plot families already drawn in R
+# ("profiles", "heatmaps"): their deprecated deeptools flags
+# (profiles_plot_params, heatmaps_plot_params) are translated onto theme keys.
+# The others' flags still go to deeptools untouched.
+R_DRAWN_PLOT_FAMILIES = ("profiles",)
 try:
-    PLOT_THEME_JSON = plot_theme_spec(config)
+    PLOT_THEME_JSON, _plot_theme_warnings = plot_theme_spec(config, R_DRAWN_PLOT_FAMILIES)
 except ValueError as e:
     sys.exit(f"ERROR: {e}")
+for _w in _plot_theme_warnings:
+    print(f"WARNING: {_w}", file=sys.stderr)
 
 # ---------------------------------------------------------------------------
 # Rfam classes depleted from sRNA libraries (auto-derived structural RNAs)

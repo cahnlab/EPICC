@@ -400,7 +400,7 @@ def _plot_columns(wildcards):
     # genotype keeps one colour across plots whatever its label shows.
     labels = build_plot_labels(entries)
     # The line name across the methylation-context panels of one plot
-    # (R_mc_profile_by_context.R): the label without its mark.
+    # (plot_profile_by_context in plot_profile.R): the label without its mark.
     series = build_plot_labels(entries, omit=("mark",))
     check_unique_labels(labels, f"the {globenv} plots")
     marksforbrowser = ( sorted(unique_chip) + sorted(unique_atac) + sorted(unique_rna) + sorted(unique_srna) + sorted(unique_mc) )
@@ -1275,9 +1275,7 @@ rule plotting_sorted_heatmap_on_targetfile:
 
 rule plotting_profile_on_targetfile:
     input:
-        matrix = f"{RESULTS_DIR}/combined/matrix/final_matrix_{{matrix_param}}__{{env}}__{{analysis_name}}__{{ref_genome}}__{{target_name}}.gz",
-        params_regions = f"{RESULTS_DIR}/combined/matrix/params_regions_final_matrix_{{matrix_param}}__{{env}}__{{analysis_name}}__{{ref_genome}}__{{target_name}}.txt",
-        params_profile = f"{RESULTS_DIR}/combined/matrix/params_profile_final_matrix_{{matrix_param}}__{{env}}__{{analysis_name}}__{{ref_genome}}__{{target_name}}.txt"
+        matrix = f"{RESULTS_DIR}/combined/matrix/final_matrix_{{matrix_param}}__{{env}}__{{analysis_name}}__{{ref_genome}}__{{target_name}}.gz"
     output:
         plot1 = f"{RESULTS_DIR}/combined/plots/Profile__{{matrix_param}}__{{env}}__{{analysis_name}}__{{ref_genome}}__{{target_name}}.pdf",
         plot2 = f"{RESULTS_DIR}/combined/plots/Profile_pergroup__{{matrix_param}}__{{env}}__{{analysis_name}}__{{ref_genome}}__{{target_name}}.pdf"
@@ -1287,62 +1285,32 @@ rule plotting_profile_on_targetfile:
         target_name = lambda wildcards: wildcards.target_name,
         matrix = lambda wildcards: wildcards.matrix_param,
         env = lambda wildcards: wildcards.env,
-        plot_params = config['profiles_plot_params'],
+        scales = config['heatmaps_scales'],
         average = config['profiles_scale'],
+        cg_scale = config['heat_mcg'],
+        chg_scale = config['heat_mchg'],
+        chh_scale = config['heat_mchh'],
         display = lambda wildcards: define_key_for_plots(wildcards, "display"),
         sample_labeller = os.path.join(REPO_FOLDER, "workflow", "scripts", "matrix_sample_labels.py"),
-        # mC: the per-group plot is faceted on context instead (see below).
-        mc_script = os.path.join(REPO_FOLDER, "workflow", "scripts", "R_mc_profile_by_context.R"),
+        profile_script = os.path.join(REPO_FOLDER, "workflow", "scripts", "R_profile.R"),
         theme = PLOT_THEME_JSON
     log:
         temp(return_log_combined("{analysis_name}", "{env}_{ref_genome}", "plot_profile_{matrix_param}_{target_name}"))
-    conda: CONDA_ENV
+    conda: CONDA_ENV_PLOTS
     shell:
         """
         {{
-        if [[ "{params.matrix}" == "tes" ]]; then
-            add="--refPointLabel end"
-        elif [[ "{params.matrix}" == "tss" ]]; then
-            add="--refPointLabel start"
-        else
-            add="--startLabel start --endLabel end"
-        fi
-        printf "Plotting profile {params.matrix} for {params.env} {params.target_name} on {params.ref_genome}\n"
-        reg="$(cat {input.params_regions})"
-        prof="$(cat {input.params_profile})"
+        printf "Plotting profiles {params.matrix} for {params.env} {params.target_name} on {params.ref_genome}\n"
         # Labels and colours, one row per matrix column in column order, looked
-        # up by the column keys (key, label, colour, track, series). deeptools 4 picks
-        # line colours by sampling a sequential colormap, which leaves
-        # consecutive samples nearly identical, so use the pipeline's own
-        # categorical palette instead (tab20 keyed on levels_label).
+        # up by the column keys (key, label, colour, track, series).
         printf '%s\n' "{params.display}" > "$TMPDIR/display.tsv"
         python3 "{params.sample_labeller}" {input.matrix} "$TMPDIR/display.tsv" > "$TMPDIR/columns.tsv"
-        lab="--samplesLabel $(cut -f2 "$TMPDIR/columns.tsv" | tr '\n' ' ')"
-        col="--colors $(cut -f3 "$TMPDIR/columns.tsv" | tr '\n' ' ')"
-        plotProfile -m {input.matrix} -out {output.plot1} {params.plot_params} ${{reg}} ${{prof}} ${{lab}} ${{col}} ${{add}}
-        
-        if [[ "{params.env}" == "mC" ]]; then
-            # Methylation: one panel per context (CG | CHG | CHH in one row), a
-            # line per sample. --perGroup makes panels only by region group, so
-            # it put every context of a sample in one panel, all in that
-            # sample's colour (colours are keyed on levels_label).
-            printf "Plotting per context profile {params.matrix} for {params.env} {params.target_name} on {params.ref_genome}\n"
-            plotProfile -m {input.matrix} -out "$TMPDIR/profile_data.pdf" ${{reg}} ${{lab}} ${{add}} --averageType {params.average} --outFileNameData "$TMPDIR/profile_data.tab"
-            awk -F"\t" -v OFS="\t" '{{print $2, $4, $3, $5}}' "$TMPDIR/columns.tsv" > "$TMPDIR/profile_samples.tsv"
-            printf '%s\n' {params.theme:q} > "$TMPDIR/plot_theme.json"
-            Rscript "{params.mc_script}" "$TMPDIR/profile_data.tab" "$TMPDIR/profile_samples.tsv" {output.plot2} "{params.average} methylation" "$TMPDIR/plot_theme.json"
-        else
-        printf "Plotting per group profile {params.matrix} for {params.env} {params.target_name} on {params.ref_genome}\n"
-        ymin=$(cat {input.params_profile} | awk 'BEGIN {{y=99999}} {{for (i=1; i<=NF; i++) {{if ($i == "--yMin") {{for (j=i+1; j<=NF && $j !~ /^--/; j++) {{if ($j<y) y=$j}} break}} }} }} END {{print y}}' )
-        ymax=$(cat {input.params_profile} | awk 'BEGIN {{y=-99999}} {{for (i=1; i<=NF; i++) {{if ($i == "--yMax") {{for (j=i+1; j<=NF && $j !~ /^--/; j++) {{if ($j>y) y=$j}} break}} }} }} END {{print y}}' )
-        # --perGroup draws one legend entry per sample, and deeptools 4 anchors
-        # that legend below the axes in a single column without growing the
-        # figure -- so past ~8 samples the axes collapse to a sliver and the plot
-        # comes out blank. Grow the panel to cover the legend it will carry.
-        nsample=$(wc -l < "$TMPDIR/columns.tsv")
-        height=$(awk -v n="${{nsample}}" 'BEGIN {{h=7+0.55*n; if (h>50) h=50; printf "%.1f", h}}')
-        plotProfile -m {input.matrix} -out {output.plot2} {params.plot_params} ${{reg}} --yMin ${{ymin}} --yMax ${{ymax}} ${{lab}} ${{col}} --plotHeight ${{height}} ${{add}} --perGroup
-        fi
+        printf '%s\n' {params.theme:q} > "$TMPDIR/plot_theme.json"
+        # Profile__ (a panel per column) and Profile_pergroup__ (a panel per
+        # region group; for mC a panel per group x context), drawn from the
+        # matrix. The y-limits are computed from the same averages the curves
+        # are drawn with (plot_scales.R, as computing_matrix_scales does).
+        Rscript "{params.profile_script}" {input.matrix} "$TMPDIR/columns.tsv" "{params.matrix}" "{params.env}" "{params.scales}" "{params.average}" "{params.cg_scale}" "{params.chg_scale}" "{params.chh_scale}" {output.plot1} {output.plot2} "$TMPDIR/plot_theme.json"
         }} 2>&1 | tee -a "{log}"
         """
 

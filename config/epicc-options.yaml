@@ -450,16 +450,16 @@ plot_theme: "default" # look of the plots drawn in R (workflow/scripts/plot_them
 # plot_theme_overrides: # replace individual keys of the chosen theme; unknown keys are an error. Examples:
 #   base_size: 12
 #   line_width: 0.8
+#   profile_type: "se" # metaplot style: lines | fill | se | std (replaces profiles_plot_params "--plotType")
 #   heatmap_colors:
 #     RNA: ["white", "darkgreen"] # a colour list, or one matplotlib map name: RNA: "viridis"
 plot_allreps: false # whether to use data from all individual replicates or from merged samples when multiple replicates are present. Default to false (using merged replicates).
-# For deeptools heatmaps and profiles
-heatmaps_scales: "type" # options: [ 'default' = default scaling from deeptools, one scale for all samples | 'sample' = each sample on its own scale | 'type' = each type of data on a different scale (each ChIP mark + each TF + RNA + sRNA + each mC context) ]
+# For heatmaps and profiles (metaplots)
+heatmaps_scales: "type" # options, for heatmap colours and profile y axes: [ 'default' = one scale for all samples | 'sample' = each sample on its own scale | 'type' = each type of data on a different scale (each ChIP mark + each TF + RNA + sRNA + each mC context) ]
 stranded_heatmaps: true # chose whether the heatmap should be done with stranded information or not. If true, stranded data types (RNAseq, sRNA) contribute their sense-strand track for each region. Regions whose 6th column is neither "+" nor "-" have no sense strand, so they are plotted as a separate region group rather than dropped.
 heatmaps_sort_options: "mean" # options: [ 'no' | 'mean' | median' ]; mean = "--sortRegions descend --sortUsing mean"
 heatmap_sort_mc_after_others: true # chose whether the heatmaps for mC samples are done based on the sort order of the other samples or not.
-profiles_scale: "mean" # options: [ 'mean' | median' ]
-profiles_plot_params: "--plotType lines"
+profiles_scale: "mean" # options: [ 'mean' | median' ]; how profiles average regions, for both the curves and their y-limits
 heatmaps_plot_params:
   all: "--colorMap seismic --interpolationMethod bilinear"
   most: "--colorMap seismic --interpolationMethod bilinear"

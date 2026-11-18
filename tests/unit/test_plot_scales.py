@@ -13,7 +13,10 @@ The fixture matrix has the cases that broke before or are easy to break:
   - an all-NaN column (no profile -> 0..0.01).
 
   - an integral-valued mark (a constant count of 1e6), whose padded y bounds
-    awk printed in full (900000, not 9e+05).
+    awk printed in full (900000, not 9e+05), and whose 10th percentile is
+    above the bash's +-999999 search sentinels: the old rule gave it zMin 0 in
+    type mode, a bug the R rule fixes (old_rule_fixed() applies the fix to the
+    old output before comparing).
 
 Expected values are computed here the way the bash rule does it, and the old
 rule's own output (bash + deeptools, dev/reference/) is checked in as golden
@@ -144,10 +147,6 @@ def expected(rows, mode):
     for unit, keys in units.items():
         lo = [cols[k][0][0] for k in keys if not math.isnan(cols[k][0][0])]
         hi = [cols[k][0][1] for k in keys if not math.isnan(cols[k][0][1])]
-        if mode == "type":
-            # the bash's awk search sentinels
-            lo = [x for x in lo if x < 999999]
-            hi = [x for x in hi if x > -999999]
         z = (min(lo) if lo else 0.0, max(hi) if hi else 0.0)
         if z == (0.0, 0.0):
             z = (0.0, float(fallback.get(keys[0].split("__")[-1], 0.005)))
@@ -290,7 +289,7 @@ class TestAgainstTheRule:
         path, _ = matrix
         heat, prof = run_scales_rule(path, tmp_path / "rule", mode, average, MC)
         got = r_scales(path, mode, average)
-        want = {**parse_flags(heat), **parse_flags(prof)}
+        want = {**old_rule_fixed(heat, mode), **parse_flags(prof)}
         for flag, col in (("--zMin", 2), ("--zMax", 3), ("--yMin", 4), ("--yMax", 5)):
             assert [float(r[col]) for r in got] == pytest.approx(want[flag], rel=1e-5, abs=1e-6), flag
 
@@ -310,8 +309,21 @@ class TestAgainstTheRule:
         # The same doubles, value for value (y is even the same text; z can be
         # spelled differently -- "0.0" from dataRange vs "0" -- but reads back
         # identically, as deeptools reads it).
-        for o, n in zip(old, new):
-            assert parse_flags(n) == parse_flags(o)
+        assert parse_flags(new[0]) == old_rule_fixed(old[0], mode)
+        assert parse_flags(new[1]) == parse_flags(old[1])
+
+
+def old_rule_fixed(heat_flags, mode):
+    """The old rule's --zMin/--zMax with the one bug the R rule fixes: in type
+    mode its awk range search started from the sentinels +-999999, so the
+    constant-1e6 WT__counts mark got zMin 0 instead of 1e6."""
+    flags = parse_flags(heat_flags) if isinstance(heat_flags, str) else dict(heat_flags)
+    if mode == "type" and flags:
+        i = KEYS.index("WT__counts")
+        assert flags["--zMin"][i] == 0.0  # the bug, as the old rule had it
+        flags["--zMin"] = list(flags["--zMin"])
+        flags["--zMin"][i] = 1000000.0
+    return flags
 
 
 def golden():
@@ -329,7 +341,7 @@ def test_rule_matches_the_old_rule_golden_output(matrix, tmp_path, mode, average
     smk = (REPO / "workflow" / "rules" / "combined_analysis.smk").read_text()
     heat, prof = run_scales_rule(path, tmp_path / "new", mode, average, MC, smk_text=smk)
     old_heat, old_prof = golden()[f"{mode}_{average}"]
-    assert parse_flags(heat) == parse_flags(old_heat)
+    assert parse_flags(heat) == old_rule_fixed(old_heat, mode)
     assert prof.split() == old_prof.split()
 
 
