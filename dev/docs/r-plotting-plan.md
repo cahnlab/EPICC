@@ -32,7 +32,9 @@ Decisions taken with the user before the groundwork:
   (`heatmap_interpolation`), resampled in R before drawing. See phase 3.
 - **One heatmap with every data type** (user, during phase 2 review): mC
   columns drawn next to the others in one figure, sharing the row order, each
-  column with its own ramp, missing colour and interpolation. See phase 3.
+  column with its own ramp, missing colour and interpolation. No separate mC
+  heatmap or mC sort in any configuration; `heatmap_sort_mc_after_others` is
+  deprecated. See phase 3.
 
 ---
 
@@ -71,8 +73,8 @@ What the R versions must reproduce:
   3.5.6 and 4.0.0 alike).
 - **`--outFileSortedRegions`.** The `most` heatmap's sorted BED feeds
   `sort_heatmap`, which reorders the mC matrix with `computeMatrixOperations
-  sort -R` for `Heatmap_sorted__`. Phase 3 replaces that pair with the
-  combined heatmap (see there). The R heatmap still writes the sorted BED in
+  sort -R` for `Heatmap_sorted__`. Phase 3 retires both for the combined
+  heatmap (see there). The R heatmap still writes the sorted BED in
   deeptools' format (six columns plus its header line, rows in plotted order,
   groups in order), since it is a documented output users may rely on.
 - **Scales.** `computing_matrix_scales` writes one `--zMin`/`--zMax` and one
@@ -516,54 +518,71 @@ bilinear for continuous tracks (ChIP, TF, ATAC, RNA, sRNA), nearest for mC.
     `plotHeatmap` vs R, plus a zoomed crop of each so the smoothing can be
     seen.
 
-**One heatmap with every data type (user decision).** In ComplexHeatmap
+**One heatmap with every data type (user decisions).** In ComplexHeatmap
 each column is its own `Heatmap`, so one figure can show ChIP/RNA columns
 smoothed in their ramps next to mC columns as blocks in Oranges with a grey
-`na_col`, all in one row order.
-- **Inputs: the `most` matrix and the mC matrix, joined in R, not the `all`
-  matrix.** The `all` matrix does hold every data type, but `computing_matrix`
-  builds it with the non-mC options (`heatmaps.<mp>.base`: `--missingDataAsZero
-  --skipZeros`, `bs` 50), so its mC columns read uncovered cytosines as 0 %
-  methylation and use the non-mC bin size. The mC matrix (`base_mc`, `bs_mc`)
-  keeps NaN. `--skipZeros` makes the `most` regions a subset of the mC ones, so
-  each `most` row has an mC row: join on (group, chrom, start, end, name,
-  strand), duplicates matched in order, in `most`'s sorted order. This is what
-  `sort_heatmap` does with `computeMatrixOperations sort -R`, done in R. The
-  two halves keep their own bin sizes (each `Heatmap` has its own columns).
-  (The same `all`-matrix problem affects `Heatmap__…__all__` and
-  `Profile__…__all__` from `epicc output --env all` today; fix it separately,
-  e.g. by giving the `all` env the same two-matrix inputs or by building it
-  without `--missingDataAsZero` for the mC bigwigs.)
-- **Sorting.** Rows are sorted on the non-mC columns only (within each
-  group), which is what `heatmap_sort_mc_after_others: true` does today.
-- **Outputs and options.**
-  - `heatmap_sort_mc_after_others: true` (default) with mC and other samples:
-    the combined figure replaces `Heatmap_sorted__{mp}__mC__…`, and
-    `sort_heatmap`, `plotting_sorted_heatmap_on_targetfile` and the
-    `sorted_final_matrix_*__mC__*` files are retired. Recommendation: retire
-    them rather than keep them as an option, since the combined figure shows
-    the same mC rows in the same order next to the columns that ordered them.
-    The combined figure's name: `Heatmap__{mp}__all__…` (the env that means
-    every data type), drawn from the two matrices above. `Heatmap__…__most__`
-    stays as it is (and is what runs when there is no mC).
-  - `heatmap_sort_mc_after_others: false`: mC sorted on its own cannot share
-    one row order, so it keeps its own figure, `Heatmap__{mp}__mC__…`, as
-    today. No combined figure.
-  - mC only (no other samples): `Heatmap__…__mC__` as today.
+`na_col`, all in one row order. The user: "mC heatmap was only separated
+because of the different interpolation method. If it can be one, then no need
+for specific plot or specific sort." So there is no separate mC heatmap and no
+separate mC sort, in any configuration.
+- **Inputs: the `most` matrix and the mC matrix, joined in R.** The `all`
+  matrix holds every data type, but today `computing_matrix` builds it with the
+  non-mC options (`heatmaps.<mp>.base`: `--missingDataAsZero --skipZeros`,
+  `bs` 50), so its mC columns read uncovered cytosines as 0 % methylation and
+  use the non-mC bin size. The mC matrix (`base_mc`, `bs_mc`) keeps NaN.
+  `--skipZeros` makes the `most` regions a subset of the mC ones, so each
+  `most` row has an mC row: join on (group, chrom, start, end, name, strand),
+  duplicates matched in order, in `most`'s sorted order. The two halves keep
+  their own bin sizes (each `Heatmap` has its own columns). A separate session
+  is fixing the `all` matrix's mC columns; if that lands with mC NaN kept and
+  the mC bin size, the combined heatmap reads the fixed `all` matrix directly
+  and the join is not needed. Either way the figure and its name are the same.
+- **Sorting.** Rows are sorted (`heatmaps_sort_options`, within each group) on
+  the non-mC columns. A run with only mC samples has no non-mC columns, so it
+  sorts on the mC columns. A run with no mC is the `most` heatmap as today.
+- **`heatmap_sort_mc_after_others` is deprecated.** Setting it (to either
+  value) prints a warning that it no longer has an effect, and it is ignored.
+  Phase 3 removes it from the shipped options file, the builder and the
+  docs. The old `false` (mC in its own order, its own figure) has no
+  replacement: mC always follows the other columns' order.
+- **Retired:** `Heatmap_sorted__{mp}__mC__…`, `sort_heatmap`,
+  `plotting_sorted_heatmap_on_targetfile` and the
+  `sorted_final_matrix_*__mC__*` / `temp_sorted_final_matrix_*` files.
+- **Outputs.** The default heatmap target is one combined figure per matrix
+  kind and target file, `Heatmap__{mp}__all__…` (the env that means every
+  data type), in every run, whatever mix of samples it has.
+  - **`Heatmap__…__mC__…`: recommended dropped from the default targets**,
+    kept available on demand (`epicc output --plot-type heatmap --env mC`,
+    which the generic per-env rule already serves) as an mC-only view sorted
+    on mC. By default it would repeat the combined figure's mC columns in a
+    different order and bring back the second figure the user wanted gone;
+    on demand it costs no code, since the rule is per env.
+  - `Heatmap__…__most__…` likewise leaves the default targets (the combined
+    figure contains its columns in the same order) and stays available with
+    `--env most`. `test_pombe_postrun.py` checks
+    `Heatmap__{tss,tes,regions}__most__…` today and must move to `__all__`.
+  - Profiles are unchanged by this: `Profile__…__most__` when there are
+    non-mC samples, `Profile__…__mC__` when there are mC samples (what the
+    old `true` branch produced, now regardless of the flag).
 - **Targets and reruns.**
-  - `define_final_combined_output` swaps the three (`regions`/`tss`/`tes`)
-    `Heatmap_sorted__…__mC__` targets per target file for `Heatmap__…__all__`,
-    for `all_genes` and the TE target. `test_pombe_postrun.py` and the README
-    list the new names. Existing `Heatmap_sorted__` PDFs are left on disk
-    (Snakemake does not delete outputs that are no longer targets); `epicc
-    clean` could learn to list them.
+  - `define_final_combined_output` loses the `heatmap_sort_mc_after_others`
+    branches: three `Heatmap__{regions,tss,tes}__all__` targets for
+    `all_genes` and three for the TE target replace the `Heatmap_sorted__`,
+    `Heatmap__…__mC__` and `Heatmap__…__most__` targets. The README lists the
+    new names. Old PDFs are left on disk (Snakemake does not delete outputs
+    that are no longer targets); `epicc clean` could learn to list them.
+  - Today, mC with other samples and `heatmap_sort_mc_after_others: false`
+    produced no heatmap or profile for the non-mC samples at all (only the mC
+    branch's targets); the combined figure and the profile targets above end
+    that gap.
   - Reruns: every heatmap plot reruns once anyway in phase 3 (new rule code
     and env). The combined figure is a new output, so it is built, not rerun;
     it needs no new data job (both matrices exist). Nothing upstream of the
     matrices changes. `heatmap_interpolation` lives in the theme JSON, so
-    changing it reruns plots only.
-  - The `most` heatmap's `_sorted_regions.bed` stays an output but is no
-    longer an input of anything.
+    changing it reruns plots only. Removing `heatmap_sort_mc_after_others`
+    touches no rule's params (it only chose targets), so it reruns nothing.
+  - The `_sorted_regions.bed` of whichever heatmap is drawn stays an output
+    but is no longer an input of anything.
 
 ### Phase 4: PCA
 - `plotPCA --outFileNameData` in the existing rule, then `R_pca.R` (ggplot2
@@ -611,7 +630,7 @@ fixture matrix. Small fixtures are generated in the script; real matrices
 |---|---|---|---|---|
 | `mc_profile` (groundwork and phase 1; removed in phase 2) | `Profile_pergroup__*__mC__*` | `R_mc_profile_by_context.R` at the #112 head (phase 1: at the #113 head) | the same script on `plot_theme.R`, default theme + `presentation` | the default theme was pixel-identical both times. Superseded by `profiles`. |
 | `profiles` (phase 2) | `Profile__`, `Profile_pergroup__` (non-mC and mC) | `plotting_profile_on_targetfile`'s own shell block at `--old-ref` (`plotProfile`, `--perGroup`, the mC dump script), with that ref's scales rule | the same rule block now (`R_profile.R`) | `profiles/<variant>/{Profile,Profile_pergroup}/compare.png` for `most` (stranded + nostrand groups) under type/mean, sample/median, default/mean; mC under type/mean and default/median; a one-group reference-point ChIP matrix (tss) under type/mean; plus `profile_type: se` and the `presentation` theme. Needs deeptools on PATH |
-| `heatmap` (phase 3) | `Heatmap__` (`most`, mC), the combined `Heatmap__…__all__` vs the old `Heatmap__most` + `Heatmap_sorted__mC` pair | `plotHeatmap` | `R_heatmap.R` | `heatmap/<variant>/compare.png` for type/sample/default scales, stranded + nostrand groups, sorting; per interpolation mode a ChIP (`bilinear`) and an mC (`nearest`, missing bins) variant with zoomed crops; also diff the `_sorted_regions.bed` |
+| `heatmap` (phase 3) | the combined `Heatmap__…__all__` vs the old `Heatmap__most` + `Heatmap_sorted__mC` pair; mC-only and no-mC runs; on-demand `Heatmap__…__mC__` | `plotHeatmap` | `R_heatmap.R` | `heatmap/<variant>/compare.png` for type/sample/default scales, stranded + nostrand groups, sorting; per interpolation mode a ChIP (`bilinear`) and an mC (`nearest`, missing bins) variant with zoomed crops; also diff the `_sorted_regions.bed` |
 | `scales` (phase 1) | `heatmaps_scales: type` limits on a `most` heatmap (H3K9me2 0–60 next to H3K4me3 0–0.5, H3K9me, interleaved RNA plus/minus) | `computing_matrix_scales` as bash + `dataRange`/`plotProfile` (`dev/reference/`), drawn by `plotHeatmap` | the rule as it stands (`R_matrix_scales.R`), drawn by the same `plotHeatmap` | `scales/compare.png` + `scales/flags.txt` (both flag sets, largest difference per flag): pixel-identical. Needs deeptools on PATH |
 | `pca` (phase 4) | `PCA__` | `plotPCA` | `R_pca.R` | `pca/compare.png` |
 | `stats` / `upset` / `deg` / `browser` (phase 6) | existing R plots | current script | themed script | one `compare.png` per family |
