@@ -44,3 +44,27 @@ def format_quoted_params_error(problems):
         "would reach the tool as part of the argument."
     )
     return "\n".join(lines)
+
+
+def plot_theme_spec(config):
+    """The plot-theme choice handed to the R plotting scripts, as JSON.
+
+    `plot_theme` names a built-in theme of workflow/scripts/plot_theme.R and
+    `plot_theme_overrides` replaces individual keys of it. Only the shape is
+    checked here; plot_theme.R owns the key list and refuses unknown keys and
+    wrong value types when a plot is drawn.
+
+    Raises ValueError on a malformed setting so the Snakefile can refuse it at
+    startup.
+    """
+    import json
+
+    name = config.get("plot_theme") or "default"
+    overrides = config.get("plot_theme_overrides") or {}
+    if not isinstance(name, str):
+        raise ValueError(f"plot_theme must be a theme name, got {name!r}")
+    if not isinstance(overrides, dict):
+        raise ValueError(
+            "plot_theme_overrides must be a mapping of theme keys to values, "
+            f"got {type(overrides).__name__}")
+    return json.dumps({"theme": name, "overrides": overrides}, sort_keys=True)

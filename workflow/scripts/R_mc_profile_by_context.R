@@ -10,7 +10,7 @@
 # separate 'nostrand' region group gets a second row.
 #
 # Usage:
-#   Rscript R_mc_profile_by_context.R <profile_data.tab> <samples.tsv> <out.pdf> <y_label>
+#   Rscript R_mc_profile_by_context.R <profile_data.tab> <samples.tsv> <out.pdf> <y_label> [theme.json]
 #
 # profile_data.tab : `plotProfile --outFileNameData` output for the mC matrix
 # samples.tsv      : label <TAB> context (mCG/mCHG/mCHH) <TAB> colour <TAB>
@@ -19,19 +19,26 @@
 #                    panel: its label without the context, built by
 #                    build_plot_labels, which drops the context from the label
 #                    itself when only one context is plotted.
+# theme.json       : optional plot theme choice (see plot_theme.R); the
+#                    default theme when absent.
 
 suppressPackageStartupMessages({
   library(ggplot2)
 })
 
+# Resolved from this script's own path so it works from the repo and an install alike
+script_dir <- dirname(normalizePath(sub("^--file=", "", grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)[1])))
+source(file.path(script_dir, "plot_theme.R"))
+
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) != 4) {
-  stop("usage: R_mc_profile_by_context.R <profile_data.tab> <samples.tsv> <out.pdf> <y_label>")
+if (!length(args) %in% 4:5) {
+  stop("usage: R_mc_profile_by_context.R <profile_data.tab> <samples.tsv> <out.pdf> <y_label> [theme.json]")
 }
 data_file <- args[1]
 sample_file <- args[2]
 out_file <- args[3]
 y_label <- args[4]
+th <- epicc_theme(if (length(args) == 5) args[5] else NULL)
 
 fields <- strsplit(readLines(data_file), "\t", fixed = TRUE)
 keys <- vapply(fields, `[`, "", 1)
@@ -70,27 +77,18 @@ profile$context <- factor(profile$context, levels = contexts)
 profile$series <- factor(profile$series, levels = series)
 profile$group <- factor(profile$group, levels = groups)
 palette <- setNames(samples$color[match(series, samples$series)], series)
-# Colours are keyed on levels_label, so samples that differ only in assay or
-# replicate share one. Those get distinct dash patterns, in series order, so
-# the lines stay apart; a sample with a colour to itself stays solid.
-dash_cycle <- c("solid", "dashed", "dotted", "dotdash", "longdash", "twodash")
-dash_rank <- ave(seq_along(series), palette, FUN = seq_along)
-dashes <- setNames(dash_cycle[(dash_rank - 1) %% length(dash_cycle) + 1], series)
+dashes <- epicc_dashes(th, palette)
+legend_ncol <- epicc_legend_ncol(th, length(series))
 
 p <- ggplot(profile, aes(x = bin, y = value, colour = series, linetype = series)) +
-  geom_line(linewidth = 0.6, na.rm = TRUE) +
+  geom_line(linewidth = th$line_width, na.rm = TRUE) +
   scale_colour_manual(values = palette, name = NULL) +
   scale_linetype_manual(values = dashes, name = NULL) +
   scale_x_continuous(breaks = tick_at, labels = tick_label, expand = c(0.02, 0)) +
   labs(x = NULL, y = y_label) +
-  theme_bw(base_size = 11) +
-  theme(panel.grid.minor = element_blank(),
-        panel.spacing.x = unit(1.4, "lines"),
-        strip.background = element_rect(fill = "grey92", colour = NA),
-        strip.text = element_text(face = "bold"),
-        legend.key.width = unit(2.2, "lines")) +
-  guides(colour = guide_legend(ncol = ceiling(length(series) / 25)),
-         linetype = guide_legend(ncol = ceiling(length(series) / 25)))
+  epicc_ggtheme(th) +
+  guides(colour = guide_legend(ncol = legend_ncol),
+         linetype = guide_legend(ncol = legend_ncol))
 
 # Contexts sit at very different levels (CG tens of percent, CHH a few), so
 # each panel gets its own y-axis.
@@ -100,7 +98,6 @@ if (length(groups) > 1) {
   p <- p + facet_wrap(vars(context), nrow = 1, scales = "free_y")
 }
 
-legend_width <- 1.5 + 0.09 * max(nchar(series)) * ceiling(length(series) / 25)
-width <- 3.2 * length(contexts) + legend_width
-height <- max(3.2 * length(groups) + 0.6, 0.22 * min(length(series), 25) + 1)
-ggsave(out_file, p, width = width, height = height, limitsize = FALSE)
+width <- th$panel_width * length(contexts) + epicc_legend_width(th, series, legend_ncol)
+height <- max(th$panel_height * length(groups) + 0.6, epicc_legend_height(th, length(series)))
+epicc_save(p, out_file, width = width, height = height)

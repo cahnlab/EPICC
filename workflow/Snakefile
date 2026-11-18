@@ -13,6 +13,7 @@ import traceback
 from scripts.config_validation import (
     find_quoted_params,
     format_quoted_params_error,
+    plot_theme_spec,
 )
 from scripts.samplefile_validation import (
     check_table, check_genome_config, check_extra_output_files, resolve_data_path,
@@ -162,6 +163,13 @@ if "genomes" not in config:
 _quoted_params = find_quoted_params(config)
 if _quoted_params:
     sys.exit(format_quoted_params_error(_quoted_params))
+
+# Plot theme for the R plotting scripts (workflow/scripts/plot_theme.R).
+# Plot rules take it as a param, so changing it reruns plots only.
+try:
+    PLOT_THEME_JSON = plot_theme_spec(config)
+except ValueError as e:
+    sys.exit(f"ERROR: {e}")
 
 # ---------------------------------------------------------------------------
 # Intermediate file retention

@@ -419,6 +419,12 @@ srna_max_size: 24 # these sizes in nucleotide will be used for filtering bigiwg 
 srna_heatmap_sizes: [21, 22, 24] # these sizes in nucleotide will be used for plotting heatmaps and browsers. Can add as many as desired as a list, for sizes within the range above.
 
 # For all plots (heatmaps, metaplots, browsers)
+plot_theme: "default" # look of the plots drawn in R (workflow/scripts/plot_theme.R). Built-in: 'default' | 'presentation' (larger text, heavier lines)
+# plot_theme_overrides: # replace individual keys of the chosen theme; unknown keys are an error. Examples:
+#   base_size: 12
+#   line_width: 0.8
+#   heatmap_colors:
+#     RNA: ["white", "darkgreen"]
 plot_allreps: false # whether to use data from all individual replicates or from merged samples when multiple replicates are present. Default to false (using merged replicates).
 # For deeptools heatmaps and profiles
 heatmaps_scales: "type" # options: [ 'default' = default scaling from deeptools, one scale for all samples | 'sample' = each sample on its own scale | 'type' = each type of data on a different scale (each ChIP mark + each TF + RNA + sRNA + each mC context) ]

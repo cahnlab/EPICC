@@ -82,3 +82,6 @@ dev/plans/
 # Local agent scratch (worktrees, drafts) — never part of the repo
 .claude/worktrees/
 .claude/drafts/
+
+# Before/after plot renders (dev/plot_compare.py)
+dev/plot_compare_out/
