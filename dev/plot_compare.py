@@ -284,8 +284,9 @@ def family_profiles(work, old_scripts, old_smk):
     old ref (plotProfile; the mC per-group plot from the R dump script) vs
     now (R_profile.R), on the same matrices, for each variant. The old rule
     also gets its scales from the old ref's computing_matrix_scales. Returns
-    {variant: renders}; the most_type_mean variant adds the new rule under
-    profile_type se and the presentation theme."""
+    {variant: renders}; most_type_mean adds the new rule under profile_type
+    se and fill and the presentation theme, mC_type_mean under fill and std
+    (bands and fill are clipped to each panel's limits)."""
     theme = json.dumps({"overrides": {}, "theme": "default"}, sort_keys=True)
     fixtures = {"most": work / "most.gz", "mc": work / "mc.gz", "chip": work / "chip.gz"}
     scales_fixture(fixtures["most"])
@@ -303,9 +304,13 @@ def family_profiles(work, old_scripts, old_smk):
         new = _profile_rule(new_smk, SCRIPTS, work, f"{variant}/new", fixtures[fx], kind, env,
                             mode, average, display, theme)
         extra = []
-        if variant == "most_type_mean":
-            for label, spec in (("profile_type se", {"profile_type": "se"}),
-                                ("presentation", None)):
+        styles = {"most_type_mean": (("profile_type se", {"profile_type": "se"}),
+                                     ("profile_type fill", {"profile_type": "fill"}),
+                                     ("presentation", None)),
+                  "mC_type_mean": (("profile_type fill", {"profile_type": "fill"}),
+                                   ("profile_type std", {"profile_type": "std"}))}
+        if variant in styles:
+            for label, spec in styles[variant]:
                 t = json.dumps({"overrides": spec or {}, "theme": "presentation" if spec is None
                                 else "default"}, sort_keys=True)
                 tag = label.replace(" ", "_")

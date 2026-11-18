@@ -276,8 +276,11 @@ shares it is rerun.
   `workflow/Snakefile` and `tests/unit/test_plot_theme.py`). Phase 2 brings it
   back with `R_DRAWN_PLOT_FAMILIES = ("profiles",)`, and phase 3 adds
   `"heatmaps"`. Once a family is listed, drop its key from
-  `config/epicc-options.yaml` and the builder. Phase 2 did this for
-  `profiles_plot_params` (restored from `fc1130c`).
+  `config/epicc-options.yaml` and the builder. Phase 2 restored the profiles
+  half from `fc1130c` and dropped `profiles_plot_params`; phase 3 restores the
+  heatmaps half (`--colorMap`, `--colorList`, `--missingDataColor`,
+  `--interpolationMethod`, the per-env missing-colour check) from the same
+  commit.
 - A `heatmap_colors` entry may now be one matplotlib colour-map name
   (`viridis`, `RdBu_r`), resolved through `workflow/scripts/plot_colormaps.json`
   (all 91 matplotlib maps, 17 stops each; regenerate with
@@ -386,11 +389,15 @@ shares it is rerun.
 What landed:
 - `workflow/scripts/plot_profile.R` holds the reusable parts:
   `profile_data()` (the `group_means()` curves plus an se/std band: numpy's
-  population `nanstd` per bin, divided by √n for se), `profile_limits()` (y
-  range per column: `matrix_scales()` for `type`/`sample`, `default_scales()`
-  for `default`), `profile_ggplot()` (lines, fill or a band per
-  `profile_type`; per-panel limits drawn as invisible points with no
-  expansion, so a panel spans exactly its column's range) and the three plots,
+  population `nanstd` per bin, divided by √n for se), `profile_limits(m, d,
+  mode)` (y range per column of the curves `d` it is handed: `profile_ylims()`
+  for `type`/`sample` — the y half of `matrix_scales()`, which now calls it,
+  without the percentile pass over the whole matrix — and `default_ylim()` for
+  `default`), `profile_ggplot()` (lines, fill or a band per `profile_type`;
+  per-panel limits drawn as invisible points with no expansion, and the band
+  and the fill clipped to them, the fill running down to the panel's ymin
+  rather than 0, so a panel spans exactly its column's range as deeptools'
+  clipped `--yMin/--yMax` did) and the three plots,
   `plot_profile_per_column()` (`Profile__`), `plot_profile_per_group()`
   (`Profile_pergroup__`) and `plot_profile_by_context()` (mC). Phase 3's
   heatmap top profile should call `profile_data()` and `profile_limits()`
@@ -398,7 +405,10 @@ What landed:
 - `R_profile.R` is the CLI. It reads the matrix and the display table
   (`matrix_sample_labels.py`), works out the limits itself (it does not read
   `params_profile`, so the profile rule no longer depends on
-  `computing_matrix_scales`), and writes both PDFs.
+  `computing_matrix_scales`), and writes both PDFs. It computes the curves
+  once and hands them to the limits and to both plots. The rule takes no
+  `heat_m*` (heatmap colour ranges only), so changing them reruns no profile.
+  The mode check (`scale_mode()`) is shared with `R_matrix_scales.R`.
   `plotting_profile_on_targetfile` runs it in `CONDA_ENV_PLOTS`.
   `R_mc_profile_by_context.R` and its `plotProfile --outFileNameData` dump are
   gone.
@@ -409,9 +419,13 @@ What landed:
   a y-axis label (`mean signal`, `median methylation`); the mC context panels
   share one y range per context across region groups (previously autoscaled
   per panel; still autoscaled under `default`).
-- `profiles_plot_params` is translated (`--plotType` → `profile_type`, with
-  a deprecation warning; anything else stops the run) and is gone from the
-  shipped options file, the README and the builder.
+- `profiles_plot_params` is translated (`--plotType X` or `--plotType=X` →
+  `profile_type`, with a deprecation warning printed from the main process
+  only; anything else stops the run) and is gone from the shipped options
+  file, the README and the builder. Only the profiles half of the parked
+  translation came back: the `heatmaps_plot_params` half could not run before
+  phase 3 (the objection that parked it in #114), so it stays on
+  `claude/r-plot-legacy-flags` (`fc1130c`) for phase 3.
 
 As planned:
 - `R_profile.R`, reading the matrix (option A) and the `params_regions` /

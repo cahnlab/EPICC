@@ -79,7 +79,7 @@ def run_r_ok(code):
 def run_script(tmp, matrix, cols, env="most", mode="type", average="mean", theme=None):
     out1, out2 = tmp / "p1.pdf", tmp / "p2.pdf"
     args = ["Rscript", str(SCRIPT), str(matrix), str(cols), "regions", env, mode, average,
-            "100", "50", "20", str(out1), str(out2)]
+            str(out1), str(out2)]
     if theme is not None:
         args.append(str(theme))
     return subprocess.run(args, capture_output=True, text=True), out1, out2
@@ -194,7 +194,7 @@ class TestLimits:
         path, cols, _ = most
         out = run_r_ok(PANEL_RANGES + f'''
             m <- read_matrix("{path}")
-            lim <- profile_limits(m, "{mode}", "mean")
+            lim <- profile_limits(m, profile_data(m, "mean"), "{mode}")
             s <- matrix_scales(m, "{mode}", "mean")
             p <- plot_profile_per_column(m, display("{cols}"), epicc_theme(), lim)$plot
             panel_ranges(p, "panel")
@@ -220,7 +220,7 @@ class TestLimits:
         path, cols, _ = most
         out = run_r_ok(PANEL_RANGES + f'''
             m <- read_matrix("{path}")
-            lim <- profile_limits(m, "type", "mean")
+            lim <- profile_limits(m, profile_data(m, "mean"), "type")
             p <- plot_profile_per_group(m, display("{cols}"), epicc_theme(), lim)$plot
             panel_ranges(p, "region")
             cat("want", sprintf("%.10g", shared_ylim(lim)), "\\n", sep = "\\t")''')
@@ -236,7 +236,7 @@ class TestLimits:
         path, cols, _ = most
         out = run_r_ok(PANEL_RANGES + f'''
             m <- read_matrix("{path}")
-            lim <- profile_limits(m, "default", "mean")
+            lim <- profile_limits(m, profile_data(m, "mean"), "default")
             d <- default_scales(m, "mean")
             p <- plot_profile_per_column(m, display("{cols}"), epicc_theme(), lim)$plot
             panel_ranges(p, "panel")
@@ -251,7 +251,7 @@ class TestLimits:
         path, cols, _ = mc
         out = run_r_ok(PANEL_RANGES + f'''
             m <- read_matrix("{path}")
-            lim <- profile_limits(m, "sample", "mean")
+            lim <- profile_limits(m, profile_data(m, "mean"), "sample")
             dsp <- display("{cols}")
             p <- plot_profile_by_context(m, dsp, epicc_theme(), lim)$plot
             panel_ranges(p, "context")
@@ -272,6 +272,72 @@ class TestLimits:
 
 
 @needs_r
+class TestClipping:
+    """deeptools applied --yMin/--yMax after drawing and clipped. A band (se,
+    std) or a fill baseline must not widen a panel past its limits: two
+    panels of one mark keep one axis, and an mC fill is not dragged to 0."""
+
+    @pytest.mark.parametrize("ptype", ["se", "std", "fill"])
+    def test_type_mode_panels_keep_their_marks_range(self, most, ptype):
+        path, cols, _ = most
+        out = run_r_ok(PANEL_RANGES + f'''
+            th <- epicc_theme(); th$profile_type <- "{ptype}"
+            m <- read_matrix("{path}")
+            d <- profile_data(m, "mean", .spread(th))
+            lim <- profile_limits(m, d, "type")
+            s <- matrix_scales(m, "type", "mean")
+            p <- plot_profile_per_column(m, display("{cols}"), th, lim, data = d)$plot
+            panel_ranges(p, "panel")
+            for (k in m$samples$label) {{
+              r <- scale_for_column(s, k)
+              cat("want", k, sprintf("%.10g", c(r$ymin, r$ymax)), "\\n", sep = "\\t")
+            }}''')
+        got, want = {}, {}
+        for line in out.strip().splitlines():
+            f = [x for x in line.split("\t") if x.strip()]
+            if f[0] == "want":
+                want[f[1]] = (float(f[2]), float(f[3]))
+            else:
+                got[f[0]] = (float(f[1]), float(f[2]))
+        for k in MOST_KEYS:
+            assert got[k] == pytest.approx(want[k], rel=1e-9), k
+        assert got["WT__H3K9me2"] == got["ddm1__H3K9me2"]
+
+    def test_band_is_clipped_to_the_panel(self, most):
+        path, cols, _ = most
+        out = run_r_ok(f'''
+            th <- epicc_theme(); th$profile_type <- "std"
+            m <- read_matrix("{path}")
+            d <- profile_data(m, "mean", "std")
+            lim <- profile_limits(m, d, "type")
+            p <- plot_profile_per_column(m, read.delim("{cols}", header = FALSE,
+                   col.names = c("key", "label", "colour", "track", "series")), th, lim, data = d)$plot
+            r <- layer_data(p, 1)
+            b <- ggplot_build(p)$layout$layout
+            k <- as.character(b$panel[match(r$PANEL, b$PANEL)])
+            l <- lim[match(k, lim$key), ]
+            cat(all(r$ymin >= l$ymin - 1e-12 & r$ymax <= l$ymax + 1e-12),
+                any(d$lo < lim$ymin[match(d$sample, lim$key)]))''')
+        # the unclipped std band does reach below the limits; drawn, it doesn't
+        assert out.split() == ["TRUE", "TRUE"]
+
+    @pytest.mark.parametrize("mode", ["type", "default"])
+    def test_mc_fill_is_not_dragged_to_zero(self, mc, mode):
+        path, cols, _ = mc
+        out = run_r_ok(PANEL_RANGES + f'''
+            th <- epicc_theme(); th$profile_type <- "fill"
+            m <- read_matrix("{path}")
+            d <- profile_data(m, "mean")
+            lim <- profile_limits(m, d, "{mode}")
+            p <- plot_profile_by_context(m, display("{cols}"), th, lim, use_limits = "{mode}" != "default",
+                                         data = d)$plot
+            panel_ranges(p, "context")''')
+        r = parse_ranges(out)
+        # mCG sits at 30-120: its panels must not start at 0
+        assert all(lo > 20 for lo, _ in r["mCG"])
+
+
+@needs_r
 class TestCurves:
     @pytest.mark.parametrize("average", ["mean", "median"])
     def test_lines_are_profiles_scale(self, most, average):
@@ -280,7 +346,7 @@ class TestCurves:
         path, cols, rows = most
         out = run_r_ok(PANEL_RANGES + f'''
             m <- read_matrix("{path}")
-            lim <- profile_limits(m, "type", "{average}")
+            lim <- profile_limits(m, profile_data(m, "{average}"), "type")
             p <- plot_profile_per_column(m, display("{cols}"), epicc_theme(), lim, "{average}")$plot
             d <- layer_data(p, 1)
             b <- ggplot_build(p)$layout$layout

@@ -6,7 +6,7 @@
 # profile_limits(), so its curves and axes are the ones Profile__ shows:
 #
 #   d   <- profile_data(m, "mean", spread = "none")   # one row per sample x group x bin
-#   lim <- profile_limits(m, "type", "mean", mc_zmax) # per-column y range
+#   lim <- profile_limits(m, d, "type")              # per-column y range of those curves
 #   p   <- profile_ggplot(d, ...)                     # the ggplot itself
 #
 # and the three EPICC profile plots on top of them:
@@ -26,6 +26,8 @@
 suppressPackageStartupMessages({
   library(ggplot2)
 })
+
+if (!exists("%||%", baseenv())) `%||%` <- function(a, b) if (is.null(a)) b else a
 
 # Average profile per matrix column and region group, in long form: sample
 # (column key), group, x (0-based bin), value, and lo/hi for a shaded band
@@ -60,19 +62,17 @@ profile_data <- function(m, average = "mean", spread = c("none", "se", "std")) {
   d
 }
 
-# y range per matrix column, as data.frame(key, ymin, ymax) in column order.
-# heatmaps_scales type/sample: matrix_scales() (one range per mark or per
-# column, the tenth-of-range padding). default: the single range deeptools
-# shared across panels (default_scales()) on every column.
-profile_limits <- function(m, mode = "type", average = "mean",
-                           mc_zmax = c(mCG = 100, mCHG = 50, mCHH = 20)) {
+# y range per matrix column, as data.frame(key, ymin, ymax) in column order,
+# from the profiles `d` (profile_data()) the plot draws. heatmaps_scales
+# type/sample: profile_ylims() (one range per mark or per column, the
+# tenth-of-range padding: the y half of matrix_scales(), so the same numbers
+# computing_matrix_scales writes). default: the single range deeptools shared
+# across panels (default_ylim()) on every column.
+profile_limits <- function(m, d, mode = "type") {
   keys <- m$samples$label
-  if (mode %in% c("type", "sample")) {
-    s <- matrix_scales(m, mode, average, mc_zmax)
-    return(data.frame(key = keys, ymin = s$ymin, ymax = s$ymax, stringsAsFactors = FALSE))
-  }
-  d <- default_scales(m, average)
-  data.frame(key = keys, ymin = d$ymin, ymax = d$ymax, stringsAsFactors = FALSE)
+  if (mode %in% c("type", "sample")) return(profile_ylims(keys, d, mode))
+  y <- default_ylim(d)
+  data.frame(key = keys, ymin = y[1], ymax = y[2], stringsAsFactors = FALSE)
 }
 
 # Region-group strip labels as plotHeatmap/plotProfile's --regionsLabel gave
@@ -92,9 +92,15 @@ profile_ticks <- function(m, kind = "regions") {
 # The ggplot for long profile data `d` (profile_data() joined with display
 # columns). `colour`/`linetype` name columns of d; `colours`/`linetypes` are
 # their manual scales (NULL linetypes = all solid). `facet` is a facet_*()
-# spec; `limits` is a data.frame with the facet variables plus ymin/ymax,
-# drawn as invisible points so every panel spans at least its own limits
-# (pass NULL to let ggplot autoscale). `type` is the theme's profile_type.
+# spec; `limits` is a data.frame with the facet variables plus ymin/ymax:
+# every panel spans exactly its own limits. They are drawn as invisible
+# points with no axis expansion, and the se/std band and the fill are clipped
+# to them (fill runs down to the panel's ymin, not to 0), as deeptools applied
+# --yMin/--yMax and clipped -- otherwise a band or a 0 baseline would widen
+# the axis and two panels of one mark would end up on different scales. The
+# curves need no clipping: the limits are their padded range. With NULL limits
+# ggplot autoscales and fill runs to the lowest curve value. `type` is the
+# theme's profile_type.
 profile_ggplot <- function(d, th, ticks, colour, colours, linetype = NULL, linetypes = NULL,
                            facet = NULL, limits = NULL, ylab = NULL, type = th$profile_type,
                            show_colour_legend = TRUE, legend_ncol = 1L) {
@@ -105,10 +111,24 @@ profile_ggplot <- function(d, th, ticks, colour, colours, linetype = NULL, linet
         linetype = .data[[linetype]])
   }
   d$.line <- interaction(d$sample, d$group, drop = TRUE)
+  if (!is.null(limits)) {
+    by <- setdiff(intersect(names(limits), names(d)), c("ymin", "ymax"))
+    if (length(by) == 0) stop("profile limits share no facet variable with the data")
+    row_key <- function(x) do.call(paste, c(lapply(x[by], as.character), sep = "\r"))
+    i <- match(row_key(d), row_key(limits))
+    if (anyNA(i)) stop("profile data rows without limits")
+    lo <- limits$ymin[i]; hi <- limits$ymax[i]
+    d$base <- lo
+    d$lo <- pmin(pmax(d$lo, lo), hi)
+    d$hi <- pmin(pmax(d$hi, lo), hi)
+  } else {
+    d$base <- if (all(is.na(d$value))) 0 else min(d$value, na.rm = TRUE)
+  }
   p <- ggplot(d)
   if (type == "fill") {
-    p <- p + geom_area(aes(x = .data$x, y = .data$value, fill = .data[[colour]], group = .data$.line),
-                       position = "identity", alpha = 0.35, na.rm = TRUE, show.legend = FALSE)
+    p <- p + geom_ribbon(aes(x = .data$x, ymin = .data$base, ymax = .data$value,
+                             fill = .data[[colour]], group = .data$.line),
+                         alpha = 0.35, na.rm = TRUE, show.legend = FALSE)
   } else if (type %in% c("se", "std")) {
     p <- p + geom_ribbon(aes(x = .data$x, ymin = .data$lo, ymax = .data$hi,
                              fill = .data[[colour]], group = .data$.line),
@@ -167,9 +187,9 @@ profile_ggplot <- function(d, th, ticks, colour, colours, linetype = NULL, linet
 # colour), a line per region group (told apart by dash pattern), each panel on
 # its own y range from `limits` (profile_limits()).
 plot_profile_per_column <- function(m, display, th, limits, average = "mean", kind = "regions",
-                                    ylab = NULL) {
+                                    ylab = NULL, data = NULL) {
   .check_display(m, display)
-  d <- .with_display(profile_data(m, average, .spread(th)), display)
+  d <- .with_display(data %||% profile_data(m, average, .spread(th)), display)
   strips <- group_strip_labels(m)
   d$region <- factor(strips[as.character(d$group)], levels = strips)
   # A label can repeat when two keys share one (it shouldn't: check_unique_labels);
@@ -200,9 +220,9 @@ plot_profile_per_column <- function(m, display, th, limits, average = "mean", ki
 # column in its display colour, every panel on one y range: the lowest ymin
 # and highest ymax over the columns (shared_ylim()).
 plot_profile_per_group <- function(m, display, th, limits, average = "mean", kind = "regions",
-                                   ylab = NULL) {
+                                   ylab = NULL, data = NULL) {
   .check_display(m, display)
-  d <- .with_display(profile_data(m, average, .spread(th)), display)
+  d <- .with_display(data %||% profile_data(m, average, .spread(th)), display)
   strips <- group_strip_labels(m)
   d$region <- factor(strips[as.character(d$group)], levels = strips)
   # One legend entry per column, named by its label.
@@ -226,12 +246,12 @@ plot_profile_per_group <- function(m, display, th, limits, average = "mean", kin
 # line per series (the label without its context) in its display colour.
 # Each context panel spans the shared range of that context's columns.
 plot_profile_by_context <- function(m, display, th, limits, average = "mean", kind = "regions",
-                                    ylab = NULL, use_limits = TRUE) {
+                                    ylab = NULL, use_limits = TRUE, data = NULL) {
   .check_display(m, display)
   if (any(is.na(display$series) | display$series == "")) {
     stop("Display rows need a series name for every column")
   }
-  d <- .with_display(profile_data(m, average, .spread(th)), display)
+  d <- .with_display(data %||% profile_data(m, average, .spread(th)), display)
   contexts <- unique(display$track)
   d$context <- factor(d$track, levels = contexts)
   strips <- group_strip_labels(m)
@@ -240,15 +260,22 @@ plot_profile_by_context <- function(m, display, th, limits, average = "mean", ki
   cols <- setNames(display$colour[match(series, display$series)], series)
   dashes <- epicc_dashes(th, cols)
   ncol_leg <- epicc_legend_ncol(th, length(series))
-  lim <- NULL
   if (use_limits) {
     lim <- do.call(rbind, lapply(contexts, function(ctx) {
       y <- shared_ylim(limits[display$track == ctx, , drop = FALSE])
       data.frame(context = factor(ctx, levels = contexts), ymin = y[1], ymax = y[2])
     }))
     lim <- merge(lim, data.frame(region = factor(strips, levels = strips)))
-    if (anyNA(lim$ymin)) lim <- NULL
+  } else {
+    # heatmaps_scales: default: each panel on its own curves' range with
+    # ggplot's 5% margins, as the autoscaled plot had it -- spelled out so a
+    # band or fill is clipped to it like everywhere else.
+    lim <- do.call(rbind, lapply(split(d, list(d$region, d$context), drop = TRUE), function(p) {
+      y <- default_ylim(p)
+      data.frame(region = p$region[1], context = p$context[1], ymin = y[1], ymax = y[2])
+    }))
   }
+  if (anyNA(lim$ymin)) lim <- NULL
   # Contexts sit at very different levels (CG tens of percent, CHH a few), so
   # each panel gets its own y-axis.
   facet <- if (length(strips) > 1) {

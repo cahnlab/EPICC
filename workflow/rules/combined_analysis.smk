@@ -1287,9 +1287,6 @@ rule plotting_profile_on_targetfile:
         env = lambda wildcards: wildcards.env,
         scales = config['heatmaps_scales'],
         average = config['profiles_scale'],
-        cg_scale = config['heat_mcg'],
-        chg_scale = config['heat_mchg'],
-        chh_scale = config['heat_mchh'],
         display = lambda wildcards: define_key_for_plots(wildcards, "display"),
         sample_labeller = os.path.join(REPO_FOLDER, "workflow", "scripts", "matrix_sample_labels.py"),
         profile_script = os.path.join(REPO_FOLDER, "workflow", "scripts", "R_profile.R"),
@@ -1308,9 +1305,11 @@ rule plotting_profile_on_targetfile:
         printf '%s\n' {params.theme:q} > "$TMPDIR/plot_theme.json"
         # Profile__ (a panel per column) and Profile_pergroup__ (a panel per
         # region group; for mC a panel per group x context), drawn from the
-        # matrix. The y-limits are computed from the same averages the curves
-        # are drawn with (plot_scales.R, as computing_matrix_scales does).
-        Rscript "{params.profile_script}" {input.matrix} "$TMPDIR/columns.tsv" "{params.matrix}" "{params.env}" "{params.scales}" "{params.average}" "{params.cg_scale}" "{params.chg_scale}" "{params.chh_scale}" {output.plot1} {output.plot2} "$TMPDIR/plot_theme.json"
+        # matrix. The y-limits are computed from the curves drawn (plot_scales.R,
+        # the y half of what computing_matrix_scales does). heat_mcg & co. only
+        # set heatmap colour ranges, so this rule doesn't take them: changing
+        # one reruns no profile.
+        Rscript "{params.profile_script}" {input.matrix} "$TMPDIR/columns.tsv" "{params.matrix}" "{params.env}" "{params.scales}" "{params.average}" {output.plot1} {output.plot2} "$TMPDIR/plot_theme.json"
         }} 2>&1 | tee -a "{log}"
         """
 
