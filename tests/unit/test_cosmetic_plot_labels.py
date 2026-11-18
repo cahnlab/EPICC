@@ -227,8 +227,13 @@ def test_browser_plot_joins_labels_onto_extracted_tracks(tmp_path):
     assert proc.returncode != 0 and "stale__H3K9me2" in proc.stderr
 
 
-@pytest.mark.requires_deeptools
-@pytest.mark.skipif(shutil.which("computeMatrixOperations") is None, reason="deeptools not found")
+_needs_r_scales = pytest.mark.skipif(
+    shutil.which("Rscript") is None
+    or subprocess.run(["Rscript", "-e", "library(data.table); library(jsonlite)"],
+                      capture_output=True).returncode != 0,
+    reason="Rscript with data.table/jsonlite not found")
+
+
 def _scales(tmp_path, mode, keys, values):
     body = _shell("computing_matrix_scales")
     matrix = tmp_path / "final.gz"
@@ -241,6 +246,7 @@ def _scales(tmp_path, mode, keys, values):
         "{output.temp_profile}": str(tmp_path / "p.pdf"),
         "{input.matrix}": str(matrix), "{log}": str(tmp_path / "log"),
         "{params.labeller}": str(REPO / "workflow" / "scripts" / "matrix_region_labels.py"),
+        "{params.scales_script}": str(REPO / "workflow" / "scripts" / "R_matrix_scales.R"),
         "{params.scales}": mode, "{params.profile}": "mean",
         "{params.matrix}": "tss", "{params.env}": "ChIP", "{params.target_name}": "genes",
         "{params.ref_genome}": "G", "{params.cg_scale}": "1", "{params.chg_scale}": "1",
@@ -252,8 +258,7 @@ def _scales(tmp_path, mode, keys, values):
     return heat[heat.index("--zMin") + 1:heat.index("--zMax")], heat[heat.index("--zMax") + 1:]
 
 
-@pytest.mark.requires_deeptools
-@pytest.mark.skipif(shutil.which("computeMatrixOperations") is None, reason="deeptools not found")
+@_needs_r_scales
 def test_type_scales_group_columns_by_exact_mark(tmp_path):
     # H3K9me must not pick up H3K9me2's columns, as a substring grep would.
     zmin, zmax = _scales(tmp_path, "type", ["a__H3K9me", "b__H3K9me", "a__H3K9me2"], [1, 2, 50])
@@ -262,8 +267,7 @@ def test_type_scales_group_columns_by_exact_mark(tmp_path):
     assert zmax[0] == zmax[1] and float(zmax[0]) < 10 < float(zmin[2])
 
 
-@pytest.mark.requires_deeptools
-@pytest.mark.skipif(shutil.which("computeMatrixOperations") is None, reason="deeptools not found")
+@_needs_r_scales
 def test_sample_scales_one_range_per_column(tmp_path):
     # An all-zero mCHG column falls back to the fixed mCHG scale, found by the
     # key's track rather than by the text of a label.
@@ -273,8 +277,7 @@ def test_sample_scales_one_range_per_column(tmp_path):
     assert float(zmax[0]) < float(zmax[2])
 
 
-@pytest.mark.requires_deeptools
-@pytest.mark.skipif(shutil.which("computeMatrixOperations") is None, reason="deeptools not found")
+@_needs_r_scales
 def test_type_scales_follow_interleaved_stranded_columns(tmp_path):
     # An unstranded matrix of a stranded track interleaves each sample's plus
     # and minus columns; each column must get its own mark's range.

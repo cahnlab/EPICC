@@ -1,8 +1,10 @@
 # Moving EPICC's plots to R, with one theme
 
 Status: groundwork landed (shared theme module `workflow/scripts/plot_theme.R`;
-the mC per-context metaplot uses it). Everything below "Phased plan" is still
-to do.
+the mC per-context metaplot uses it). Phase 1 done (env, `matrix_io.R`, the
+per-mark scales computed in R; the flag translation is parked for phase 2).
+Phases 2–7
+are still to do.
 
 The goal is for every plot EPICC draws to take its look from one editable theme
 and to be drawn in R. Today most of the combined-analysis plots come from
@@ -56,9 +58,11 @@ What the R versions must reproduce:
   `nostrand` pass ran, and `--skipZeros` (applied by `computeMatrix`, not the
   plot), decide both the group count and the region counts.
 - **Sorting** (`heatmaps_sort_options`): `keep`, or `descend` by `mean`/`median`
-  of each row across all columns, within each group. Rows whose summary is NaN
-  must land where deeptools puts them (the end); check this against a real
-  matrix.
+  of each row across all columns, within each group. deeptools sorts with
+  numpy's `argsort` (ascending, NaN last) and reverses it for `descend`, so an
+  all-NaN row goes to the **top** of its group and tied rows come out in
+  reverse order. `sort_rows()` reproduces this (checked in phase 1, deeptools
+  3.5.6 and 4.0.0 alike).
 - **`--outFileSortedRegions`.** The `most` heatmap's sorted BED feeds
   `sort_heatmap`, which reorders the mC matrix with `computeMatrixOperations
   sort -R` for `Heatmap_sorted__`. The R heatmap must write the same BED
@@ -67,8 +71,9 @@ What the R versions must reproduce:
 - **Scales.** `computing_matrix_scales` writes one `--zMin`/`--zMax` and one
   `--yMin`/`--yMax` value per matrix column, in column order (`heatmaps_scales:
   type|sample`). With `default` the files are empty, and deeptools uses one
-  scale for everything. R reads these files rather than recomputing them,
-  until phase 5 moves the scale computation itself.
+  scale for everything. Phase 1 ported the rule to R (`plot_scales.R`, see
+  below), and the R plots compute their limits with it from the matrix they
+  draw.
 - **Colour maps.** `heatmaps_plot_params[env]` currently holds `--colorMap
   seismic` for everything but mC (`Oranges`, `--missingDataColor 0.9`). These
   are now the theme's `heatmap_colors` defaults (`seismic` → `.EPICC_SEISMIC`,
@@ -124,11 +129,11 @@ Out of scope.
 | `epicc_save(plot, file, w, h)` | One place to pick the device later (e.g. `cairo_pdf` for font embedding). |
 
 **Theme keys** (default theme): `base_size` 11, `base_family` "",
-`line_width` 0.6, `dash_cycle`, `grid_minor` FALSE, `panel_spacing` 1.4,
+`line_width` 0.6, `profile_type` lines (lines/fill/se/std), `dash_cycle`, `grid_minor` FALSE, `panel_spacing` 1.4,
 `strip_fill` grey92, `strip_face` bold, `legend_position` right,
 `legend_key_width` 2.2, `legend_max_rows` 25, `legend_row_height` 0.22,
 `legend_char_width` 0.09, `palette` (tab20), `heatmap_colors` {default, ChIP,
-TF, ATAC, RNA, sRNA → seismic; mC → Oranges}, `heatmap_missing_color` grey90,
+TF, ATAC, RNA, sRNA → seismic; mC → Oranges; an entry may also be one matplotlib map name}, `heatmap_missing_color` grey90,
 `panel_width`/`panel_height` 3.2 in, `heatmap_column_width` 1.6 in,
 `heatmap_height` 9 in, `profile_strip_height` 1.2 in. The last three are for
 phase 3 and unused so far.
@@ -217,27 +222,153 @@ that we depend on them directly: **r-jsonlite** (theme, matrix header),
 **bioconductor-complexheatmap** (pulls in r-circlize, r-getoptlong,
 r-globaloptions, r-clue). Optional: r-patchwork (already transitive) for
 composing ggplot panels (PCA scatter + scree). The theme module itself needs
-only ggplot2 and jsonlite; the env change is part of phase 1 so the groundwork
-PR leaves `epibutton.yaml` untouched and no env is rebuilt.
+only ggplot2 and jsonlite; phase 1 put the new packages in a separate env,
+`epibutton_plots.yaml`, so `epibutton.yaml` stays untouched and nothing that
+shares it is rerun.
 
 ---
 
 ## 4. Phased plan (one PR per plot family)
 
-### Phase 1: env + matrix reader
-- Declare r-jsonlite, r-data.table, r-scales, bioconductor-complexheatmap in
-  `epibutton.yaml`. Every rule in that env gets a one-time env rebuild.
+### Phase 1: env + matrix reader (done)
+- A new env, `workflow/envs/epibutton_plots.yaml` (python, gzip, R with
+  data.table, jsonlite, scales, ggplot2 and ComplexHeatmap), serves the R
+  plotting and plot-scale rules. In phase 1 that is only
+  `computing_matrix_scales`, which calls nothing but `python3`, `Rscript` and
+  `gzip`. `epibutton.yaml` is unchanged, so the 38 rules that share it (genome
+  prep, downloads, trimming, combined analysis) keep their software env and
+  are not rerun. A dry-run against the existing pombe run gave the same rerun
+  reason for every job under #113's workflow and this one, except
+  `computing_matrix_scales`. That run is stale and reruns end to end either
+  way, so the env claim rests on `epibutton.yaml` being byte-identical. The
+  env solves and builds (R 4.5, data.table 1.18, ComplexHeatmap 2.26). Each
+  later phase moves its plot rule to this env when R starts drawing that
+  plot; the plot rules that still call deeptools stay where they are.
 - `workflow/scripts/matrix_io.R`: `read_matrix_header()`, `read_matrix()`
-  (header + values, sample/group boundaries, bin layout, tick positions/labels
-  from the header), `group_means()`, `sort_rows()`, `bin_rows()`. Unit tests on
-  small synthetic matrices, including a stranded + `nostrand` merge and a
-  matrix with `nan`s. Cross-check `group_means` against `plotProfile
-  --outFileNameData` on the pombe fixture.
-- Translate-then-deprecate `heatmaps_plot_params`/`profiles_plot_params`: a
-  Python helper maps known flags to theme overrides, warns, and refuses other
-  flags.
+  (regions, values with `nan` → `NA`, sample and group ranges, per-sample bin
+  layout), `sample_columns()`, `row_summary()`/`col_summary()` (NaN-aware like
+  numpy's `nan*`), `group_means()`, `sort_rows()`, `bin_rows()` and
+  `matrix_ticks()` (deeptools' `getProfileTicks`: the upstream tick reads
+  `-2.0`, the downstream one `2.0Kb`).
+- `tests/unit/test_matrix_io.py` writes small matrices in deeptools' format (a
+  stranded and a `nostrand` group, NaNs, an all-NaN row, tied rows, an empty
+  group). Where deeptools is on PATH it also compares `group_means` with
+  `plotProfile --outFileNameData` and `sort_rows` with `plotHeatmap
+  --outFileSortedRegions`. These pass against deeptools 4.0.0, and the same
+  comparison on a matrix built by `computeMatrix` from bigwigs with gaps
+  matched to 4e-16. The comparison runs on generated matrices, not the pombe
+  run, so it needs no completed pipeline run. Under `--sortUsing max`/`min`,
+  rows with exactly equal summaries can come out in a different order, because
+  numpy's float sort is not stable. EPICC sorts only by mean or median.
+- **Flag translation: deferred to phase 2.** `legacy_plot_params()`
+  translates `heatmaps_plot_params`/`profiles_plot_params` onto theme keys:
+  - `--colorMap NAME` → `heatmap_colors.<env>: NAME`;
+  - `--colorList` → a list;
+  - `--missingDataColor` → `heatmap_missing_color`;
+  - `--interpolationMethod` is dropped;
+  - `--plotType` → `profile_type`.
 
-### Phase 2: profiles (`Profile__`, `Profile_pergroup__`)
+  Each translated setting gets a deprecation warning, and any other flag stops
+  the run. It is gated per family by a Snakefile `R_DRAWN_PLOT_FAMILIES`.
+  Review of #114 noted that it would never run in phase 1, so it was taken
+  out. The code and its tests are parked on branch
+  `claude/r-plot-legacy-flags` (commit `fc1130c`, in `config_validation.py`,
+  `workflow/Snakefile` and `tests/unit/test_plot_theme.py`). Phase 2 brings it
+  back with `R_DRAWN_PLOT_FAMILIES = ("profiles",)`, and phase 3 adds
+  `"heatmaps"`. Once a family is listed, drop its key from
+  `config/epicc-options.yaml` and the builder.
+- A `heatmap_colors` entry may now be one matplotlib colour-map name
+  (`viridis`, `RdBu_r`), resolved through `workflow/scripts/plot_colormaps.json`
+  (all 91 matplotlib maps, 17 stops each; regenerate with
+  `dev/gen_plot_colormaps.py`). `plot_theme.R` checks names against it, and so
+  will the translation when it returns.
+- Open for phase 3: `heatmaps_plot_params` has `all`/`most` entries, which
+  translate to `heatmap_colors.all`/`.most`. Decide whether the cross-type
+  heatmaps use those or colour each column by its data type.
+- **Per-type and per-mark scaling: `workflow/scripts/plot_scales.R`** is a
+  port of `computing_matrix_scales` (bash, `dataRange`, `plotProfile
+  --outFileNameData`). It was made a phase 1 acceptance requirement so that
+  `heatmaps_scales` survives the switch. It provides:
+  - `matrix_scales(m, mode, average, mc_zmax)`: one row per matrix column, in
+    column order;
+  - `scale_for_column()`: the lookup every R plot must use, by its own column
+    key;
+  - `shared_ylim()`: the `Profile_pergroup__` collapse to one min/max;
+  - `default_scales()`: the single scale deeptools falls back to;
+  - `scale_flags()`: the rule's exact flag strings.
+
+  What it reproduces, all read off the rule rather than assumed:
+  - **zMin/zMax** are `dataRange`'s **10th/90th percentiles**, not min/max.
+    numpy propagates NaN, so a column holding any NaN has no range. Every mC
+    column has NaNs, so mC heatmaps always land on `heat_mcg`/`heat_mchg`/
+    `heat_mchh`. Any other mark whose range is 0..0 gets 0..0.005.
+  - **`type`**: one range per mark. The mark is the last `__` field of the
+    key, matched exactly. **`sample`**: one range per column.
+  - **y**: the column's (or mark's) average profile over all region groups,
+    padded by a tenth of the range. When the range is 0 the pad is |max|/10,
+    then 0.01. So an all-zero profile gets −0.01..0.01, and only a profile
+    with no value at all gets 0..0.01.
+  - y is computed from `group_means()`, the same averaging the R profiles will
+    draw with. That function is checked against `plotProfile`, so the bounds
+    and the curves cannot disagree.
+
+  `tests/unit/test_plot_scales.py` covers:
+  - each mode;
+  - interleaved stranded columns;
+  - H3K9me next to H3K9me2;
+  - marks two orders of magnitude apart;
+  - an all-zero mC context, an all-zero other mark and an all-NaN column;
+  - lookups by key;
+  - with deeptools on PATH, the bash rule itself (`dev/scales_rule.py` runs its
+    shell block from the `.smk`) against R in `type`/`sample` × mean/median.
+
+  The `scales` comparison family draws a `type`-mode `most` heatmap with the
+  rule's limits and with R's. The two are pixel-identical.
+
+  **The rule now runs it.** At the user's call, all scaling moved to R in
+  phase 1: `computing_matrix_scales` runs `R_matrix_scales.R`, which writes
+  the same flag files, and no longer calls `dataRange` or `plotProfile`.
+  Rule connections changed in two ways:
+  - its `temp_values`, `temp_profile` and `temp_profile_values` outputs are
+    gone (nothing else read them);
+  - its code changed, so Snakemake reruns it, and the plots that read its
+    files, once. No matrix is rebuilt.
+
+  The old bash is frozen in
+  `dev/reference/computing_matrix_scales_deeptools.sh` and run beside the new
+  rule by `test_plot_scales.py` and the `scales` comparison family. The
+  comparison covered three fixtures plus two matrices `computeMatrix` built
+  from bigwigs (one with NaNs, one `--missingDataAsZero --skipZeros`
+  reference-point), in every mode with mean and median. Results:
+  - **z:** every value is the same double. Where the text differs, it is the
+    spelling: `dataRange` prints `0.0` where R prints `0`, and Python may use
+    16 digits where R uses 17.
+  - **y:** text-identical everywhere. There was no deeptools-average
+    difference to explain, because `group_means()` equals `plotProfile`'s
+    averages (checked in `test_matrix_io.py`).
+  - **Rendered check:** a heatmap drawn with either set of limits is
+    pixel-identical.
+
+  Phase 2's R profile takes its limits from the same functions, either by
+  reading these files or by calling `matrix_scales()` directly.
+- **Behaviours of today's rule found while porting**, to settle in phase 2:
+  - `Profile__` is drawn with deeptools' default mean even when
+    `profiles_scale: median`, while its y-limits come from the median. Its
+    curves can therefore leave their axis. The R profile uses
+    `profiles_scale` for both.
+  - With `heatmaps_scales: default`, the per-group collapse turns the empty
+    scale file into `--yMin 99999 --yMax -99999`. R uses `default_scales()`
+    instead.
+  - Because of the NaN propagation above, mC heatmap scales come from config
+    (`heat_m*`), never from the data.
+  - In `type` mode, the awk search for a mark's range starts from the
+    sentinels 999999 and −999999. A mark whose 10th percentile is ≥ 999999 (or
+    whose 90th is ≤ −999999) therefore gets 0 on that side. Large raw counts
+    can hit this.
+  - y bounds are written as awk printed them: integral values in full
+    (`900000`), anything else with `%.6g`.
+
+### Phase 2: profiles (`Profile__`, `Profile_pergroup__`) + scales
 - `R_profile.R`, reading the matrix (option A) and the `params_regions` /
   `params_profile` files. `Profile__`: one panel per column, a line per region
   group, y-limits per column. `Profile_pergroup__` non-mC: one panel per
@@ -246,6 +377,15 @@ PR leaves `epibutton.yaml` untouched and no env is rebuilt.
   `plotProfile` dump.
 - Drops two `plotProfile` calls per profile job. The `--plotHeight`
   workaround goes away; legend room comes from `epicc_legend_*`.
+- Limits come from `plot_scales.R` on the matrix being drawn. The y bounds
+  must come from the same `group_means()` call that produces the curves, so
+  the plot cannot run past its own limits.
+- Scales are already in R (phase 1). Each R profile must take its y-limits
+  from `matrix_scales()` with the same `profiles_scale` it draws with.
+- Tests must check that the R profile gives matrix column *i* the y-limits of
+  column *i* (look up by key with `scale_for_column`, never by position within
+  a mark), on an interleaved stranded matrix. Phase 3 adds the same check for
+  zMin/zMax in the heatmap.
 
 ### Phase 3: heatmaps (`Heatmap__`, `Heatmap_sorted__`)
 - `R_heatmap.R` on ComplexHeatmap: one `Heatmap` per column with
@@ -261,11 +401,11 @@ PR leaves `epibutton.yaml` untouched and no env is rebuilt.
   scatter + scree, patchwork), colours/labels from the display table. Keep the
   empty-placeholder behaviour when PCA fails.
 
-### Phase 5: scales into R (optional)
-- Move `computing_matrix_scales`' awk/bash into R (same per-mark /
-  per-sample logic and range padding), which drops its `plotProfile` and
-  `dataRange` passes. The per-column scale files keep their format so the
-  phase 2–3 scripts don't change.
+### Phase 5: scales into R (done in phase 1)
+- `computing_matrix_scales` runs `R_matrix_scales.R`. The aim is to take
+  plotting off deeptools, not to remove it. deeptools stays for
+  `computeMatrix`, `computeMatrixOperations` (rbind, sort, relabel),
+  `bamCoverage`/`bamCompare` and the like.
 
 ### Phase 6: existing R plots adopt the theme
 - UpSet, mapping/peak/size stats, expression, MDS (ggplot2 from `plotMDS(...,
@@ -300,9 +440,10 @@ fixture matrix. Small fixtures are generated in the script; real matrices
 
 | Family | Plots compared | Old | New | Comparison images |
 |---|---|---|---|---|
-| `mc_profile` (groundwork) | `Profile_pergroup__*__mC__*` | `R_mc_profile_by_context.R` at the #112 head | the same script on `plot_theme.R`, default theme + `presentation` | `mc_profile/compare.png`: the default theme is pixel-identical |
+| `mc_profile` (groundwork; rerun in phase 1) | `Profile_pergroup__*__mC__*` | `R_mc_profile_by_context.R` at the #112 head (phase 1: at the #113 head) | the same script on `plot_theme.R`, default theme + `presentation` | `mc_profile/compare.png`: the default theme is pixel-identical both times. Phase 1 draws no new plot. |
 | `profile` (phase 2) | `Profile__`, `Profile_pergroup__` (non-mC and mC) | `plotProfile` / `--perGroup` | `R_profile.R` | `profile/compare.png`, one row per plot type |
 | `heatmap` (phase 3) | `Heatmap__`, `Heatmap_sorted__` | `plotHeatmap` | `R_heatmap.R` | `heatmap/compare.png`; also diff the `_sorted_regions.bed` |
+| `scales` (phase 1) | `heatmaps_scales: type` limits on a `most` heatmap (H3K9me2 0–60 next to H3K4me3 0–0.5, H3K9me, interleaved RNA plus/minus) | `computing_matrix_scales` as bash + `dataRange`/`plotProfile` (`dev/reference/`), drawn by `plotHeatmap` | the rule as it stands (`R_matrix_scales.R`), drawn by the same `plotHeatmap` | `scales/compare.png` + `scales/flags.txt` (both flag sets, largest difference per flag): pixel-identical. Needs deeptools on PATH |
 | `pca` (phase 4) | `PCA__` | `plotPCA` | `R_pca.R` | `pca/compare.png` |
 | `stats` / `upset` / `deg` / `browser` (phase 6) | existing R plots | current script | themed script | one `compare.png` per family |
 | `fingerprint` (phase 7) | `Fingerprint__` | `plotFingerprint` PNG | R PDF | `fingerprint/compare.png` |
@@ -327,9 +468,9 @@ fixture matrix. Small fixtures are generated in the script; real matrices
   the same text (`label (n)`, if that is what deeptools draws — check a current
   PDF).
 - **Sort semantics.** deeptools `descend` + `mean` uses the mean over all
-  columns of a row, NaN-aware, within each group. Check on a matrix with NaNs
-  (mC) that the R order matches `--outFileSortedRegions` from deeptools before
-  switching.
+  columns of a row, NaN-aware, within each group. Phase 1 matched
+  `--outFileSortedRegions` on matrices with NaNs and an all-NaN row (it goes
+  first under `descend`). Recheck on a real mC matrix in phase 3.
 - **Scale files with `heatmaps_scales: default`** are empty. R must then
   compute one shared scale, as deeptools does.
 - **Colour fidelity.** `seismic`/`Oranges` are copied as hex stops. Spacing

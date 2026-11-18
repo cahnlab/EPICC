@@ -228,6 +228,9 @@ def te_target_for(ref_genome):
 
 # Define the conda environment to build
 CONDA_ENV = os.path.join(REPO_FOLDER,"workflow","envs","epibutton.yaml")
+# R plotting and plot-scale rules: an env of their own, so adding a plotting
+# package never changes the env genome prep, downloads and trimming share.
+CONDA_ENV_PLOTS = os.path.join(REPO_FOLDER,"workflow","envs","epibutton_plots.yaml")
 
 # Define label for the analysis
 analysis_name = config["analysis_name"]

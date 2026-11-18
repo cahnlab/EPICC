@@ -23,6 +23,10 @@ sys.path.insert(0, os.path.join(REPO, "workflow", "scripts"))
 from config_validation import plot_theme_spec  # noqa: E402
 
 
+def spec_json(cfg):
+    return json.loads(plot_theme_spec(cfg))
+
+
 def _have_r():
     if not shutil.which("Rscript"):
         return False
@@ -48,19 +52,19 @@ def _r(code, theme_spec=None, tmp_path=None):
 
 class TestPlotThemeSpec:
     def test_defaults_when_unset(self):
-        assert json.loads(plot_theme_spec({})) == {"theme": "default", "overrides": {}}
+        assert spec_json({}) == {"theme": "default", "overrides": {}}
 
     def test_passes_name_and_overrides(self):
         cfg = {"plot_theme": "presentation",
                "plot_theme_overrides": {"base_size": 12,
                                         "heatmap_colors": {"RNA": ["white", "darkgreen"]}}}
-        assert json.loads(plot_theme_spec(cfg)) == {
+        assert spec_json(cfg) == {
             "theme": "presentation",
             "overrides": {"base_size": 12, "heatmap_colors": {"RNA": ["white", "darkgreen"]}}}
 
     def test_null_overrides_block_is_empty(self):
         # A YAML key with every child commented out parses as None.
-        assert json.loads(plot_theme_spec({"plot_theme_overrides": None}))["overrides"] == {}
+        assert spec_json({"plot_theme_overrides": None})["overrides"] == {}
 
     def test_overrides_must_be_a_mapping(self):
         with pytest.raises(ValueError, match="plot_theme_overrides"):
@@ -76,6 +80,15 @@ class TestPlotThemeSpec:
         a = plot_theme_spec({"plot_theme_overrides": {"base_size": 12, "line_width": 1.0}})
         b = plot_theme_spec({"plot_theme_overrides": {"line_width": 1.0, "base_size": 12}})
         assert a == b
+
+
+def test_colour_map_table_is_sorted_and_complete():
+    table = json.loads((REPO / "workflow" / "scripts" / "plot_colormaps.json").read_text())
+    maps = table["maps"]
+    assert {"seismic", "Oranges", "viridis", "RdBu", "coolwarm"} <= set(maps)
+    assert all(len(v) == 17 and all(c.startswith("#") and len(c) == 7 for c in v)
+               for v in maps.values())
+    assert not any(n.endswith("_r") for n in maps)
 
 
 def test_profile_rule_hands_the_theme_to_the_mc_script():
@@ -144,11 +157,36 @@ class TestTheme:
         assert proc.returncode == 0, proc.stderr
         assert proc.stdout.split() == ["white", "black", "|", "#FFF5EB"]
 
-    def test_heatmap_colour_needs_two_colours(self, tmp_path):
+    def test_heatmap_colour_single_name_must_be_a_colour_map(self, tmp_path):
+        # One string is a colour-map name; a single colour is not a ramp.
         spec = {"theme": "default", "overrides": {"heatmap_colors": {"RNA": "red"}}}
         proc = _r("", spec, tmp_path)
         assert proc.returncode != 0
-        assert "heatmap_colors.RNA" in proc.stderr
+        assert "Unknown colour map 'red'" in proc.stderr
+
+    def test_heatmap_colour_by_map_name(self, tmp_path):
+        spec = {"theme": "default",
+                "overrides": {"heatmap_colors": {"RNA": "viridis", "sRNA": "viridis_r"}}}
+        proc = _r("r <- epicc_heatmap_colors(th, 'RNA'); s <- epicc_heatmap_colors(th, 'sRNA'); "
+                  "cat(length(r), r[1], r[17], identical(rev(r), s))", spec, tmp_path)
+        assert proc.returncode == 0, proc.stderr
+        assert proc.stdout.split() == ["17", "#440154", "#fde725", "TRUE"]
+
+    def test_colour_map_table_matches_the_seismic_default(self, tmp_path):
+        # plot_colormaps.json samples matplotlib; the theme's exact seismic
+        # stops are its 0, 1/4, 3/4 and 1 points.
+        proc = _r("m <- toupper(epicc_colormap('seismic')); cat(m[c(1, 5, 13, 17)])")
+        assert proc.returncode == 0, proc.stderr
+        assert proc.stdout.split() == ["#00004C", "#0101FF", "#FE0000", "#800000"]
+
+    def test_profile_type_choices(self, tmp_path):
+        ok = _r("cat(th$profile_type)", {"theme": "default", "overrides": {"profile_type": "se"}},
+                tmp_path)
+        assert ok.returncode == 0, ok.stderr
+        assert ok.stdout.strip() == "se"
+        bad = _r("", {"theme": "default", "overrides": {"profile_type": "heatmap"}}, tmp_path)
+        assert bad.returncode != 0
+        assert "profile_type must be one of lines, fill, se, std" in bad.stderr
 
     @pytest.mark.parametrize("dtype,first", [
         ("mCHG", "#FFF5EB"),        # context -> mC
