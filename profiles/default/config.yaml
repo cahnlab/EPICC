@@ -23,6 +23,10 @@ standard_resources: &standard
   mem_mb: 2000
   runtime: "2h"
 
+intermediate_resources: &intermediate
+  mem_mb: 8000
+  runtime: "4h"
+  
 download_resources: &download
   mem_mb: 16000
   runtime: "12h"
@@ -150,7 +154,7 @@ set-resources:
   make_srna_size_stats: *standard
   filter_size_srna_sample: *standard
   merging_srna_replicates: *standard
-  make_srna_stranded_bigwigs: *standard
+  make_srna_stranded_bigwigs: *intermediate
   analyze_all_srna_samples_on_target_file:
     <<: *heavy
     runtime: "24h"
