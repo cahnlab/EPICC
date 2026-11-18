@@ -16,7 +16,8 @@ QC_option: true
 GO: false
 trimmed_fastqs: false
 aligned_bams: false
-structural_rna_depletion: false
+structural_rna_classes:
+  filter: []  # no structural RNA depletion
 browser_TE_file: false
 
 # Reference genome

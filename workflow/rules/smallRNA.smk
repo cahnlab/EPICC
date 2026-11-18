@@ -27,7 +27,7 @@ def get_bt1_indices(wildcards):
         
 def define_input_file_for_shortstack(sample_name):
     paired = get_sample_info_from_name(sample_name, samples, 'paired')
-    rna_depletion = config['structural_rna_depletion']
+    rna_depletion = STRUCTURAL_RNA_DEPLETION
     nextflex_v3 = config['nextflex_v3_deduplication']
     if paired == "SE":
         if rna_depletion:
@@ -80,7 +80,7 @@ def define_final_srna_output(ref_genome):
     srna_min = config['srna_min_size']
     srna_max = config['srna_max_size']
     trimmed_fastqs = config['trimmed_fastqs']
-    rna_depletion = config['structural_rna_depletion']
+    rna_depletion = STRUCTURAL_RNA_DEPLETION
     nextflex_v3 = config['nextflex_v3_deduplication']
     map_files = []
     bigwig_files = []
@@ -170,11 +170,15 @@ rule deduplicate_srna_nextflexv3:
         """
 
 def get_structural_rna_fasta(wildcards):
-    """Resolve structural RNA FASTA: user-provided file or auto-derived via Infernal."""
+    """Resolve structural RNA FASTA: user-provided file or auto-derived via Infernal.
+
+    A user-provided file is used as given; structural_rna_classes applies only
+    to the auto-derived one (select_structural_rna_classes).
+    """
     override = config["genomes"][wildcards.ref_genome].get("structural_rna_fafile", "<auto>")
     if override and override != "<auto>":
         return resolve_repo_data(override)
-    return f"{GENOMES_DIR}/structural_RNAs/{wildcards.ref_genome}/structural_rnas.fa"
+    return f"{GENOMES_DIR}/structural_RNAs/{wildcards.ref_genome}/structural_rnas_selected.fa"
 
 rule make_bt2_indices_for_structural_RNAs:
     input:

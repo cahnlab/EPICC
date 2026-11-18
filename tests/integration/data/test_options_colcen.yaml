@@ -17,7 +17,8 @@ QC_option: "none"
 GO: true   # exercises create_GO_database (org.Athaliana.eg.db build + install); see test_colcen_postrun.py
 trimmed_fastqs: false
 aligned_bams: false
-structural_rna_depletion: false
+structural_rna_classes:
+  filter: []  # no structural RNA depletion
 browser_TE_file: false
 
 # Reference genome — downloaded from GitHub (Col-CEN v1.2)

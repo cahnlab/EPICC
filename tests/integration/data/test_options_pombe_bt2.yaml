@@ -17,7 +17,6 @@ QC_option: "none"
 GO: false
 trimmed_fastqs: false
 aligned_bams: false
-structural_rna_depletion: true
 browser_TE_file: false
 
 genomes:

@@ -15,6 +15,13 @@ from scripts.config_validation import (
     format_quoted_params_error,
     plot_theme_spec,
 )
+from scripts.rfam_classes import (
+    validate_structural_rna_classes,
+    structural_rna_warnings,
+    depletion_enabled as structural_rna_depletion_enabled,
+    selection_from_config as rfam_selection_from_config,
+    selection_label as rfam_selection_label,
+)
 from scripts.samplefile_validation import (
     check_table, check_genome_config, check_extra_output_files, resolve_data_path,
 )
@@ -170,6 +177,19 @@ try:
     PLOT_THEME_JSON = plot_theme_spec(config)
 except ValueError as e:
     sys.exit(f"ERROR: {e}")
+
+# ---------------------------------------------------------------------------
+# Rfam classes depleted from sRNA libraries (auto-derived structural RNAs)
+# ---------------------------------------------------------------------------
+# structural_rna_classes.filter: [] turns depletion off (it replaced the
+# structural_rna_depletion toggle, which is still read with a warning).
+_rfam_class_errors = validate_structural_rna_classes(config)
+if _rfam_class_errors:
+    sys.exit("ERROR: " + "\nERROR: ".join(_rfam_class_errors))
+for _w in structural_rna_warnings(config):
+    print(f"WARNING: {_w}", file=sys.stderr)
+STRUCTURAL_RNA_DEPLETION = structural_rna_depletion_enabled(config)
+STRUCTURAL_RNA_SELECTION = rfam_selection_label(*rfam_selection_from_config(config))
 
 # ---------------------------------------------------------------------------
 # Intermediate file retention

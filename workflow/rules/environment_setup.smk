@@ -396,6 +396,60 @@ rule build_structural_rna_db:
         }} 2>&1 | tee -a "{log}"
         """
 
+# build_structural_rna_db above annotates every Rfam family (its FASTA holds
+# all hits and is no longer what sRNA depletion uses). Its shell is left
+# untouched on purpose: editing it would trip Snakemake's code rerun-trigger
+# and re-run cmscan, the slow step, for every genome. The class selection
+# lives in its own cheap rule below, so changing structural_rna_classes
+# reruns only this, the bowtie2 index and the sRNA steps downstream of it.
+
+rule download_rfam_family_table:
+    output:
+        family = f"{GENOMES_DIR}/rfam/family.txt.gz"
+    log:
+        os.path.join(REPO_FOLDER, RESULTS_DIR, "logs", "download_rfam_family_table.log")
+    conda: CONDA_ENV
+    shell:
+        """
+        {{
+        printf "Downloading Rfam family table (family class annotations)\\n"
+        mkdir -p {config[genome_dir]}/rfam
+        curl -fSL https://ftp.ebi.ac.uk/pub/databases/Rfam/CURRENT/database_files/family.txt.gz \
+            > {output.family}
+        }} 2>&1 | tee -a "{log}"
+        """
+
+rule select_structural_rna_classes:
+    input:
+        fasta = f"{GENOMES_DIR}/{{ref_genome}}/{{ref_genome}}.fa",
+        fai = f"{GENOMES_DIR}/{{ref_genome}}/{{ref_genome}}.fa.fai",
+        tblout = f"{GENOMES_DIR}/structural_RNAs/{{ref_genome}}/infernal.tblout",
+        family = f"{GENOMES_DIR}/rfam/family.txt.gz"
+    output:
+        bed = f"{GENOMES_DIR}/structural_RNAs/{{ref_genome}}/structural_rnas_selected.bed",
+        structural_fa = f"{GENOMES_DIR}/structural_RNAs/{{ref_genome}}/structural_rnas_selected.fa"
+    params:
+        selection = STRUCTURAL_RNA_SELECTION,
+        script = os.path.join(REPO_FOLDER, "workflow", "scripts", "rfam_classes.py")
+    log:
+        return_log_env("{ref_genome}", "structural_rna_select")
+    conda: CONDA_ENV
+    shell:
+        """
+        {{
+        printf "Selecting Rfam classes for {wildcards.ref_genome} structural RNA depletion\\n"
+        python {params.script} --family-table {input.family} --tblout {input.tblout} \
+            --selection "{params.selection}" --out-bed {output.bed}
+        if [[ -s {output.bed} ]]; then
+            bedtools getfasta -fi {input.fasta} -bed {output.bed} \
+                -s -name -fo {output.structural_fa}
+        else
+            printf "WARNING: no Rfam hits selected for {wildcards.ref_genome}. Creating empty FASTA.\\n" >&2
+            : > {output.structural_fa}
+        fi
+        }} 2>&1 | tee -a "{log}"
+        """
+
 def alt_te_source(wildcards):
     """Source of <G>__TE_file_<tag>.bed: the run's alt_te_file, if that's its tag."""
     g = wildcards.ref_genome
