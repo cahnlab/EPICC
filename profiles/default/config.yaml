@@ -173,6 +173,7 @@ set-resources:
   plotting_upset_regions: *low
   making_stranded_matrix_on_targetfile: *heavy
   merging_matrix: *single
+  joining_all_matrix: *standard
   computing_matrix_scales: *single
   sort_heatmap: *single
   plotting_heatmap_on_targetfile: *single
@@ -296,6 +297,7 @@ set-threads:
   plotting_upset_regions: 1
   making_stranded_matrix_on_targetfile: 4
   merging_matrix: 1
+  joining_all_matrix: 1
   computing_matrix_scales: 1
   sort_heatmap: 1
   plotting_heatmap_on_targetfile: 1
