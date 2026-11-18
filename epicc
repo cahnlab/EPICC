@@ -565,6 +565,38 @@ def detect_execution_mode(args):
     return None, cores
 
 
+# Mirrors _UNSAFE_CHARS in workflow/scripts/samplefile_validation.py (which
+# can't be imported here: it pulls in pandas through scripts.sample_sheet).
+# tests/unit/test_epicc_analysis_name.py keeps the two patterns identical.
+_ANALYSIS_NAME_UNSAFE = r'[/\\\s\'\";&|<>$`!{}()\[\]?*~#]'
+
+
+def _analysis_name(value):
+    """Argument type for --analysis-name.
+
+    The name becomes a field of '__'-delimited output paths
+    (Heatmap__{matrix}__{env}__{analysis_name}__{ref_genome}__...), so it is
+    held to the rules for a Sample_ID part: no filesystem-unsafe character or
+    whitespace, no '__', and no leading or trailing '_'.
+    """
+    import re
+    bad = sorted(set(re.findall(_ANALYSIS_NAME_UNSAFE, value)))
+    if not value:
+        raise argparse.ArgumentTypeError("must not be empty")
+    if bad:
+        shown = ", ".join(repr(c) for c in bad)
+        raise argparse.ArgumentTypeError(
+            f"{value!r} contains unsafe characters ({shown}); it becomes part "
+            f"of output file names"
+        )
+    if "__" in value or value.startswith("_") or value.endswith("_"):
+        raise argparse.ArgumentTypeError(
+            f"{value!r} must not contain '__' or start/end with '_' ('__' "
+            f"separates the fields of output file names)"
+        )
+    return value
+
+
 def _parse_dmr_min_diff(s):
     """Argument type for --dmr-min-diff.
 
@@ -615,6 +647,8 @@ def _collect_config_overrides(args):
         ov.append(f"output_dir={args.output_dir}")
     if getattr(args, "genome_dir", None):
         ov.append(f"genome_dir={args.genome_dir}")
+    if getattr(args, "analysis_name", None):
+        ov.append(f"analysis_name={args.analysis_name}")
     if getattr(args, "keep_intermediates", None):
         ov.append(f"keep_intermediates={args.keep_intermediates}")
     if getattr(args, "use_node_tmpdir", False):
@@ -1124,6 +1158,9 @@ def cmd_validate(args, extra_args):
     # are what gets checked below.
     with open(_prepare_options_file(args)) as f:
         config = yaml.safe_load(f)
+    # --analysis-name reaches snakemake through --config, not the merged file.
+    if getattr(args, "analysis_name", None):
+        config["analysis_name"] = args.analysis_name
 
     # Basic config checks
     sample_file = args.samples or config.get("sample_file")
@@ -1839,6 +1876,12 @@ def add_common_options(parser):
         help="Genome directory prefix (default: genomes)",
     )
     parser.add_argument(
+        "--analysis-name", type=_analysis_name, metavar="NAME",
+        help="Override analysis_name from the options file. It names the "
+             "run's combined outputs, so it must not contain '__', '/', "
+             "whitespace or shell-special characters.",
+    )
+    parser.add_argument(
         "--keep-intermediates", metavar="TIER",
         choices=["none", "standard", "custom", "all"],
         help="Intermediate file retention tier (none/standard/custom/all)",
@@ -2158,10 +2201,6 @@ def build_parser():
              "(--plot-type go only): tab-delimited with gene IDs in the first "
              "column. Sets rnaseq_background_file for this run. Default "
              "background is all genes in the genome.",
-    )
-    p_out.add_argument(
-        "--analysis-name", metavar="NAME",
-        help="Override analysis_name from the options file.",
     )
     p_out.add_argument(
         "--ref-genome", metavar="GENOME",

@@ -26,6 +26,7 @@ epicc validate --build-envs --samples your_samples.tsv        # pre-create rule 
 - `--[no-]full-analysis`, `--[no-]te-analysis`, `--[no-]go`, `--[no-]rna-deduplicate`, `--methylation-contexts CG,CHG,CHH`
 - `--dmr-caller {metilene,dmrcaller}`, `--dmr-min-diff SPEC` (`auto` / float / `CG=f,CHG=f`), `--dmr-min-cytosines`, `--dmr-q-value`, `--dmr-sigma-n`
 - `--chip-callpeaks-params STR`, `--cut-broad-caller {epic2,seacr,macs2}`, `--cut-narrow-caller {seacr,macs2}`
+- `--analysis-name NAME` (sets `analysis_name`; shared with `output` via `add_common_options`, checked by `_analysis_name` against the sample sheet's unsafe-char set plus no `__` / leading or trailing `_`, since it is a `__`-delimited field of output paths)
 - `--ref-genome GENOME` (sets `only_genome`: rows for other genomes are dropped before validation, so those genomes need no config entry), `--te-file PATH` (writes `genomes.<GENOME>.alt_te_file`; the genome is `--ref-genome` or the sheet's only one)
 
 `epicc output --plot-type browser` also takes `--te-file` and `--extra-tracks BED,…` with optional `--extra-tracks-labels` / `--extra-tracks-colors`, which replace `browser_extra_tracks` for that run (normalized by `workflow/scripts/browser_extra_tracks.py`).
