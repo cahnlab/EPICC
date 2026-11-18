@@ -315,7 +315,7 @@ def test_srna_label_types_follow_final_labels():
 # --- The context of each mC matrix column -----------------------------------
 
 def test_tracks_name_each_columns_context():
-    # R_mc_profile_by_context.R facets the mC per-group profile on these.
+    # plot_profile.R (plot_profile_by_context) facets the mC per-group profile on these.
     ns, genome = _builders("test_samples_colcen.tsv", True)
     wc = SimpleNamespace(ref_genome=genome, env="mC")
     key = ns["define_key_for_plots"]

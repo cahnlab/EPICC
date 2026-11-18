@@ -11,6 +11,8 @@ The block's Snakemake placeholders are filled in the way Snakemake fills them
 """
 
 import re
+import shlex
+import string
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -29,6 +31,35 @@ def scales_shell(smk_text):
     start = smk_text.index("rule computing_matrix_scales:")
     m = re.compile(r'shell:\s*"""(.*?)"""', re.S).search(smk_text, start)
     return m.group(1)
+
+
+class _SnakemakeFormatter(string.Formatter):
+    """str.format plus Snakemake's ':q' (shell-quote) format spec."""
+
+    def format_field(self, value, spec):
+        if spec == "q":
+            return shlex.quote(str(value))
+        return super().format_field(value, spec)
+
+
+def rule_shell(smk_text, rule):
+    """The shell block of `rule` in a .smk text."""
+    start = smk_text.index(f"rule {rule}:")
+    m = re.compile(r'shell:\s*"""(.*?)"""', re.S).search(smk_text, start)
+    return m.group(1)
+
+
+def run_rule_shell(shell, params, inputs, outputs, log, env=None):
+    """Fill a rule's shell block the way Snakemake does and run it with bash
+    (TMPDIR as given in env, or the caller's)."""
+    script = _SnakemakeFormatter().format(
+        shell, params=SimpleNamespace(**params), input=SimpleNamespace(**inputs),
+        output=SimpleNamespace(**outputs), log=str(log), wildcards=SimpleNamespace())
+    proc = subprocess.run(["bash", "-c", "set -euo pipefail\n" + script],
+                          capture_output=True, text=True, env=env)
+    if proc.returncode != 0:
+        raise RuntimeError(f"rule failed:\n{proc.stdout}\n{proc.stderr}")
+    return proc
 
 
 def run_scales_rule(matrix, workdir, scales="type", average="mean",

@@ -505,10 +505,10 @@ epicc output --plot-type metaplot \
   --env all
 ```
 `--matrix` and `--env` options are identical to the heatmap above. Use `--env all` to include all samples including mC.\
-Output is two pdf files, where the samples are grouped by regions or not. For mC, the grouped one (`Profile_pergroup__`) has one panel per methylation context (CG, CHG, CHH side by side, each on its own y-axis) with a line per sample, so the contexts are never overlaid.\
+Output is two pdf files, drawn in R from the deeptools matrix: `Profile__` has one panel per sample with a line per region group, and `Profile_pergroup__` one panel per region group with a line per sample. For mC, `Profile_pergroup__` has one panel per methylation context (CG, CHG, CHH side by side, each on its own y-axis) with a line per sample, so the contexts are never overlaid.\
 By default, profiles are scaled by data type (`heatmaps_scales: "type"`; change to `"default"` or `"sample"`).
-By default, profiles represent the mean across all regions (`profiles_scale: "mean"`; change to `"median"`).
-Plot type defaults to `"lines"`. See deeptools documentation for other options; edit `profiles_plot_params` in the options file.
+By default, profiles represent the mean across all regions (`profiles_scale: "mean"`; change to `"median"`); the y-axis limits use the same average.
+Plot type defaults to lines; set `plot_theme_overrides: {profile_type: fill}` (or `se`, `std`) for another style. The old `profiles_plot_params: "--plotType ..."` is still read, with a deprecation warning, and any other deeptools flag in it is an error.
 Window sizes and bin size are configured in `heatmaps` per matrix type in the options file (same as heatmap).
 
 ### **7. Plotting browser screenshots on regions**

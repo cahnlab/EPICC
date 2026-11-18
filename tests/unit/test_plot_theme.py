@@ -16,15 +16,15 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 THEME = REPO / "workflow" / "scripts" / "plot_theme.R"
-MC_SCRIPT = REPO / "workflow" / "scripts" / "R_mc_profile_by_context.R"
 SMK = REPO / "workflow" / "rules" / "combined_analysis.smk"
 
 sys.path.insert(0, os.path.join(REPO, "workflow", "scripts"))
-from config_validation import plot_theme_spec  # noqa: E402
+from config_validation import legacy_plot_params, plot_theme_spec  # noqa: E402
 
 
-def spec_json(cfg):
-    return json.loads(plot_theme_spec(cfg))
+def spec_json(cfg, r_drawn=()):
+    text, _ = plot_theme_spec(cfg, r_drawn)
+    return json.loads(text)
 
 
 def _have_r():
@@ -82,6 +82,86 @@ class TestPlotThemeSpec:
         assert a == b
 
 
+# --- deprecated profiles_plot_params ------------------------------------------
+# (heatmaps_plot_params is translated from phase 3, when R draws the heatmaps;
+# that code and its tests wait on branch claude/r-plot-legacy-flags, fc1130c.)
+
+SHIPPED_HEATMAP_PARAMS = {
+    env: "--colorMap seismic --interpolationMethod bilinear"
+    for env in ("all", "most", "ChIP", "TF", "RNA", "sRNA", "ATAC")
+}
+SHIPPED_HEATMAP_PARAMS["mC"] = "--colorMap Oranges --missingDataColor 0.9 --interpolationMethod nearest"
+PROFILES = ("profiles",)
+
+
+class TestLegacyPlotParams:
+    def test_shipped_options_file(self):
+        import yaml
+        cfg = yaml.safe_load((REPO / "config" / "epicc-options.yaml").read_text())
+        # Heatmaps are still drawn by deeptools, with these flags untouched.
+        assert cfg["heatmaps_plot_params"] == SHIPPED_HEATMAP_PARAMS
+        # Profiles are drawn in R: the key is gone from the shipped file and
+        # only translated when an older options file still has it.
+        assert "profiles_plot_params" not in cfg
+
+    def test_nothing_translated_while_deeptools_draws(self):
+        cfg = {"heatmaps_plot_params": {"RNA": "--colorMap viridis --kmeans 3"},
+               "profiles_plot_params": "--plotType overlapped_lines"}
+        assert legacy_plot_params(cfg) == ({}, [])
+        assert spec_json(cfg)["overrides"] == {}
+
+    def test_heatmap_flags_are_not_translated_yet(self):
+        cfg = {"heatmaps_plot_params": {"RNA": "--colorMap viridis --kmeans 3"}}
+        assert legacy_plot_params(cfg, ("profiles", "heatmaps")) == ({}, [])
+
+    def test_old_default_adds_no_overrides(self):
+        overrides, warnings = legacy_plot_params({"profiles_plot_params": "--plotType lines"},
+                                                 PROFILES)
+        assert overrides == {}
+        assert len(warnings) == 1
+        assert "deprecated" in warnings[0] and "match the theme defaults" in warnings[0]
+
+    def test_flag_without_theme_equivalent_stops_the_run(self):
+        with pytest.raises(ValueError, match="'--yAxisLabel'"):
+            legacy_plot_params({"profiles_plot_params": "--yAxisLabel x"}, PROFILES)
+
+    def test_plot_type(self):
+        overrides, warnings = legacy_plot_params({"profiles_plot_params": "--plotType se"}, PROFILES)
+        assert overrides == {"profile_type": "se"}
+        assert 'profile_type="se"' in warnings[0]
+        with pytest.raises(ValueError, match="--plotType heatmap is not drawn in R"):
+            legacy_plot_params({"profiles_plot_params": "--plotType heatmap"}, PROFILES)
+
+    @pytest.mark.parametrize("flags", ["--plotType=se", "--plotType se", "--plotType=se "])
+    def test_plot_type_equals_form(self, flags):
+        # argparse (and so deeptools) took --flag=value as well as --flag value
+        assert legacy_plot_params({"profiles_plot_params": flags}, PROFILES)[0] == \
+            {"profile_type": "se"}
+
+    def test_equals_form_of_an_unknown_flag_names_the_flag(self):
+        with pytest.raises(ValueError, match="'--yAxisLabel'"):
+            legacy_plot_params({"profiles_plot_params": "--yAxisLabel=x"}, PROFILES)
+
+    def test_user_overrides_win(self):
+        cfg = {"profiles_plot_params": "--plotType fill",
+               "plot_theme_overrides": {"profile_type": "se"}}
+        assert spec_json(cfg, PROFILES)["overrides"] == {"profile_type": "se"}
+
+    def test_snakefile_translates_profiles_only(self):
+        # Phase 2: profiles are drawn in R; heatmaps still by deeptools.
+        text = (REPO / "workflow" / "Snakefile").read_text()
+        assert 'R_DRAWN_PLOT_FAMILIES = ("profiles",)' in text
+
+    def test_warnings_print_from_the_main_process_only(self):
+        # Every cluster job re-parses the Snakefile; the deprecation warning
+        # would otherwise land in every job log.
+        text = (REPO / "workflow" / "Snakefile").read_text()
+        block = text[text.index("PLOT_THEME_JSON, _plot_theme_warnings"):]
+        block = block[:block.index("# ----")]
+        assert "if workflow.is_main_process:" in block
+        assert block.index("if workflow.is_main_process:") < block.index("_plot_theme_warnings:")
+
+
 def test_colour_map_table_is_sorted_and_complete():
     table = json.loads((REPO / "workflow" / "scripts" / "plot_colormaps.json").read_text())
     maps = table["maps"]
@@ -91,7 +171,7 @@ def test_colour_map_table_is_sorted_and_complete():
     assert not any(n.endswith("_r") for n in maps)
 
 
-def test_profile_rule_hands_the_theme_to_the_mc_script():
+def test_profile_rule_hands_the_theme_to_the_r_script():
     text = SMK.read_text()
     assert "theme = PLOT_THEME_JSON" in text
     assert '"$TMPDIR/plot_theme.json"' in text
@@ -214,27 +294,3 @@ class TestTheme:
                   "inherits(g$panel.grid.minor, 'element_blank'))")
         assert proc.returncode == 0, proc.stderr
         assert proc.stdout.split() == ["TRUE", "TRUE"]
-
-
-@needs_r
-def test_mc_profile_takes_a_theme_file(tmp_path):
-    ticks = ["-2.0Kb", "", "start", "end", "", "2.0Kb"]
-    labels = ["WT_mCG", "ddm1_mCG"]
-    lines = ["bin labels\t\t" + "\t".join(ticks * len(labels)),
-             "bins\t\t" + "\t".join(str(float(i + 1)) for i in range(6))]
-    lines += [f"{l}\tall_genes\t" + "\t".join(str(10.0 + i) for i in range(6)) for l in labels]
-    data, samples, theme, out = (tmp_path / n for n in ("p.tab", "s.tsv", "t.json", "out.pdf"))
-    data.write_text("\n".join(lines) + "\n")
-    samples.write_text("".join(f"{l}\tmCG\t#1f77b4\t{l.split('_')[0]}\n" for l in labels))
-
-    theme.write_text(json.dumps({"theme": "presentation", "overrides": {"line_width": 1.5}}))
-    proc = subprocess.run(["Rscript", str(MC_SCRIPT), str(data), str(samples), str(out), "y", str(theme)],
-                          capture_output=True, text=True)
-    assert proc.returncode == 0, proc.stderr
-    assert out.read_bytes().startswith(b"%PDF")
-
-    theme.write_text(json.dumps({"theme": "default", "overrides": {"nope": 1}}))
-    proc = subprocess.run(["Rscript", str(MC_SCRIPT), str(data), str(samples), str(out), "y", str(theme)],
-                          capture_output=True, text=True)
-    assert proc.returncode != 0
-    assert "nope" in proc.stderr

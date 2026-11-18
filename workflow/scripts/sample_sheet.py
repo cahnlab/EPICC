@@ -975,7 +975,7 @@ def build_plot_labels(entries, omit=()):
 
     ``omit`` drops component kinds from the joined text after the labels are
     worked out, e.g. ``("mark",)`` names a line across the methylation-context
-    panels of one plot (R_mc_profile_by_context.R), where every panel shares
+    panels of one plot (plot_profile_by_context in plot_profile.R), where every panel shares
     the mark.
     """
     return _join_parts(entries, plot_label_parts(entries), omit)

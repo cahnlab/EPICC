@@ -3398,7 +3398,6 @@ var configState = {
   heatmaps_sort_options: "mean",
   heatmap_sort_mc_after_others: true,
   profiles_scale: "mean",
-  profiles_plot_params: "--plotType lines",
   browser_TE_file: true,
   browser_scales: "sample",
   // Target files for outputs & plots (per-output-type region/gene lists)
@@ -3825,7 +3824,6 @@ function buildConfigForm() {
     "mC follows the sort order of other samples.",
     "mC uses its own sort order."));
   plotBody.appendChild(buildSelectRow("Profile scale:", "profiles_scale", ["mean", "median"]));
-  plotBody.appendChild(buildTextRow("Profile plot parameters:", "profiles_plot_params", "--plotType lines"));
   plotBody.appendChild(buildSelectRow("Browser scales:", "browser_scales", ["sample", "type"]));
   plotBody.appendChild(buildToggleRow("Include TE track in browser", "browser_TE_file",
     "Wait, it's all repeats?! \uD83D\uDD2B",
@@ -4113,7 +4111,6 @@ function configStateToYAML() {
   cfg.heatmaps_sort_options = configState.heatmaps_sort_options;
   cfg.heatmap_sort_mc_after_others = configState.heatmap_sort_mc_after_others;
   cfg.profiles_scale = configState.profiles_scale;
-  cfg.profiles_plot_params = configState.profiles_plot_params;
   cfg.browser_TE_file = configState.browser_TE_file;
   cfg.browser_scales = configState.browser_scales;
 
@@ -4217,7 +4214,6 @@ function handleYAMLImport(text) {
   if (cfg.heatmaps_sort_options != null) configState.heatmaps_sort_options = cfg.heatmaps_sort_options;
   if (cfg.heatmap_sort_mc_after_others != null) configState.heatmap_sort_mc_after_others = !!cfg.heatmap_sort_mc_after_others;
   if (cfg.profiles_scale != null) configState.profiles_scale = cfg.profiles_scale;
-  if (cfg.profiles_plot_params != null) configState.profiles_plot_params = cfg.profiles_plot_params;
   if (cfg.browser_TE_file != null) configState.browser_TE_file = !!cfg.browser_TE_file;
   if (cfg.browser_scales != null) configState.browser_scales = cfg.browser_scales;
 

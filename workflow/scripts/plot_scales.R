@@ -22,8 +22,9 @@
 #   heatmaps_scales: sample  one range per column
 #   heatmaps_scales: default no per-column limits: deeptools then uses one
 #                            scale for the whole plot (default_scales below)
-# In type mode a mark's zMin ignores 10th percentiles >= 999999 and its zMax
-# 90th percentiles <= -999999 (the bash's search sentinels), giving 0 instead.
+# One difference from the bash: its type-mode search started from the sentinels
+# +-999999, so a mark whose 10th percentile was >= 999999 got zMin 0. Here the
+# mark keeps its range.
 # zMin/zMax are dataRange's 10th/90th percentiles of a column's values; a
 # column holding any NaN gets NaN there (numpy's percentile propagates it), so
 # it counts as having no range -- which is why mC columns, which always carry
@@ -82,6 +83,42 @@ column_ranges <- function(m) {
   if (mark %in% names(mc_zmax)) c(0, unname(mc_zmax[[mark]])) else c(0, 0.005)
 }
 
+# heatmaps_scales as the scripts take it: type | sample | default, anything
+# else treated as default (as the bash rule did), with a message.
+scale_mode <- function(mode) {
+  if (mode %in% c("type", "sample", "default")) return(mode)
+  message(mode, " unknown. Returning default")
+  "default"
+}
+
+# The units a mode scales together: column indices per mark (type) or one per
+# column (sample). Type mode needs keys of the form {sid}__{track}.
+.scale_units <- function(keys, mode) {
+  if (mode == "type" && any(!grepl("__", keys, fixed = TRUE))) {
+    stop("heatmaps_scales: type needs column keys of the form <sample>__<mark>; got ",
+         paste(keys[!grepl("__", keys, fixed = TRUE)], collapse = ", "))
+  }
+  marks <- column_marks(keys)
+  if (mode == "type") split(seq_along(keys), factor(marks, levels = unique(marks)))
+  else as.list(seq_along(keys))
+}
+
+# y limits per column from average profiles already computed (group_means()
+# output: sample, group, x, value), for type | sample: the unit's profile over
+# every region group, padded (.pad_range). The y half of matrix_scales(),
+# without its percentile pass over the whole matrix, so a plot that already
+# has the curves it draws gets the limits of exactly those curves.
+profile_ylims <- function(keys, prof, mode = "type") {
+  out <- data.frame(key = keys, ymin = NA_real_, ymax = NA_real_, stringsAsFactors = FALSE)
+  if (!mode %in% c("type", "sample")) return(out)
+  sample <- as.character(prof$sample)
+  for (cols in .scale_units(keys, mode)) {
+    y <- .pad_range(prof$value[sample %in% keys[cols]])
+    out$ymin[cols] <- y[1]; out$ymax[cols] <- y[2]
+  }
+  out
+}
+
 # Per-column limits. `mode`: type | sample | default (anything else is
 # treated as default, as the bash rule does). `average`: profiles_scale
 # (mean | median). `mc_zmax`: heat_mcg/heat_mchg/heat_mchh by context name.
@@ -93,32 +130,22 @@ matrix_scales <- function(m, mode = "type", average = "mean",
   out <- data.frame(key = keys, mark = marks, zmin = NA_real_, zmax = NA_real_,
                     ymin = NA_real_, ymax = NA_real_, stringsAsFactors = FALSE)
   if (!mode %in% c("type", "sample")) return(out)
-  rng <- column_ranges(m)
-  prof <- group_means(m, average)
-  prof_of <- function(cols) prof$value[as.character(prof$sample) %in% keys[cols]]
   # Every key the pipeline builds is {sid}__{track} (define_key_for_plots);
-  # without the '__' there is no mark to scale by.
-  if (mode == "type" && any(!grepl("__", keys, fixed = TRUE))) {
-    stop("heatmaps_scales: type needs column keys of the form <sample>__<mark>; got ",
-         paste(keys[!grepl("__", keys, fixed = TRUE)], collapse = ", "))
-  }
-  units <- if (mode == "type") split(seq_along(keys), factor(marks, levels = unique(marks)))
-           else as.list(seq_along(keys))
+  # without the '__' there is no mark to scale by (.scale_units stops).
+  units <- .scale_units(keys, mode)
+  rng <- column_ranges(m)
+  y <- profile_ylims(keys, group_means(m, average), mode)
+  out$ymin <- y$ymin; out$ymax <- y$ymax
   for (cols in units) {
     lo <- rng[cols, 1]; hi <- rng[cols, 2]
-    if (mode == "type") {
-      # The bash searched a mark's range from the sentinels 999999 / -999999,
-      # so a 10th percentile >= 999999 (or a 90th <= -999999) was never taken
-      # and the mark fell back to 0 on that side. Kept as it was.
-      lo[!is.na(lo) & lo >= 999999] <- NA_real_
-      hi[!is.na(hi) & hi <= -999999] <- NA_real_
-    }
+    # The bash searched a mark's range from the sentinels 999999 / -999999,
+    # so in type mode a 10th percentile >= 999999 (or a 90th <= -999999) was
+    # never taken and the mark fell back to 0 on that side. That was a bug,
+    # not a choice (raw counts reach it); it is not reproduced.
     z <- c(if (all(is.na(lo))) 0 else min(lo, na.rm = TRUE),
            if (all(is.na(hi))) 0 else max(hi, na.rm = TRUE))
     if (z[1] == 0 && z[2] == 0) z <- .z_fallback(marks[cols[1]], mc_zmax)
-    y <- .pad_range(prof_of(cols))
     out$zmin[cols] <- z[1]; out$zmax[cols] <- z[2]
-    out$ymin[cols] <- y[1]; out$ymax[cols] <- y[2]
   }
   out
 }
@@ -136,11 +163,17 @@ default_scales <- function(m, average = "mean") {
   if (anyNA(z) || z[2] <= z[1]) {
     z <- if (all(is.na(v))) c(0, 1) else range(v, na.rm = TRUE)
   }
-  p <- group_means(m, average)$value
-  p <- p[!is.na(p)]
+  y <- default_ylim(group_means(m, average))
+  list(zmin = z[1], zmax = z[2], ymin = y[1], ymax = y[2])
+}
+
+# The shared y range of default_scales() from average profiles already
+# computed: their range with matplotlib's 5% margins.
+default_ylim <- function(prof) {
+  p <- prof$value[!is.na(prof$value)]
   y <- if (length(p) == 0) c(0, 1) else range(p)
   d <- if (y[2] > y[1]) (y[2] - y[1]) * 0.05 else max(abs(y[2]) * 0.05, 0.01)
-  list(zmin = z[1], zmax = z[2], ymin = y[1] - d, ymax = y[2] + d)
+  c(y[1] - d, y[2] + d)
 }
 
 # The limits of one column, by key or index. Every R plot looks scales up

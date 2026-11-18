@@ -21,11 +21,7 @@ script_dir <- dirname(normalizePath(sub("^--file=", "",
 source(file.path(script_dir, "matrix_io.R"))
 source(file.path(script_dir, "plot_scales.R"))
 
-mode <- args[2]
-if (!mode %in% c("type", "sample", "default")) {
-  message(mode, " unknown. Returning default")
-  mode <- "default"
-}
+mode <- scale_mode(args[2])
 average <- args[3]
 if (!average %in% c("mean", "median")) stop("profiles_scale must be mean or median, got ", average)
 mc <- c(mCG = as.numeric(args[4]), mCHG = as.numeric(args[5]), mCHH = as.numeric(args[6]))

@@ -1,10 +1,10 @@
 # Moving EPICC's plots to R, with one theme
 
-Status: groundwork landed (shared theme module `workflow/scripts/plot_theme.R`;
-the mC per-context metaplot uses it). Phase 1 done (env, `matrix_io.R`, the
-per-mark scales computed in R; the flag translation is parked for phase 2).
-Phases 2–7
-are still to do.
+Status: groundwork landed (shared theme module `workflow/scripts/plot_theme.R`).
+Phase 1 done (env, `matrix_io.R`, the per-mark scales computed in R). Phase 2
+done (`Profile__` and `Profile_pergroup__` drawn in R, the profiles part of
+the flag translation back, the phase-1 findings settled). Phases 3–7 are still
+to do.
 
 The goal is for every plot EPICC draws to take its look from one editable theme
 and to be drawn in R. Today most of the combined-analysis plots come from
@@ -27,6 +27,14 @@ Decisions taken with the user before the groundwork:
   `--interpolationMethod`, `--plotType`) are mapped onto theme keys with a
   deprecation warning. Any other flag stops the run with a message naming the
   theme keys.
+- **Heatmap interpolation is kept per data type** (user, during phase 2
+  review): bilinear for continuous tracks, nearest for mC, as a theme key
+  (`heatmap_interpolation`), resampled in R before drawing. See phase 3.
+- **One heatmap with every data type** (user, during phase 2 review): mC
+  columns drawn next to the others in one figure, sharing the row order, each
+  column with its own ramp, missing colour and interpolation. No separate mC
+  heatmap or mC sort in any configuration; `heatmap_sort_mc_after_others` is
+  deprecated. See phase 3.
 
 ---
 
@@ -65,9 +73,10 @@ What the R versions must reproduce:
   3.5.6 and 4.0.0 alike).
 - **`--outFileSortedRegions`.** The `most` heatmap's sorted BED feeds
   `sort_heatmap`, which reorders the mC matrix with `computeMatrixOperations
-  sort -R` for `Heatmap_sorted__`. The R heatmap must write the same BED
-  (deeptools' six columns plus its header line, rows in plotted order, groups
-  in order).
+  sort -R` for `Heatmap_sorted__`. Phase 3 retires both for the combined
+  heatmap (see there). The R heatmap still writes the sorted BED in
+  deeptools' format (six columns plus its header line, rows in plotted order,
+  groups in order), since it is a documented output users may rely on.
 - **Scales.** `computing_matrix_scales` writes one `--zMin`/`--zMax` and one
   `--yMin`/`--yMax` value per matrix column, in column order (`heatmaps_scales:
   type|sample`). With `default` the files are empty, and deeptools uses one
@@ -79,10 +88,11 @@ What the R versions must reproduce:
   are now the theme's `heatmap_colors` defaults (`seismic` → `.EPICC_SEISMIC`,
   `Oranges` → `.EPICC_ORANGES`), so the look carries over.
 - **Interpolation.** deeptools draws the heatmap as an image with `bilinear`
-  (most envs) or `nearest` (mC) interpolation. R pre-bins rows to the output
-  resolution (mean of consecutive rows), then rasterises. That is close to
-  `nearest` and slightly blurrier than `bilinear`; accept it as a visible
-  change.
+  (every env but mC) or `nearest` (mC) interpolation. This is **kept, per data
+  type** (theme key `heatmap_interpolation`; see phase 3). An earlier draft
+  dropped it ("accept it as a visible change"); the user rejected that,
+  because smoothing a continuous track and showing mC bins as blocks both
+  matter for reading the plot.
 - **Tick labels.** `--refPointLabel start|end` for `tss`/`tes`;
   `--startLabel start --endLabel end` for `regions`; distances from the
   header's `upstream`/`downstream`/`body` and `bin size`.
@@ -98,7 +108,7 @@ What the R versions must reproduce:
 
 | Script | Output(s) | Engine | Notes for the theme |
 |---|---|---|---|
-| `R_mc_profile_by_context.R` | `Profile_pergroup__*__mC__*.pdf` | ggplot2 | **Uses the theme now.** |
+| `R_profile.R` + `plot_profile.R` (phase 2) | `Profile__*.pdf`, `Profile_pergroup__*.pdf` (mC faceted on context) | ggplot2 | **Uses the theme.** Replaced `plotProfile` and `R_mc_profile_by_context.R`. |
 | `R_browser_plot.R` | `Browser_full_chromosomes__*.pdf`, `single_browser__*.pdf` | Gviz | Fonts/sizes via Gviz `displayPars` (`fontsize`, `cex.*`), which can be mapped from the theme. Track colours already come from the pipeline palette. |
 | `R_Upset_plot_{peaks,clusters,TSS}.R` + `upset_common.R` | `Upset_combined_*.pdf` | ComplexUpset (ggplot2) | `themes = upset_modify_themes(...)` takes ggplot themes; `colorlist` from all qualitative Brewer palettes should become the theme palette. Fixed category colours (`Distal_downstream`, …) become a theme key. |
 | `R_mapping_stats.R` | `mapping_stats_*.pdf` | ggplot2 + cowplot | `brewer.pal(4, "Paired")` → a theme key for category fills. |
@@ -136,7 +146,9 @@ Out of scope.
 TF, ATAC, RNA, sRNA → seismic; mC → Oranges; an entry may also be one matplotlib map name}, `heatmap_missing_color` grey90,
 `panel_width`/`panel_height` 3.2 in, `heatmap_column_width` 1.6 in,
 `heatmap_height` 9 in, `profile_strip_height` 1.2 in. The last three are for
-phase 3 and unused so far.
+phase 3 and unused so far. Phase 3 adds `heatmap_interpolation` (per data
+type, `bilinear` | `nearest`; mC `nearest`, all else `bilinear`) and a raster
+resolution (`heatmap_raster_dpi`).
 
 **Sample colours stay out of the theme.** They arrive per plot in the display
 table (tab20 keyed on `levels_label`, `assign_colors` in
@@ -260,12 +272,13 @@ shares it is rerun.
   run, so it needs no completed pipeline run. Under `--sortUsing max`/`min`,
   rows with exactly equal summaries can come out in a different order, because
   numpy's float sort is not stable. EPICC sorts only by mean or median.
-- **Flag translation: deferred to phase 2.** `legacy_plot_params()`
+- **Flag translation: deferred to phase 2 (back in phase 2 for profiles).** `legacy_plot_params()`
   translates `heatmaps_plot_params`/`profiles_plot_params` onto theme keys:
   - `--colorMap NAME` → `heatmap_colors.<env>: NAME`;
   - `--colorList` → a list;
   - `--missingDataColor` → `heatmap_missing_color`;
-  - `--interpolationMethod` is dropped;
+  - `--interpolationMethod` → `heatmap_interpolation.<type>` (phase 3; the
+    parked code drops it and must be changed before it returns);
   - `--plotType` → `profile_type`.
 
   Each translated setting gets a deprecation warning, and any other flag stops
@@ -276,7 +289,12 @@ shares it is rerun.
   `workflow/Snakefile` and `tests/unit/test_plot_theme.py`). Phase 2 brings it
   back with `R_DRAWN_PLOT_FAMILIES = ("profiles",)`, and phase 3 adds
   `"heatmaps"`. Once a family is listed, drop its key from
-  `config/epicc-options.yaml` and the builder.
+  `config/epicc-options.yaml` and the builder. Phase 2 restored the profiles
+  half from `fc1130c` and dropped `profiles_plot_params`; phase 3 restores the
+  heatmaps half (`--colorMap`, `--colorList`, `--missingDataColor`,
+  `--interpolationMethod`, the per-env missing-colour check) from the same
+  commit, with `--interpolationMethod` translated instead of dropped (phase
+  3).
 - A `heatmap_colors` entry may now be one matplotlib colour-map name
   (`viridis`, `RdBu_r`), resolved through `workflow/scripts/plot_colormaps.json`
   (all 91 matplotlib maps, 17 stops each; regenerate with
@@ -351,24 +369,79 @@ shares it is rerun.
 
   Phase 2's R profile takes its limits from the same functions, either by
   reading these files or by calling `matrix_scales()` directly.
-- **Behaviours of today's rule found while porting**, to settle in phase 2:
+- **Behaviours of today's rule found while porting**, settled in phase 2:
   - `Profile__` is drawn with deeptools' default mean even when
     `profiles_scale: median`, while its y-limits come from the median. Its
-    curves can therefore leave their axis. The R profile uses
-    `profiles_scale` for both.
+    curves can therefore leave their axis. **Fixed:** the R profile uses
+    `profiles_scale` for both (`test_profile.py::test_lines_are_profiles_scale`).
   - With `heatmaps_scales: default`, the per-group collapse turns the empty
-    scale file into `--yMin 99999 --yMax -99999`. R uses `default_scales()`
-    instead.
+    scale file into `--yMin 99999 --yMax -99999`, and the old
+    `Profile_pergroup__` came out blank (`most_default_mean` comparison).
+    **Fixed:** R uses `default_scales()`.
   - Because of the NaN propagation above, mC heatmap scales come from config
-    (`heat_m*`), never from the data.
+    (`heat_m*`), never from the data. **Kept** for the heatmaps (phase 3
+    decides); it does not touch the profiles, whose y range comes from the
+    NaN-aware averages.
   - In `type` mode, the awk search for a mark's range starts from the
     sentinels 999999 and −999999. A mark whose 10th percentile is ≥ 999999 (or
     whose 90th is ≤ −999999) therefore gets 0 on that side. Large raw counts
-    can hit this.
+    can hit this. **Fixed** in `plot_scales.R`: the mark keeps its range. It
+    changes the heatmap `--zMin` of such a mark (the only output affected);
+    the scale tests apply this one fix to the old rule's output before
+    comparing (`old_rule_fixed`).
   - y bounds are written as awk printed them: integral values in full
-    (`900000`), anything else with `%.6g`.
+    (`900000`), anything else with `%.6g`. **Kept** in the flag files, which
+    only the deeptools heatmaps still read; the R profiles take the doubles
+    straight from `matrix_scales()`, so the rounding no longer reaches a plot
+    drawn in R. The flag files go when phase 3 moves the heatmaps.
+  - An all-zero profile gets −0.01..0.01, not 0..0.01. **Kept:** a flat line
+    at zero drawn mid-panel is right for signed tracks (`bamCompare` log2
+    ratios), and 0..0.01 would draw it on the panel's bottom edge.
 
-### Phase 2: profiles (`Profile__`, `Profile_pergroup__`) + scales
+### Phase 2: profiles (`Profile__`, `Profile_pergroup__`) + scales (done)
+
+What landed:
+- `workflow/scripts/plot_profile.R` holds the reusable parts:
+  `profile_data()` (the `group_means()` curves plus an se/std band: numpy's
+  population `nanstd` per bin, divided by √n for se), `profile_limits(m, d,
+  mode)` (y range per column of the curves `d` it is handed: `profile_ylims()`
+  for `type`/`sample` — the y half of `matrix_scales()`, which now calls it,
+  without the percentile pass over the whole matrix — and `default_ylim()` for
+  `default`), `profile_ggplot()` (lines, fill or a band per `profile_type`;
+  per-panel limits drawn as invisible points with no expansion, and the band
+  and the fill clipped to them, the fill running down to the panel's ymin
+  rather than 0, so a panel spans exactly its column's range as deeptools'
+  clipped `--yMin/--yMax` did) and the three plots,
+  `plot_profile_per_column()` (`Profile__`), `plot_profile_per_group()`
+  (`Profile_pergroup__`) and `plot_profile_by_context()` (mC). Phase 3's
+  heatmap top profile should call `profile_data()` and `profile_limits()`
+  rather than recompute them.
+- `R_profile.R` is the CLI. It reads the matrix and the display table
+  (`matrix_sample_labels.py`), works out the limits itself (it does not read
+  `params_profile`, so the profile rule no longer depends on
+  `computing_matrix_scales`), and writes both PDFs. It computes the curves
+  once and hands them to the limits and to both plots. The rule takes no
+  `heat_m*` (heatmap colour ranges only), so changing them reruns no profile.
+  The mode check (`scale_mode()`) is shared with `R_matrix_scales.R`.
+  `plotting_profile_on_targetfile` runs it in `CONDA_ENV_PLOTS`.
+  `R_mc_profile_by_context.R` and its `plotProfile --outFileNameData` dump are
+  gone.
+- Visible changes, all in the comparison images: `Profile__` draws each panel
+  in its column's display colour with region groups told apart by dash
+  pattern (deeptools coloured the groups with the first sample colours of the
+  `--colors` list, an accident of reusing it); 4 panels per row instead of 8;
+  a y-axis label (`mean signal`, `median methylation`); the mC context panels
+  share one y range per context across region groups (previously autoscaled
+  per panel; still autoscaled under `default`).
+- `profiles_plot_params` is translated (`--plotType X` or `--plotType=X` →
+  `profile_type`, with a deprecation warning printed from the main process
+  only; anything else stops the run) and is gone from the shipped options
+  file, the README and the builder. Only the profiles half of the parked
+  translation came back: the `heatmaps_plot_params` half could not run before
+  phase 3 (the objection that parked it in #114), so it stays on
+  `claude/r-plot-legacy-flags` (`fc1130c`) for phase 3.
+
+As planned:
 - `R_profile.R`, reading the matrix (option A) and the `params_regions` /
   `params_profile` files. `Profile__`: one panel per column, a line per region
   group, y-limits per column. `Profile_pergroup__` non-mC: one panel per
@@ -388,13 +461,152 @@ shares it is rerun.
   zMin/zMax in the heatmap.
 
 ### Phase 3: heatmaps (`Heatmap__`, `Heatmap_sorted__`)
-- `R_heatmap.R` on ComplexHeatmap: one `Heatmap` per column with
-  `circlize::colorRamp2` over its `--zMin`/`--zMax` and the theme's ramp for
-  the column's data type, `row_split` by group, `anno_lines` top profile with
-  per-column y-limits, `use_raster = TRUE`, rows pre-binned.
-- Writes `_sorted_regions.bed` in deeptools' format for `sort_heatmap`. Keep
-  `sort_heatmap` (deeptools) as is at first. Once R sorts, it could reorder
-  the mC matrix itself and drop `sort_heatmap`.
+- `R_heatmap.R` on ComplexHeatmap: one `Heatmap` per matrix column, joined
+  into a `HeatmapList` that shares one row order. Each column gets
+  `circlize::colorRamp2` over its own zMin/zMax (`scale_for_column`, by key)
+  and the theme's ramp, `na_col` and interpolation for its data type,
+  `row_split` by region group, and an `anno_lines` top profile drawn from
+  `profile_data()`/`profile_limits()` (phase 2), so it matches `Profile__`.
+- Moves the heatmap rules to `CONDA_ENV_PLOTS` and puts `"heatmaps"` in
+  `R_DRAWN_PLOT_FAMILIES`.
+
+**Interpolation, per data type (user decision).** Keep deeptools' look:
+bilinear for continuous tracks (ChIP, TF, ATAC, RNA, sRNA), nearest for mC.
+- **Theme key `heatmap_interpolation`**, shaped like `heatmap_colors`: an
+  open map from data type to `bilinear` | `nearest`, with the same fallback
+  (`mCHG` → `mC`, `ChIP_broad` → `ChIP`, unknown → `default`). Defaults:
+  `default: bilinear`, every listed type `bilinear`, `mC: nearest`.
+- **Translation.** `--interpolationMethod` in `heatmaps_plot_params.<env>`
+  maps onto `heatmap_interpolation.<env>` instead of being dropped. `bilinear`
+  and `nearest` map as they are. Every other value matplotlib accepts maps to
+  the closer of the two **with a warning** naming the substitution: `none` →
+  `nearest`; `antialiased`, `auto`, `bicubic`, `spline16`, `spline36`,
+  `hanning`, `hamming`, `hermite`, `kaiser`, `quadric`, `catrom`, `gaussian`,
+  `bessel`, `mitchell`, `sinc`, `lanczos`, `blackman` → `bilinear`. A value
+  matplotlib does not accept is an error, as deeptools would have refused it.
+  The shipped values equal the defaults and add nothing to the theme JSON, so
+  nothing reruns. The `all`/`most` env entries set the fallback (`default`)
+  only; a column always takes its own data type's entry when there is one.
+- **Resampling is done in R, before drawing,** never by ComplexHeatmap's
+  raster filter (`raster_by_magick`/`raster_magick_filter`) or the PDF
+  viewer's image `/Interpolate` flag, which depend on the device, the
+  resolution and the viewer. Per column (sample) of the figure:
+  - the target size in pixels is the column's drawn size at a fixed raster
+    resolution (theme key, e.g. `heatmap_raster_dpi`, default 150):
+    `heatmap_column_width × dpi` wide, the body's share of `heatmap_height ×
+    dpi` high per region group;
+  - rows: more regions than pixel rows are binned by mean (`bin_rows()`,
+    NaN-aware, as already planned); fewer are upsampled the same way as
+    columns below;
+  - columns (bins): `bilinear` interpolates linearly between bin centres
+    (matplotlib's convention: pixel centres mapped onto bin centres, edges
+    clamped); `nearest` repeats each bin as a block of pixels;
+  - **never across NaN:** a pixel whose interpolation would mix a missing bin
+    takes the value of its nearest bin instead (so a missing mC bin stays a
+    sharp `na_col` block and no NaN bleeds into its neighbours);
+  - then drawn with no further smoothing: the resampled matrix is already at
+    pixel size, so ComplexHeatmap gets `use_raster = TRUE`,
+    `raster_resize_mat = FALSE`, `raster_by_magick = FALSE`, and the raster
+    image is placed with `interpolate = FALSE` (filter "Point"). If
+    ComplexHeatmap does not expose that, the body is drawn with
+    `grid.raster(interpolate = FALSE)` from a `layer_fun`. The output is the
+    same in every viewer.
+  - Unit tests on the resampler with small known matrices (expected pixel
+    values for both modes, the NaN edge, upsampling and downsampling rows).
+  - Compare variants against deeptools for each mode: a ChIP heatmap
+    (`bilinear`) and an mC heatmap (`nearest`, with missing bins), old
+    `plotHeatmap` vs R, plus a zoomed crop of each so the smoothing can be
+    seen.
+
+**One heatmap with every data type (user decisions).** In ComplexHeatmap
+each column is its own `Heatmap`, so one figure can show ChIP/RNA columns
+smoothed in their ramps next to mC columns as blocks in Oranges with a grey
+`na_col`, all in one row order. The user: "mC heatmap was only separated
+because of the different interpolation method. If it can be one, then no need
+for specific plot or specific sort." So there is no separate mC heatmap and no
+separate mC sort, in any configuration.
+- **Input: the `all` matrix, built by #119.** The user: "the plan is just
+  most and mC matrix and then merge results. No need for all (except as a
+  placeholder to say I want both together)". `all` is that placeholder: the
+  env that means "both together". PR #119 (`fix/all-env-mc-matrix`) builds
+  `final_matrix_*__all__*` by joining the `most` and mC final matrices
+  (`workflow/scripts/matrix_join_all.py`, rule `joining_all_matrix`) instead
+  of running computeMatrix for `all`, which had read mC gaps as 0 % with
+  `--missingDataAsZero` and the non-mC bin size. That join is the only join
+  implementation: the R heatmap reads the `all` matrix and does not join a
+  second time. What #119's join gives the heatmap:
+  - columns: the `most` columns, then the mC columns;
+  - rows: per region group, joined on (chrom, start, end, name, strand),
+    duplicates matched in order, in the mC matrix's (target-file) order with
+    `most`-only rows appended; a region `--skipZeros` dropped from `most` is
+    filled with 0 there, a region missing from mC with NaN; a row with no data
+    anywhere is dropped. So the combined heatmap can show regions that the old
+    `Heatmap_sorted__` (which kept only `most`'s rows) did not: regions with
+    methylation data and all-zero signal elsewhere;
+  - one bin size, the gcd of `bs` and `bs_mc` (50 by default), mC bins
+    repeated to fill it. Under `nearest` (mC's default) a repeated bin draws
+    as one wider block, so the look is the same as at the mC bin size. Under
+    `bilinear`, should a user set it for mC, the repeated bins give flat
+    stretches with ramps between them; the never-across-NaN rule applies as
+    everywhere.
+  - Profiles of `all` (`Profile__…__all__`) read the same matrix.
+
+  **Phase 3 depends on #119 merging first.**
+- **Sorting.** The combined heatmap always sorts its rows itself
+  (`heatmaps_sort_options`, within each group) on the non-mC columns of the
+  `all` matrix (`sort_rows(samples = <non-mC keys>)`, deeptools'
+  `--sortUsingSamples`), so it needs no sorted BED from another plot. A run
+  with only mC samples has no non-mC columns, so it sorts on the mC columns. A
+  run with no mC is the `most` heatmap as today.
+- **mC sorted on itself: the mC-only heatmap.** The user: "If people want
+  sorted on mC, they generate a heatmap of just mC." The per-env
+  `Heatmap__{mp}__mC__…` stays, made on demand (`epicc output --plot-type
+  heatmap --env mC`), and sorts on its own (mC) columns with the normal
+  `heatmaps_sort_options`. That is the whole replacement for
+  `heatmap_sort_mc_after_others: false`.
+- **`heatmap_sort_mc_after_others` is deprecated.** Setting it (to either
+  value) prints a warning (main process only, like the plot-flag warnings)
+  that it no longer has an effect and is ignored: the combined heatmap sorts
+  on the non-mC columns, and mC sorted on itself is the mC-only heatmap,
+  `epicc output --plot-type heatmap --env mC`. Phase 3 removes the key from the
+  shipped options file, the builder and the docs.
+- **Retired:** `Heatmap_sorted__{mp}__mC__…`, `sort_heatmap`,
+  `plotting_sorted_heatmap_on_targetfile` and the
+  `sorted_final_matrix_*__mC__*` / `temp_sorted_final_matrix_*` files.
+- **Outputs.** The default heatmap target is one combined figure per matrix
+  kind and target file, `Heatmap__{mp}__all__…` (the env that means every
+  data type), in every run, whatever mix of samples it has.
+  - **`Heatmap__…__mC__…` is kept as the mC-only heatmap** (user decision),
+    made on demand rather than by default: by default it would repeat the
+    combined figure's mC columns in another order. The generic per-env rule
+    already serves it, so it costs no code.
+  - `Heatmap__…__most__…` likewise leaves the default targets (the combined
+    figure contains its columns in the same order) and stays available with
+    `--env most`. `test_pombe_postrun.py` checks
+    `Heatmap__{tss,tes,regions}__most__…` today and must move to `__all__`.
+  - Profiles are unchanged by this: `Profile__…__most__` when there are
+    non-mC samples, `Profile__…__mC__` when there are mC samples (what the
+    old `true` branch produced, now regardless of the flag).
+- **Targets and reruns.**
+  - `define_final_combined_output` loses the `heatmap_sort_mc_after_others`
+    branches: three `Heatmap__{regions,tss,tes}__all__` targets for
+    `all_genes` and three for the TE target replace the `Heatmap_sorted__`,
+    `Heatmap__…__mC__` and `Heatmap__…__most__` targets. The README lists the
+    new names. Old PDFs are left on disk (Snakemake does not delete outputs
+    that are no longer targets); `epicc clean` could learn to list them.
+  - Today, mC with other samples and `heatmap_sort_mc_after_others: false`
+    produced no heatmap or profile for the non-mC samples at all (only the mC
+    branch's targets); the combined figure and the profile targets above end
+    that gap.
+  - Reruns: every heatmap plot reruns once anyway in phase 3 (new rule code
+    and env). The combined figure is a new output, so it is built, not rerun;
+    its one data job is #119's `joining_all_matrix` (a join of two matrices
+    that already exist, no computeMatrix). Nothing upstream of the
+    matrices changes. `heatmap_interpolation` lives in the theme JSON, so
+    changing it reruns plots only. Removing `heatmap_sort_mc_after_others`
+    touches no rule's params (it only chose targets), so it reruns nothing.
+  - The `_sorted_regions.bed` of whichever heatmap is drawn stays an output
+    but is no longer an input of anything.
 
 ### Phase 4: PCA
 - `plotPCA --outFileNameData` in the existing rule, then `R_pca.R` (ggplot2
@@ -440,9 +652,9 @@ fixture matrix. Small fixtures are generated in the script; real matrices
 
 | Family | Plots compared | Old | New | Comparison images |
 |---|---|---|---|---|
-| `mc_profile` (groundwork; rerun in phase 1) | `Profile_pergroup__*__mC__*` | `R_mc_profile_by_context.R` at the #112 head (phase 1: at the #113 head) | the same script on `plot_theme.R`, default theme + `presentation` | `mc_profile/compare.png`: the default theme is pixel-identical both times. Phase 1 draws no new plot. |
-| `profile` (phase 2) | `Profile__`, `Profile_pergroup__` (non-mC and mC) | `plotProfile` / `--perGroup` | `R_profile.R` | `profile/compare.png`, one row per plot type |
-| `heatmap` (phase 3) | `Heatmap__`, `Heatmap_sorted__` | `plotHeatmap` | `R_heatmap.R` | `heatmap/compare.png`; also diff the `_sorted_regions.bed` |
+| `mc_profile` (groundwork and phase 1; removed in phase 2) | `Profile_pergroup__*__mC__*` | `R_mc_profile_by_context.R` at the #112 head (phase 1: at the #113 head) | the same script on `plot_theme.R`, default theme + `presentation` | the default theme was pixel-identical both times. Superseded by `profiles`. |
+| `profiles` (phase 2) | `Profile__`, `Profile_pergroup__` (non-mC and mC) | `plotting_profile_on_targetfile`'s own shell block at `--old-ref` (`plotProfile`, `--perGroup`, the mC dump script), with that ref's scales rule | the same rule block now (`R_profile.R`) | `profiles/<variant>/{Profile,Profile_pergroup}/compare.png` for `most` (stranded + nostrand groups) under type/mean, sample/median, default/mean; mC under type/mean and default/median; a one-group reference-point ChIP matrix (tss) under type/mean; plus `profile_type: se` and the `presentation` theme. Needs deeptools on PATH |
+| `heatmap` (phase 3) | the combined `Heatmap__…__all__` vs the old `Heatmap__most` + `Heatmap_sorted__mC` pair; mC-only and no-mC runs; on-demand `Heatmap__…__mC__` | `plotHeatmap` | `R_heatmap.R` | `heatmap/<variant>/compare.png` for type/sample/default scales, stranded + nostrand groups, sorting; per interpolation mode a ChIP (`bilinear`) and an mC (`nearest`, missing bins) variant with zoomed crops; also diff the `_sorted_regions.bed` |
 | `scales` (phase 1) | `heatmaps_scales: type` limits on a `most` heatmap (H3K9me2 0–60 next to H3K4me3 0–0.5, H3K9me, interleaved RNA plus/minus) | `computing_matrix_scales` as bash + `dataRange`/`plotProfile` (`dev/reference/`), drawn by `plotHeatmap` | the rule as it stands (`R_matrix_scales.R`), drawn by the same `plotHeatmap` | `scales/compare.png` + `scales/flags.txt` (both flag sets, largest difference per flag): pixel-identical. Needs deeptools on PATH |
 | `pca` (phase 4) | `PCA__` | `plotPCA` | `R_pca.R` | `pca/compare.png` |
 | `stats` / `upset` / `deg` / `browser` (phase 6) | existing R plots | current script | themed script | one `compare.png` per family |
@@ -462,7 +674,10 @@ fixture matrix. Small fixtures are generated in the script; real matrices
   `base_mc` doesn't set it), so the mC and `most` matrices of one target can
   have different region sets. `sort_heatmap` relies on `computeMatrixOperations
   sort -R` with the `most` order; verify what it does with mC regions missing
-  from that BED before R takes over the sorting.
+  from that BED before R takes over the sorting. The combined heatmap (phase
+  3) keeps exactly the `most` rows, so mC regions that `--skipZeros` removed
+  from `most` are not shown there; check that `Heatmap_sorted__` drops them
+  too, and say so in the PR if it did not.
 - **`--regionsLabel` vs header labels.** Today `merging_matrix` sets the group
   labels and `matrix_region_labels.py` re-emits them with counts. R should show
   the same text (`label (n)`, if that is what deeptools draws — check a current
