@@ -38,21 +38,22 @@ def _level(key):
     return base * (0.5 if key.startswith("ddm1") else 1)
 
 
-def build(path, keys, groups, nan_every=0):
+def build(path, keys, groups, nan_every=0, nbins=NBINS, bin_size=100):
     rows, r = [], 0
     for g, n in groups:
         for i in range(n):
             vals = []
             for k in keys:
                 lv = _level(k)
-                v = [lv * (1 + ((r * 3 + b * 5 + len(k)) % 7) / 7) for b in range(NBINS)]
+                v = [lv * (1 + ((r * 3 + b * 5 + len(k)) % 7) / 7) for b in range(nbins)]
                 if nan_every and r % nan_every == 0:
                     v[1] = NAN
                 vals += v
             strand = "." if g.endswith("nostrand") else "+-"[i % 2]
             rows.append((("chr1", r * 100, r * 100 + 50, f"{g}{i}", 0, strand), vals))
             r += 1
-    write_matrix(path, groups, keys, rows, body=400, bin_size=100, upstream=0, downstream=0)
+    write_matrix(path, groups, keys, rows, body=nbins * bin_size, bin_size=bin_size,
+                 upstream=0, downstream=0)
     return rows
 
 
@@ -269,6 +270,73 @@ class TestLimits:
             assert len(ranges) == 2  # one panel per region group
             for rng in ranges:
                 assert rng == pytest.approx(want[ctx], rel=1e-9)
+
+    def test_default_mode_profile_panels_each_autoscale(self, mc):
+        """Profile__ under default: each panel on its own curves' range, so
+        mCHG isn't drawn on mCG's (the per-context panels autoscale too)."""
+        path, cols, _ = mc
+        out = run_r_ok(PANEL_RANGES + f'''
+            m <- read_matrix("{path}")
+            d <- profile_data(m, "mean")
+            lim <- profile_limits(m, d, "default", per_column = TRUE)
+            p <- plot_profile_per_column(m, display("{cols}"), epicc_theme(), lim, data = d)$plot
+            panel_ranges(p, "panel")
+            for (k in m$samples$label)
+              cat("want", k, sprintf("%.10g", default_ylim(d[d$sample == k, ])), "\\n", sep = "\\t")''')
+        got, want = {}, {}
+        for line in out.strip().splitlines():
+            f = [x for x in line.split("\t") if x.strip()]
+            if f[0] == "want":
+                want[f[1]] = (float(f[2]), float(f[3]))
+            else:
+                got[f[0]] = (float(f[1]), float(f[2]))
+        for k in MC_KEYS:
+            assert got[k] == pytest.approx(want[k], rel=1e-9), k
+        assert got["WT__mCHG"][1] < got["WT__mCG"][0]
+
+
+@needs_r
+class TestAllEnv:
+    """The `all` matrix is matrix_join_all.py's join of a `most` and an mC
+    matrix: repeated bins at the common bin size, 0-filled non-mC rows and
+    NaN mC values side by side."""
+
+    KEYS = ["WT__H3K9me2", "WT__H3K4me3"] + MC_KEYS
+
+    @pytest.fixture
+    def joined(self, tmp_path):
+        groups = [("genes", 5), ("genes_nostrand", 3)]
+        most, mc = tmp_path / "most.gz", tmp_path / "mc.gz"
+        # most at bin size 50, mC at 100: the join repeats each mC bin twice.
+        build(most, self.KEYS[:2], groups, nbins=2 * NBINS, bin_size=50)
+        build(mc, MC_KEYS, groups, nan_every=3)
+        out, cols = tmp_path / "all.gz", tmp_path / "all_cols.tsv"
+        subprocess.run(["python3", str(SCRIPTS / "matrix_join_all.py"), "-o", str(out),
+                        "--most", str(most), "--mc", str(mc)], check=True)
+        columns_tsv(cols, self.KEYS)
+        return out, cols
+
+    @pytest.mark.parametrize("mode", ["type", "sample", "default"])
+    def test_script_draws_the_joined_matrix(self, tmp_path, joined, mode):
+        path, cols = joined
+        proc, out1, out2 = run_script(tmp_path, path, cols, env="all", mode=mode)
+        assert proc.returncode == 0, proc.stderr
+        assert out1.stat().st_size > 0 and out2.stat().st_size > 0
+
+    def test_pergroup_has_a_panel_per_mark(self, joined):
+        """mC and ChIP each keep their own range in Profile_pergroup__."""
+        path, cols = joined
+        out = run_r_ok(PANEL_RANGES + f'''
+            m <- read_matrix("{path}")
+            d <- profile_data(m, "mean")
+            p <- plot_profile_by_context(m, display("{cols}"), epicc_theme(),
+                                         profile_limits(m, d, "type"), data = d)$plot
+            panel_ranges(p, "context")''')
+        r = parse_ranges(out)
+        assert set(r) == {"H3K9me2", "H3K4me3", "mCG", "mCHG"}
+        assert all(len(v) == 2 for v in r.values())  # one per region group
+        assert all(hi < 1 for _, hi in r["H3K4me3"])
+        assert all(lo > 20 for lo, _ in r["mCG"])
 
 
 @needs_r

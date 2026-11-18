@@ -54,8 +54,8 @@ def format_quoted_params_error(problems):
 # the run. The Snakefile lists the families drawn in R in
 # R_DRAWN_PLOT_FAMILIES. heatmaps_plot_params still goes to plotHeatmap
 # untouched; its translation (--colorMap, --colorList, --missingDataColor,
-# --interpolationMethod) returns with the R heatmaps in phase 3, from branch
-# claude/r-plot-legacy-flags (commit fc1130c).
+# --interpolationMethod) returns with the R heatmaps in phase 3
+# (dev/docs/r-plotting-plan.md).
 
 PROFILE_TYPES = ("lines", "fill", "se", "std")
 

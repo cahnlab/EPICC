@@ -37,12 +37,17 @@ display <- read.delim(args[2], header = FALSE, sep = "\t", quote = "", comment.c
 # One pass over the matrix for the curves; the limits come from them.
 d <- profile_data(m, average, .spread(th))
 limits <- profile_limits(m, d, mode)
-ylab <- paste(average, if (env == "mC") "methylation" else "signal")
+ylab <- paste(average, switch(env, mC = "methylation", all = "signal / methylation", "signal"))
 
-p1 <- plot_profile_per_column(m, display, th, limits, average, kind, ylab, data = d)
+# Under heatmaps_scales: default each Profile__ panel autoscales on its own
+# curves, as the mC per-context panels below do.
+limits1 <- if (mode == "default") profile_limits(m, d, mode, per_column = TRUE) else limits
+p1 <- plot_profile_per_column(m, display, th, limits1, average, kind, ylab, data = d)
 epicc_save(p1$plot, args[7], p1$width, p1$height)
 
-p2 <- if (env == "mC") {
+p2 <- if (env %in% c("mC", "all")) {
+  # A panel per mark (per context for mC): `all` mixes methylation (tens of
+  # percent) with ChIP/RNA signal, which one shared range would flatten.
   # heatmaps_scales: default left each context panel to autoscale before; keep that.
   plot_profile_by_context(m, display, th, limits, average, kind, ylab,
                           use_limits = mode != "default", data = d)
