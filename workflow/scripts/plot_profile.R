@@ -124,7 +124,9 @@ profile_ggplot <- function(d, th, ticks, colour, colours, linetype = NULL, linet
     scale_colour_manual(values = colours, name = NULL,
                         guide = if (show_colour_legend) guide_legend(ncol = legend_ncol) else "none") +
     scale_fill_manual(values = colours, guide = "none") +
-    scale_x_continuous(breaks = ticks$x, labels = ticks$label, expand = c(0, 0)) +
+    # A little room at each end so the end ticks of neighbouring panels
+    # ("1.0Kb" | "-1.0") do not run into each other.
+    scale_x_continuous(breaks = ticks$x, labels = ticks$label, expand = expansion(mult = 0.04)) +
     scale_y_continuous(expand = if (is.null(limits)) waiver() else c(0, 0)) +
     labs(x = NULL, y = ylab) +
     epicc_ggtheme(th)

@@ -213,6 +213,8 @@ A reference for architectural choices in the pipeline. Intended for contributors
 
 ### The mC per-group metaplot is faceted on context, in R
 
+**Status**: superseded in phase 2 — the per-context plot is now `plot_profile_by_context()` in `plot_profile.R`, read from the matrix (see "Profiles are drawn in R from the matrix").
+
 **Decision**: For methylation, `Profile_pergroup__` is drawn by `workflow/scripts/R_mc_profile_by_context.R` (ggplot2) instead of `plotProfile --perGroup`. It reads `plotProfile --outFileNameData` from the usual single mC matrix and draws one panel per context in one row (CG | CHG | CHH), each with its own y-axis and a line per sample. A target with a `nostrand` region group gets a second row. Line colours are the same tab20-on-`levels_label` assignment `--perGroup` used; samples that share a colour (same `levels_label`, differing only in assay or replicate) get distinct dash patterns so their lines can still be told apart. The heatmaps, `Profile__` and every non-mC plot are unchanged, and there is still one mC matrix and one PDF per plot.
 
 **Rationale**: The mC matrix's columns are sample × context, and line colours are keyed on `levels_label` so a genotype keeps one colour across plots. `--perGroup` makes panels only by region group, so it drew all of a sample's contexts as same-coloured lines in one panel. deeptools cannot facet on a sample property. The R plot needs no new matrices or jobs: the ColCEN dry-run plans the same 609 jobs as before. Free y-axes matter because CG sits at tens of percent and CHH at a few.
@@ -461,7 +463,7 @@ The combined tokens remain as an **internal** representation: `add_compat_column
 
 ### Old deeptools plot flags are translated only once R draws that plot
 
-**Status**: deferred to phase 2. Review of #114 noted that `R_DRAWN_PLOT_FAMILIES` is empty in phase 1, so this code would not run there. It is parked on branch `claude/r-plot-legacy-flags` (commit `fc1130c`) and returns with the first family R draws.
+**Status**: profiles translated since phase 2 (`R_DRAWN_PLOT_FAMILIES = ("profiles",)`); heatmaps follow in phase 3. Review of #114 noted that the list was empty in phase 1, so the code was parked on branch `claude/r-plot-legacy-flags` (commit `fc1130c`) and restored from there with the first family R draws. `profiles_plot_params` is gone from the shipped options file and the builder.
 
 **Decision**: `heatmaps_plot_params` and `profiles_plot_params` are translated onto plot-theme keys by `legacy_plot_params()` (`config_validation.py`), one family at a time.
 - **Translated flags:**
@@ -520,3 +522,14 @@ The combined tokens remain as an **internal** representation: `add_compat_column
 - **Own join:** `computeMatrixOperations cbind` joins on the region name alone, so duplicate names (TE annotations) collapse. It also keeps only the first matrix's rows.
 
 **Alternatives considered**: (1) Compute the mC bigwigs into `all` in a second computeMatrix pass without `--missingDataAsZero`, then merge. Rejected: it repeats the mC matrix's work and still needs the same join and bin handling. (2) Rebin `most` up to `bs_mc` by averaging. Rejected: it changes the non-mC values and coarsens them. (3) Keep mixed bin sizes (plain cbind). Rejected for the `--perGroup` and R profile axes above. (4) Only a warning and docs until phase 3 joins the matrices in R. Rejected: phase 3 covers only the heatmap, so `Profile__…__all__` would stay wrong, and it would have built the same join a second time. (5) Read both matrices into numpy arrays. Rejected: float32 changes the last printed digit of the values, float64 needs over a gigabyte at TE scale, and streaming text needs neither.
+
+### Profiles are drawn in R from the matrix, with reusable parts
+
+**Decision**: `Profile__` and `Profile_pergroup__` are drawn by `workflow/scripts/R_profile.R` (ggplot2) instead of `plotProfile`, in `CONDA_ENV_PLOTS`. The drawing lives in `plot_profile.R` as separate parts: `profile_data()` (curves from `group_means()`, plus an se/std band), `profile_limits()` (per-column y range from `plot_scales.R`) and `profile_ggplot()`, with one function per plot on top. The mC per-context plot (`R_mc_profile_by_context.R`, which read a `plotProfile --outFileNameData` dump) is folded in as `plot_profile_by_context()`.
+- **Limits:** the script computes them with `matrix_scales()` / `default_scales()` from the same `profiles_scale` average it draws with, instead of reading `params_profile`. Each `Profile__` panel spans exactly its own column's range, looked up by key.
+- **Look:** a `Profile__` panel is drawn in its column's display colour, with region groups told apart by dash pattern. deeptools coloured the groups with the first entries of the per-sample `--colors` list, so the colour of a line there meant nothing.
+- **Phase-1 findings settled:** `Profile__` now uses `profiles_scale` for the curves as well as the limits. `default` mode's `Profile_pergroup__` takes `default_scales()` instead of the awk collapse to `--yMin 99999 --yMax -99999`, which drew an empty plot. The type-mode ±999999 sentinel in `plot_scales.R` is removed, so a mark whose 10th percentile is above 999999 keeps its zMin; this is the one intended change to the heatmap scale files. Two findings are kept on purpose: awk's number format in the flag files, which only the deeptools heatmaps read now and which go away in phase 3, and the −0.01..0.01 range of an all-zero profile, which keeps a flat zero line visible mid-panel for signed tracks.
+
+**Rationale**: The heatmap's top profile (phase 3) must show the same curves and limits as `Profile__`, so the data and limits functions are shared rather than written twice. Computing the limits in the plot script from the drawn averages means a curve can never leave its axis, and the profile rule no longer waits on `computing_matrix_scales`. Reading the matrix directly drops two `plotProfile` runs per job (three for mC) and the `--plotHeight` workaround for deeptools 4's legend.
+
+**Alternatives considered**: (1) Reading `params_profile` for the limits. Rejected: it parses the awk-rounded text back into numbers and keeps the profile rule behind the scales rule, while the same function is available in R. (2) Keeping deeptools' group colouring in `Profile__`. Rejected: it was an accident of reusing the per-sample colour list, and broke the rule that a sample keeps its colour across plots. (3) Keeping `R_mc_profile_by_context.R` beside the new script. Rejected: two readers of the same data, one of them through a deeptools dump.

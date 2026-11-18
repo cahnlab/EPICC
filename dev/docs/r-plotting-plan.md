@@ -1,10 +1,10 @@
 # Moving EPICC's plots to R, with one theme
 
-Status: groundwork landed (shared theme module `workflow/scripts/plot_theme.R`;
-the mC per-context metaplot uses it). Phase 1 done (env, `matrix_io.R`, the
-per-mark scales computed in R; the flag translation is parked for phase 2).
-Phases 2–7
-are still to do.
+Status: groundwork landed (shared theme module `workflow/scripts/plot_theme.R`).
+Phase 1 done (env, `matrix_io.R`, the per-mark scales computed in R). Phase 2
+done (`Profile__` and `Profile_pergroup__` drawn in R, the profiles part of
+the flag translation back, the phase-1 findings settled). Phases 3–7 are still
+to do.
 
 The goal is for every plot EPICC draws to take its look from one editable theme
 and to be drawn in R. Today most of the combined-analysis plots come from
@@ -98,7 +98,7 @@ What the R versions must reproduce:
 
 | Script | Output(s) | Engine | Notes for the theme |
 |---|---|---|---|
-| `R_mc_profile_by_context.R` | `Profile_pergroup__*__mC__*.pdf` | ggplot2 | **Uses the theme now.** |
+| `R_profile.R` + `plot_profile.R` (phase 2) | `Profile__*.pdf`, `Profile_pergroup__*.pdf` (mC faceted on context) | ggplot2 | **Uses the theme.** Replaced `plotProfile` and `R_mc_profile_by_context.R`. |
 | `R_browser_plot.R` | `Browser_full_chromosomes__*.pdf`, `single_browser__*.pdf` | Gviz | Fonts/sizes via Gviz `displayPars` (`fontsize`, `cex.*`), which can be mapped from the theme. Track colours already come from the pipeline palette. |
 | `R_Upset_plot_{peaks,clusters,TSS}.R` + `upset_common.R` | `Upset_combined_*.pdf` | ComplexUpset (ggplot2) | `themes = upset_modify_themes(...)` takes ggplot themes; `colorlist` from all qualitative Brewer palettes should become the theme palette. Fixed category colours (`Distal_downstream`, …) become a theme key. |
 | `R_mapping_stats.R` | `mapping_stats_*.pdf` | ggplot2 + cowplot | `brewer.pal(4, "Paired")` → a theme key for category fills. |
@@ -260,7 +260,7 @@ shares it is rerun.
   run, so it needs no completed pipeline run. Under `--sortUsing max`/`min`,
   rows with exactly equal summaries can come out in a different order, because
   numpy's float sort is not stable. EPICC sorts only by mean or median.
-- **Flag translation: deferred to phase 2.** `legacy_plot_params()`
+- **Flag translation: deferred to phase 2 (back in phase 2 for profiles).** `legacy_plot_params()`
   translates `heatmaps_plot_params`/`profiles_plot_params` onto theme keys:
   - `--colorMap NAME` → `heatmap_colors.<env>: NAME`;
   - `--colorList` → a list;
@@ -276,7 +276,8 @@ shares it is rerun.
   `workflow/Snakefile` and `tests/unit/test_plot_theme.py`). Phase 2 brings it
   back with `R_DRAWN_PLOT_FAMILIES = ("profiles",)`, and phase 3 adds
   `"heatmaps"`. Once a family is listed, drop its key from
-  `config/epicc-options.yaml` and the builder.
+  `config/epicc-options.yaml` and the builder. Phase 2 did this for
+  `profiles_plot_params` (restored from `fc1130c`).
 - A `heatmap_colors` entry may now be one matplotlib colour-map name
   (`viridis`, `RdBu_r`), resolved through `workflow/scripts/plot_colormaps.json`
   (all 91 matplotlib maps, 17 stops each; regenerate with
@@ -351,24 +352,68 @@ shares it is rerun.
 
   Phase 2's R profile takes its limits from the same functions, either by
   reading these files or by calling `matrix_scales()` directly.
-- **Behaviours of today's rule found while porting**, to settle in phase 2:
+- **Behaviours of today's rule found while porting**, settled in phase 2:
   - `Profile__` is drawn with deeptools' default mean even when
     `profiles_scale: median`, while its y-limits come from the median. Its
-    curves can therefore leave their axis. The R profile uses
-    `profiles_scale` for both.
+    curves can therefore leave their axis. **Fixed:** the R profile uses
+    `profiles_scale` for both (`test_profile.py::test_lines_are_profiles_scale`).
   - With `heatmaps_scales: default`, the per-group collapse turns the empty
-    scale file into `--yMin 99999 --yMax -99999`. R uses `default_scales()`
-    instead.
+    scale file into `--yMin 99999 --yMax -99999`, and the old
+    `Profile_pergroup__` came out blank (`most_default_mean` comparison).
+    **Fixed:** R uses `default_scales()`.
   - Because of the NaN propagation above, mC heatmap scales come from config
-    (`heat_m*`), never from the data.
+    (`heat_m*`), never from the data. **Kept** for the heatmaps (phase 3
+    decides); it does not touch the profiles, whose y range comes from the
+    NaN-aware averages.
   - In `type` mode, the awk search for a mark's range starts from the
     sentinels 999999 and −999999. A mark whose 10th percentile is ≥ 999999 (or
     whose 90th is ≤ −999999) therefore gets 0 on that side. Large raw counts
-    can hit this.
+    can hit this. **Fixed** in `plot_scales.R`: the mark keeps its range. It
+    changes the heatmap `--zMin` of such a mark (the only output affected);
+    the scale tests apply this one fix to the old rule's output before
+    comparing (`old_rule_fixed`).
   - y bounds are written as awk printed them: integral values in full
-    (`900000`), anything else with `%.6g`.
+    (`900000`), anything else with `%.6g`. **Kept** in the flag files, which
+    only the deeptools heatmaps still read; the R profiles take the doubles
+    straight from `matrix_scales()`, so the rounding no longer reaches a plot
+    drawn in R. The flag files go when phase 3 moves the heatmaps.
+  - An all-zero profile gets −0.01..0.01, not 0..0.01. **Kept:** a flat line
+    at zero drawn mid-panel is right for signed tracks (`bamCompare` log2
+    ratios), and 0..0.01 would draw it on the panel's bottom edge.
 
-### Phase 2: profiles (`Profile__`, `Profile_pergroup__`) + scales
+### Phase 2: profiles (`Profile__`, `Profile_pergroup__`) + scales (done)
+
+What landed:
+- `workflow/scripts/plot_profile.R` holds the reusable parts:
+  `profile_data()` (the `group_means()` curves plus an se/std band: numpy's
+  population `nanstd` per bin, divided by √n for se), `profile_limits()` (y
+  range per column: `matrix_scales()` for `type`/`sample`, `default_scales()`
+  for `default`), `profile_ggplot()` (lines, fill or a band per
+  `profile_type`; per-panel limits drawn as invisible points with no
+  expansion, so a panel spans exactly its column's range) and the three plots,
+  `plot_profile_per_column()` (`Profile__`), `plot_profile_per_group()`
+  (`Profile_pergroup__`) and `plot_profile_by_context()` (mC). Phase 3's
+  heatmap top profile should call `profile_data()` and `profile_limits()`
+  rather than recompute them.
+- `R_profile.R` is the CLI. It reads the matrix and the display table
+  (`matrix_sample_labels.py`), works out the limits itself (it does not read
+  `params_profile`, so the profile rule no longer depends on
+  `computing_matrix_scales`), and writes both PDFs.
+  `plotting_profile_on_targetfile` runs it in `CONDA_ENV_PLOTS`.
+  `R_mc_profile_by_context.R` and its `plotProfile --outFileNameData` dump are
+  gone.
+- Visible changes, all in the comparison images: `Profile__` draws each panel
+  in its column's display colour with region groups told apart by dash
+  pattern (deeptools coloured the groups with the first sample colours of the
+  `--colors` list, an accident of reusing it); 4 panels per row instead of 8;
+  a y-axis label (`mean signal`, `median methylation`); the mC context panels
+  share one y range per context across region groups (previously autoscaled
+  per panel; still autoscaled under `default`).
+- `profiles_plot_params` is translated (`--plotType` → `profile_type`, with
+  a deprecation warning; anything else stops the run) and is gone from the
+  shipped options file, the README and the builder.
+
+As planned:
 - `R_profile.R`, reading the matrix (option A) and the `params_regions` /
   `params_profile` files. `Profile__`: one panel per column, a line per region
   group, y-limits per column. `Profile_pergroup__` non-mC: one panel per
@@ -440,8 +485,8 @@ fixture matrix. Small fixtures are generated in the script; real matrices
 
 | Family | Plots compared | Old | New | Comparison images |
 |---|---|---|---|---|
-| `mc_profile` (groundwork; rerun in phase 1) | `Profile_pergroup__*__mC__*` | `R_mc_profile_by_context.R` at the #112 head (phase 1: at the #113 head) | the same script on `plot_theme.R`, default theme + `presentation` | `mc_profile/compare.png`: the default theme is pixel-identical both times. Phase 1 draws no new plot. |
-| `profile` (phase 2) | `Profile__`, `Profile_pergroup__` (non-mC and mC) | `plotProfile` / `--perGroup` | `R_profile.R` | `profile/compare.png`, one row per plot type |
+| `mc_profile` (groundwork and phase 1; removed in phase 2) | `Profile_pergroup__*__mC__*` | `R_mc_profile_by_context.R` at the #112 head (phase 1: at the #113 head) | the same script on `plot_theme.R`, default theme + `presentation` | the default theme was pixel-identical both times. Superseded by `profiles`. |
+| `profiles` (phase 2) | `Profile__`, `Profile_pergroup__` (non-mC and mC) | `plotting_profile_on_targetfile`'s own shell block at `--old-ref` (`plotProfile`, `--perGroup`, the mC dump script), with that ref's scales rule | the same rule block now (`R_profile.R`) | `profiles/<variant>/{Profile,Profile_pergroup}/compare.png` for `most` (stranded + nostrand groups) under type/mean, sample/median, default/mean; mC under type/mean and default/median; a one-group reference-point ChIP matrix (tss) under type/mean; plus `profile_type: se` and the `presentation` theme. Needs deeptools on PATH |
 | `heatmap` (phase 3) | `Heatmap__`, `Heatmap_sorted__` | `plotHeatmap` | `R_heatmap.R` | `heatmap/compare.png`; also diff the `_sorted_regions.bed` |
 | `scales` (phase 1) | `heatmaps_scales: type` limits on a `most` heatmap (H3K9me2 0–60 next to H3K4me3 0–0.5, H3K9me, interleaved RNA plus/minus) | `computing_matrix_scales` as bash + `dataRange`/`plotProfile` (`dev/reference/`), drawn by `plotHeatmap` | the rule as it stands (`R_matrix_scales.R`), drawn by the same `plotHeatmap` | `scales/compare.png` + `scales/flags.txt` (both flag sets, largest difference per flag): pixel-identical. Needs deeptools on PATH |
 | `pca` (phase 4) | `PCA__` | `plotPCA` | `R_pca.R` | `pca/compare.png` |
