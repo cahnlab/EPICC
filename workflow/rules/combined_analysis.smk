@@ -1085,6 +1085,50 @@ rule merging_matrix:
         }} 2>&1 | tee -a "{log}"
         """
 
+def get_all_matrix_inputs(wildcards):
+    # The 'all' matrix is the join of the 'most' (non-mC) and mC matrices, each
+    # built with its own computeMatrix options; either is absent when the
+    # genome has no samples of that kind.
+    prefix = f"{RESULTS_DIR}/combined/matrix/final_matrix_{wildcards.matrix_param}"
+    suffix = f"{wildcards.analysis_name}__{wildcards.ref_genome}__{wildcards.target_name}.gz"
+    envs = set(analysis_samples.loc[analysis_samples['ref_genome'] == wildcards.ref_genome, 'env'])
+    inputs = {}
+    if envs - {"mC"}:
+        inputs["most"] = f"{prefix}__most__{suffix}"
+    if "mC" in envs:
+        inputs["mc"] = f"{prefix}__mC__{suffix}"
+    return inputs
+
+# merging_matrix's output pattern also matches env 'all'; that one is joined.
+ruleorder: joining_all_matrix > merging_matrix
+
+rule joining_all_matrix:
+    # Not computed from the bigwigs: computeMatrix takes one set of options per
+    # run, and the non-mC ones (--missingDataAsZero --skipZeros, bin size 'bs')
+    # read an uncovered cytosine as 0 % methylation. Joining the two matrices
+    # keeps NaN in the mC columns and each half's own values; the join puts every
+    # column on one bin size (the gcd of 'bs' and 'bs_mc', bins repeated).
+    input:
+        unpack(get_all_matrix_inputs)
+    output:
+        f"{RESULTS_DIR}/combined/matrix/final_matrix_{{matrix_param}}__all__{{analysis_name}}__{{ref_genome}}__{{target_name}}.gz"
+    params:
+        ref_genome = lambda wildcards: wildcards.ref_genome,
+        target_name = lambda wildcards: wildcards.target_name,
+        matrix = lambda wildcards: wildcards.matrix_param,
+        args = lambda wildcards, input: " ".join(f"--{k} {v}" for k, v in input.items()),
+        script = os.path.join(REPO_FOLDER, "workflow", "scripts", "matrix_join_all.py")
+    log:
+        temp(return_log_combined("{analysis_name}", "all_{ref_genome}", "joining_{matrix_param}_{target_name}"))
+    conda: CONDA_ENV
+    shell:
+        """
+        {{
+        printf "Joining most and mC {params.matrix} matrices for all {params.target_name} on {params.ref_genome}\n"
+        python3 "{params.script}" -o {output} {params.args}
+        }} 2>&1 | tee -a "{log}"
+        """
+
 rule computing_matrix_scales:
     input:
         matrix = f"{RESULTS_DIR}/combined/matrix/final_matrix_{{matrix_param}}__{{env}}__{{analysis_name}}__{{ref_genome}}__{{target_name}}.gz"

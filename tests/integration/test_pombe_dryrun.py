@@ -15,6 +15,8 @@ Analysis-level names use build_analysis_name():
   {Assay}__{levels_label}__{IP_target}__{Genome} (empty parts omitted)
 """
 
+import re
+
 import pytest
 from pathlib import Path
 
@@ -478,6 +480,31 @@ class TestMapOnly:
         result = run_snakemake_dryrun(repo_root, test_options, "coverage_chip")
 
         assert result.returncode == 0, f"coverage_chip failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+
+
+ALL_MATRIX_TARGET = f"{_OUTPUT_DIR}/combined/matrix/final_matrix_regions__all__test_pombe__Spombe__all_genes.gz"
+
+
+class TestAllEnvMatrix:
+    """The `all` env's matrix is joined from the most and mC matrices, never
+    computed from the bigwigs with the non-mC options (which zero-fill mC)."""
+
+    def test_all_matrix_is_joined_from_most(self, snakemake_available, repo_root, test_options):
+        if not snakemake_available:
+            pytest.skip("Snakemake not installed")
+
+        result = run_snakemake_dryrun(repo_root, test_options, ALL_MATRIX_TARGET, ["--debug-dag"])
+        assert result.returncode == 0, f"Dry-run failed: {result.stderr}"
+        out = result.stdout + result.stderr
+        assert "rule joining_all_matrix:" in out
+        # pombe has no mC: the join takes the most matrix alone.
+        lines = out.splitlines()
+        i = next(i for i, l in enumerate(lines) if l.strip() == "rule joining_all_matrix:")
+        inputs = next(l for l in lines[i + 1:i + 6] if l.strip().startswith("input:"))
+        assert "final_matrix_regions__most__" in inputs
+        assert "__mC__" not in inputs
+        # No per-strand computeMatrix run for the all env.
+        assert not re.search(r"matrix_regions__all__\S*__(unstranded|plus|minus|nostrand)\.gz", out)
 
 
 def _pca_rule_inputs(debug_dag_output):
