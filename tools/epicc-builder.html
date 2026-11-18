@@ -3605,9 +3605,6 @@ function buildConfigForm() {
   outSec.appendChild(buildToggleRow("Analysis on transposable elements", "te_analysis",
     "TE analysis is ON! You know where it's at! \uD83D\uDC4F",
     "TE analysis is deactivated. It's only junk DNA afterall... \uD83D\uDC40"));
-  outSec.appendChild(buildToggleRow("Deduplicate mRNA-seq reads", "rna_deduplicate",
-    "mRNA-seq dedup ON \u2014 only do this if your reads carry UMIs! \uD83E\uDDEC",
-    "mRNA-seq dedup OFF (default) \u2014 no UMIs, no dedup. RAMPAGE is deduped regardless. \uD83D\uDC4D"));
   var qcRow = buildSelectRow("FastQC option:", "QC_option", ["none", "all"]);
   var qcMsg = el("div", { className: "cfg-msg" });
   qcMsg.textContent = configState.QC_option === "all" ? "How good is that raw data, hum? \uD83E\uDDD0" : "";
@@ -3738,6 +3735,9 @@ function buildConfigForm() {
   rnaBody.appendChild(buildNumberRow("Trim front (bp):", "trim_front_RNA", 0, 100));
   rnaBody.appendChild(buildTextRow("Adapter 1 (auto=auto-detect):", "adapter1_RNA", "auto"));
   rnaBody.appendChild(buildTextRow("Adapter 2 (auto=auto-detect):", "adapter2_RNA", "auto"));
+  rnaBody.appendChild(buildToggleRow("Deduplicate mRNA-seq reads", "rna_deduplicate",
+    "mRNA-seq dedup ON \u2014 only do this if your reads carry UMIs! \uD83E\uDDEC",
+    "mRNA-seq dedup OFF (default) \u2014 no UMIs, no dedup. RAMPAGE is deduped regardless. \uD83D\uDC4D"));
   rnaBody.appendChild(buildSelectRow("Strandedness:", "rna_strandedness", ["reverse", "forward", "unstranded"],
     "Library strand orientation for stranded coverage tracks. \"reverse\" fits dUTP/Illumina stranded kits (e.g. TruSeq Stranded mRNA — the most common), \"forward\" fits directional forward-stranded kits, \"unstranded\" if the library keeps no strand information. Applies to the RNAseq assay; RAMPAGE defaults to \"forward\"."));
   rnaBody.appendChild(buildSelectRow("Mapped reads for bigwigs:", "rna_multimap", ["multiple", "unique"],
