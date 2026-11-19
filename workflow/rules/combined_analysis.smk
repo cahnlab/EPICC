@@ -1192,9 +1192,13 @@ rule plotting_heatmap_on_targetfile:
         plot_params = lambda wildcards: config['heatmaps_plot_params'][wildcards.env],
         sort = lambda wildcards: define_sort_options(wildcards),
         display = lambda wildcards: define_key_for_plots(wildcards, "display"),
-        sample_labeller = os.path.join(REPO_FOLDER, "workflow", "scripts", "matrix_sample_labels.py")
+        sample_labeller = os.path.join(REPO_FOLDER, "workflow", "scripts", "matrix_sample_labels.py"),
+        plot_heatmap = os.path.join(REPO_FOLDER, "workflow", "scripts", "plotheatmap_lowmem.py")
     log:
         temp(return_log_combined("{analysis_name}", "{env}_{ref_genome}", "plot_heatmap_{matrix_param}_{target_name}"))
+    # Sized from the matrix (heatmap_memory.py); the profile sets only runtime.
+    resources:
+        mem_mb = lambda wildcards, input, attempt: heatmap_mem_mb(input.matrix, attempt)
     conda: CONDA_ENV
     shell:
         """
@@ -1211,7 +1215,10 @@ rule plotting_heatmap_on_targetfile:
         printf '%s\n' "{params.display}" > "$TMPDIR/display.tsv"
         lab="--samplesLabel $(python3 "{params.sample_labeller}" {input.matrix} "$TMPDIR/display.tsv" | cut -f2 | tr '\n' ' ')"
         printf "Plotting heatmap {params.matrix} for {params.env} {params.target_name} on {params.ref_genome}\n"
-        plotHeatmap -m {input.matrix} -out {output.plot} {params.plot_params} {params.sort} ${{reg}} ${{heat}} ${{prof}} ${{lab}} ${{add}} --outFileSortedRegions {output.sorted_regions}
+        # plotHeatmap through a wrapper that stops matplotlib keeping a
+        # full-figure canvas per heatmap in the PDF (plotheatmap_lowmem.py):
+        # memory grew with the square of the column count.
+        python3 "{params.plot_heatmap}" -m {input.matrix} -out {output.plot} {params.plot_params} {params.sort} ${{reg}} ${{heat}} ${{prof}} ${{lab}} ${{add}} --outFileSortedRegions {output.sorted_regions}
         """
 
 rule sort_heatmap:
@@ -1252,9 +1259,12 @@ rule plotting_sorted_heatmap_on_targetfile:
         matrix = lambda wildcards: wildcards.matrix_param,
         plot_params = lambda wildcards: config['heatmaps_plot_params']['mC'],
         display = lambda wildcards: define_key_for_plots(SimpleNamespace(ref_genome=wildcards.ref_genome, env="mC"), "display"),
-        sample_labeller = os.path.join(REPO_FOLDER, "workflow", "scripts", "matrix_sample_labels.py")
+        sample_labeller = os.path.join(REPO_FOLDER, "workflow", "scripts", "matrix_sample_labels.py"),
+        plot_heatmap = os.path.join(REPO_FOLDER, "workflow", "scripts", "plotheatmap_lowmem.py")
     log:
         temp(return_log_combined("{analysis_name}", "mC_{ref_genome}", "plot_sorted_heatmap_{matrix_param}_{target_name}"))
+    resources:
+        mem_mb = lambda wildcards, input, attempt: heatmap_mem_mb(input.matrix, attempt)
     conda: CONDA_ENV
     shell:
         """
@@ -1270,7 +1280,7 @@ rule plotting_sorted_heatmap_on_targetfile:
         printf '%s\n' "{params.display}" > "$TMPDIR/display.tsv"
         lab="--samplesLabel $(python3 "{params.sample_labeller}" {input.matrix} "$TMPDIR/display.tsv" | cut -f2 | tr '\n' ' ')"
         printf "Plotting heatmap {params.matrix} for mC {params.target_name} on {params.ref_genome}\n"
-        plotHeatmap -m {input.matrix} -out {output.plot} {params.plot_params} --sortRegions 'keep' ${{heat}} ${{prof}} ${{lab}} ${{add}}
+        python3 "{params.plot_heatmap}" -m {input.matrix} -out {output.plot} {params.plot_params} --sortRegions 'keep' ${{heat}} ${{prof}} ${{lab}} ${{add}}
         """
 
 rule plotting_profile_on_targetfile:
