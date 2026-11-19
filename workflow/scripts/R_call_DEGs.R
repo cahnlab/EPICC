@@ -38,6 +38,10 @@ ref_genes$GID<-str_remove_all(ref_genes$GID, pattern = "_.$")
 
 output_dir<-args[6]
 
+# placeholder (default values) for user-defined parameters to filter DEG
+xint<-0.5 #min absolute log2FC
+yint<-0.05 #min FDR
+
 # EdgeR analysis
 
 y<-DGEList(counts=filtered, group = samples)
@@ -82,10 +86,27 @@ create.FC.table<-function(sample1, sample2, table) {
 create.DEG.table<-function(sample1, sample2, y) {
   et<-exactTest(y, pair = c(sample2,sample1))
   out<-topTags(et, n=Inf, adjust.method="BH")
-  table<-filter(out$table, FDR<=0.05, logFC<=-2 | logFC>=2)
+  table<-filter(out$table, FDR<=yint, logFC<=-xint | logFC>=xint)
   table$GID<-rownames(table)
   table<-mutate(table, DEG=as.factor(ifelse(logFC<0, "DOWN", "UP")),Sample=paste0(sample1,"_vs_",sample2))
   table
+}
+
+#### Function to create a volcano plot to visualize number and distribution of DEGs between a pair of samples
+
+plotvolcano<-function(sample1,sample2,table,xint,yint) {
+  volcano<-ggplot(table, aes(logFC,-log2(FDR))) + 
+    geom_point(aes(color=DEG, alpha=abs(logFC), size=-log2(FDR))) + 
+    scale_color_manual(values = c(No="grey", UP="red", DOWN="blue")) +
+    scale_alpha_continuous(range = c(0.1, 1)) +
+    scale_size_continuous(range = c(0.3, 3)) +
+    geom_vline(xintercept=-xint, linewidth=0.5, color="grey", linetype = 2) +
+    geom_vline(xintercept=xint, linewidth=0.5, color="grey", linetype = 2) +
+    geom_hline(yintercept=-log2(yint), linewidth=0.5, color="grey", linetype = 2) +
+    labs(x=paste0("log2FC(",sample1," vs ",sample2,")")) +
+    theme_bw() +
+    theme(legend.position = "none")
+  print(volcano)
 }
 
 #### Applying above function to all possible pairs of samples, and creating temp files for unique DEGs
@@ -100,6 +121,11 @@ for (i in seq_len(length(genotypes)-1)) {
 		select(Chr,Start,Stop,GID,logFC,Strand,logCPM,PValue,FDR,Sample) %>%
 		arrange(Chr,Start)
 	write.table(FCtable,paste0(output_dir,"/RNA/DEG/FC_",analysisname,"__",refgenome,"__",sample1,"_vs_",sample2,".txt"),sep="\t",row.names=FALSE,col.names=TRUE,quote=FALSE)
+	tmptable<-mutate(FCtable, DEG=ifelse(FDR<=yint & logFC<=-xint, "DOWN", ifelse(FDR<=yint & logFC>=xint, "UP", "No")))
+    tmptable$DEG<-as.factor(tmptable$DEG)
+    pdf(paste0(output_dir,"/RNA/plots/Volcano__",analysisname,"__",refgenome,"__",sample1,"_vs_",sample2,".pdf"),6,6)
+	plotvolcano(sample1,sample2,table2,xint,yint)
+    dev.off()
 	DEGtable<-create.DEG.table(sample1,sample2,y)
 	DEGtable<-merge(ref_genes,DEGtable,by=c("GID")) %>%
 		select(Chr,Start,Stop,GID,logFC,Strand,logCPM,PValue,FDR,Sample,DEG) %>%
