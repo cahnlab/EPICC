@@ -176,8 +176,8 @@ set-resources:
   joining_all_matrix: *standard
   computing_matrix_scales: *single
   sort_heatmap: *single
-  plotting_heatmap_on_targetfile: *single
-  plotting_sorted_heatmap_on_targetfile: *single
+  plotting_heatmap_on_targetfile: {runtime: "8h"}  # mem_mb comes from the matrix size (heatmap_memory.py)
+  plotting_sorted_heatmap_on_targetfile: {runtime: "8h"}  # mem_mb comes from the matrix size (heatmap_memory.py)
   plotting_profile_on_targetfile: *single
   prep_chromosomes_for_browser: *low
   prep_browser_on_region: *heavy
