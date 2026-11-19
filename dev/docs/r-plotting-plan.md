@@ -3,8 +3,10 @@
 Status: groundwork landed (shared theme module `workflow/scripts/plot_theme.R`).
 Phase 1 done (env, `matrix_io.R`, the per-mark scales computed in R). Phase 2
 done (`Profile__` and `Profile_pergroup__` drawn in R, the profiles part of
-the flag translation back, the phase-1 findings settled). Phases 3–7 are still
-to do.
+the flag translation back, the phase-1 findings settled). Phase 3 done
+(`Heatmap__` drawn in R with ComplexHeatmap; the combined `Heatmap__…__all__`
+replaces `Heatmap_sorted__`; the heatmaps half of the flag translation back).
+Phases 4, 6 and 7 are still to do.
 
 The goal is for every plot EPICC draws to take its look from one editable theme
 and to be drawn in R. Today most of the combined-analysis plots come from
@@ -460,7 +462,21 @@ As planned:
   a mark), on an interleaved stranded matrix. Phase 3 adds the same check for
   zMin/zMax in the heatmap.
 
-### Phase 3: heatmaps (`Heatmap__`, `Heatmap_sorted__`)
+### Phase 3: heatmaps (`Heatmap__`, `Heatmap_sorted__`) (done)
+
+Built as planned below; what the implementation settled is in
+`dev/docs/design-decisions.md` ("Heatmaps are drawn in R one sample column at a
+time, at pixel size"). Departures from the plan: the top profile is a custom
+annotation function rather than `anno_lines` (it needs `Profile__`'s limits,
+dash per group and se/std/fill bands), the colour bars sit under each column
+rather than in ComplexHeatmap's legend block, the data type of a column comes
+from a new `type` column of the display table, and the heatmap body is never
+handed to ComplexHeatmap (a `layer_fun` draws each slice's precomputed image).
+`dev/plot_compare.py --family heatmap` was not added; the comparison was done
+by rendering fixtures by hand. The risks below about region groups and sort
+semantics are covered by `tests/unit/test_heatmap.py` (the sorted BED matches
+plotHeatmap's, except deeptools' wrong `blockStart`).
+
 - `R_heatmap.R` on ComplexHeatmap: one `Heatmap` per matrix column, joined
   into a `HeatmapList` that shares one row order. Each column gets
   `circlize::colorRamp2` over its own zMin/zMax (`scale_for_column`, by key)

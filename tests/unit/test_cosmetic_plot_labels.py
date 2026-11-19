@@ -38,12 +38,12 @@ TEXT = SMK.read_text()
 # Rules that compute data: none of them may take a label or a colour.
 DATA_RULES = [
     "making_stranded_matrix_on_targetfile", "merging_matrix",
-    "computing_matrix_scales", "sort_heatmap", "combine_clusterfiles",
+    "computing_matrix_scales", "joining_all_matrix", "combine_clusterfiles",
     "combine_peakfiles", "combine_TSS", "prep_browser_on_region",
     "summarize_tracks_pca",
 ]
 PLOT_RULES = [
-    "plotting_heatmap_on_targetfile", "plotting_sorted_heatmap_on_targetfile",
+    "plotting_heatmap_on_targetfile",
     "plotting_profile_on_targetfile", "make_single_loci_browser_plot",
     "plot_PCA_correlation", "plotting_upset_regions",
 ]
@@ -122,7 +122,7 @@ def test_display_covers_both_strand_layouts(env):
     for strand in ("unstranded", "plus"):
         wc = SimpleNamespace(ref_genome=genome, env=env, strand=strand)
         fn = ns["define_key_for_plots"]
-        cols = [fn(wc, m) for m in ("labels", "colors", "tracks", "series")]
+        cols = [fn(wc, m) for m in ("labels", "colors", "tracks", "series", "dtypes")]
         for key, *rest in zip(fn(wc, "keys"), *cols):
             assert rows[key] == tuple(rest)
 

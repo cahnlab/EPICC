@@ -172,6 +172,21 @@ profile_ggplot <- function(d, th, ticks, colour, colours, linetype = NULL, linet
   p
 }
 
+# The display table a plot rule writes through matrix_sample_labels.py: one
+# row per matrix column in column order, key, label, colour, track, series and
+# the data type (heatmap colours and interpolation; blank in older tables).
+read_display_table <- function(path) {
+  cols <- c("key", "label", "colour", "track", "series", "type")
+  lines <- readLines(path, warn = FALSE)
+  lines <- lines[nzchar(lines)]
+  f <- strsplit(lines, "\t", fixed = FALSE)
+  f <- lapply(f, function(x) c(x, rep("", length(cols)))[seq_along(cols)])
+  d <- as.data.frame(do.call(rbind, f), stringsAsFactors = FALSE)
+  if (nrow(d) == 0) d <- as.data.frame(matrix(character(0), 0, length(cols)), stringsAsFactors = FALSE)
+  names(d) <- cols
+  d
+}
+
 # Join display rows (key, label, colour, track, series; one per matrix column
 # in column order, from matrix_sample_labels.py) onto profile data.
 .with_display <- function(d, display) {

@@ -471,7 +471,7 @@ Output is the results folder from Shortstack limited to this loci file, followed
 The bed or gff file of regions **MUST HAVE** a header with a column called "Name" (the 4th column of a bed file or the 9th column of a gff3).
 
 ### **5. Plotting heatmap on regions**
-Given a bed file, it will plot a heatmap using deeptools.
+Given a bed file, it will plot a heatmap (drawn in R with ComplexHeatmap from the deeptools `computeMatrix` matrix).
 Edit `heatmap_target_file` and `heatmap_target_file_label` in the options file, or pass them on the command line. To run the analysis:
 ```bash
 epicc output --plot-type heatmap \
@@ -479,18 +479,18 @@ epicc output --plot-type heatmap \
   --plot-label interesting_genes \
   --ref-genome ColCEN \
   --matrix regions \
-  --env most
+  --env all
 ```
 - `--matrix` can be `regions` (scaled features), `tss` (reference point on TSS), or `tes` (reference point on TES).
-- `--env` selects the data types to include: `most` includes all data types except mC; use `mC`, `mCG`, `mCHG`, or `mCHH` for methylation-specific heatmaps; other choices are `ChIP`, `ATAC`, `RNA`, `sRNA`.
+- `--env` selects the data types to include: `all` includes every data type in one figure (the default heatmap of a full analysis); `most` includes all data types except mC; use `mC`, `mCG`, `mCHG`, or `mCHH` for methylation-only heatmaps; other choices are `ChIP`, `ATAC`, `RNA`, `sRNA`.
 
-Since mC requires different deeptools parameters it is handled independently. If you want the mC heatmap sorted by the same region order as the other samples, use the `Heatmap_sorted__` raw Snakemake target (see Snakemake docs for advanced usage).
+With `--env all`, every sample column sits in one figure, in one row order: ChIP, ATAC, RNA and sRNA columns smoothed in their colour ramp next to mC columns drawn as blocks, with uncovered cytosines in grey. The rows are sorted on the non-mC columns, so methylation is read against the other marks; to sort on methylation itself, make the mC-only heatmap with `--env mC`. A full analysis makes `Heatmap__{regions,tss,tes}__all__…` on all genes (and on TEs with `te_analysis`). The `heatmap_sort_mc_after_others` option and the `Heatmap_sorted__` plots are gone; an options file that still sets the option gets a warning and it is ignored.
 
-Output is a pdf file, or two if sorted heatmap for mC samples was generated.\
+Output is a pdf file, plus the regions in the order drawn (`combined/matrix/Heatmap__…_sorted_regions.bed`).\
 By default, heatmaps are scaled by data type (`heatmaps_scales: "type"` in the options file; each ChIP mark, TF, RNA, sRNA size, and mC context on its own scale). Change to `"default"` for a single scale or `"sample"` for per-sample scaling.\
 By default, regions are sorted by mean signal (`heatmaps_sort_options: "mean"`). Change to `"median"` or `"no"` to preserve the bedfile order.\
 If the bedfile is stranded, heatmaps use the sense-strand track for properly stranded data types (RNAseq, sRNA), so each region contributes one column per sample rather than separate plus and minus columns. Regions whose strand column is neither `+` nor `-` (GFF3 `?`, or `.`) have no sense strand and are plotted as their own region group — a TE annotation with a handful of these is still treated as stranded. Disable with `stranded_heatmaps: false` in the options file.\
-Color scheme defaults: `seismic` for all non-mC samples, `Oranges` for mC. Change via `heatmaps_plot_params` in the options file.
+Color scheme defaults: `seismic` for all non-mC samples, `Oranges` for mC, smoothed (`bilinear`) for continuous tracks and drawn as blocks (`nearest`) for mC. Change them per data type with `plot_theme_overrides` (`heatmap_colors`, `heatmap_interpolation`, `heatmap_missing_color`; see the options file). The old `heatmaps_plot_params` flags (`--colorMap`, `--colorList`, `--missingDataColor`, `--interpolationMethod`) are still translated onto these keys, with a deprecation warning.
 Window sizes (`before`, `after`, scaled-region `middle`) and bin size (`binsize`) are configurable in `heatmaps` per matrix type in the options file.
 
 ### **6. Plotting metaplot profiles on regions**

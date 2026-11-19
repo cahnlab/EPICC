@@ -389,9 +389,10 @@ class TestCombinedOutputs:
             )
 
     def test_heatmap_pdfs(self, results_exist):
-        """Heatmap PDFs for tss/tes/regions exist."""
+        """Heatmap PDFs for tss/tes/regions exist: one figure with every data
+        type (the all env), the default heatmap target."""
         for region_type in ["tss", "tes", "regions"]:
-            pdf = RESULTS / "combined" / "plots" / f"Heatmap__{region_type}__most__{RUN}__all_genes.pdf"
+            pdf = RESULTS / "combined" / "plots" / f"Heatmap__{region_type}__all__{RUN}__all_genes.pdf"
             assert _file_exists_nonempty(pdf), f"Missing or empty: {pdf}"
 
     def test_profile_pdfs(self, results_exist):

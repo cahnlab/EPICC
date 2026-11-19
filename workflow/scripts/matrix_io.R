@@ -68,6 +68,28 @@ read_matrix_header <- function(path) {
 #            unscaled5, unscaled3, ref_point)
 #   groups   data.frame: label, first, last (row range), n
 read_matrix <- function(path) {
+  m <- read_matrix_table(path)
+  tab <- m$table
+  m$table <- NULL
+  # Column by column into a preallocated matrix, dropping each table column
+  # once copied, so the values are held about once rather than three times
+  # (as.matrix of a column subset copies twice).
+  values <- matrix(NA_real_, nrow(tab), ncol(tab))
+  for (j in seq_len(ncol(values))) {
+    v <- tab[[1]]
+    v[!is.finite(v)] <- NA_real_
+    values[, j] <- v
+    set(tab, j = 1L, value = NULL)
+  }
+  m$values <- values
+  m
+}
+
+# read_matrix() without the matrix: the values stay in `table`, a data.table
+# with one numeric column per bin (header order; NA = no value, Inf possible).
+# For scripts that work one sample at a time (matrix_block()) and so never
+# need a second full copy of the values.
+read_matrix_table <- function(path) {
   h <- read_matrix_header(path)
   nrows <- tail(h$group_boundaries, 1)
   ncols <- tail(h$sample_boundaries, 1)
@@ -96,9 +118,8 @@ read_matrix <- function(path) {
     name = body[[4]], score = body[[5]], strand = body[[6]],
     group = factor(rep(h$group_labels, groups$n), levels = unique(h$group_labels)),
     stringsAsFactors = FALSE)
-  values <- as.matrix(body[, (7):(6 + ncols)])
-  dimnames(values) <- NULL
-  values[!is.finite(values)] <- NA_real_
+  # The six BED columns leave the table; what stays is the values.
+  set(body, j = 1:6, value = NULL)
   ns <- length(h$sample_labels)
   samples <- data.frame(
     label = h$sample_labels, first = head(sb, -1) + 1, last = tail(sb, -1),
@@ -115,7 +136,36 @@ read_matrix <- function(path) {
     v <- .matrix_param(h, "ref point", i, default = NA_character_)
     if (is.null(v)) NA_character_ else as.character(v)
   }, "")
-  list(header = h, regions = regions, values = values, samples = samples, groups = groups)
+  list(header = h, regions = regions, table = body, samples = samples, groups = groups)
+}
+
+# The values of sample i (index or label) as a numeric matrix, regions x bins,
+# NA for no value: from m$values (read_matrix) or m$table (read_matrix_table).
+matrix_block <- function(m, i, rows = NULL) {
+  cols <- sample_columns(m, i)
+  if (!is.null(m$values)) {
+    v <- if (is.null(rows)) m$values[, cols, drop = FALSE] else m$values[rows, cols, drop = FALSE]
+    return(v)
+  }
+  v <- matrix(NA_real_, if (is.null(rows)) nrow(m$table) else length(rows), length(cols))
+  for (k in seq_along(cols)) {
+    x <- m$table[[cols[k]]]
+    if (!is.null(rows)) x <- x[rows]
+    x[!is.finite(x)] <- NA_real_
+    v[, k] <- x
+  }
+  v
+}
+
+# A one-sample view of m (its values only, as `values`), on which every
+# per-sample function here (group_means, ...) works as on the whole matrix.
+matrix_sample <- function(m, i) {
+  if (is.character(i)) i <- match(i, m$samples$label)
+  s <- m$samples[i, , drop = FALSE]
+  s$last <- s$last - s$first + 1
+  s$first <- 1
+  list(header = m$header, regions = m$regions, values = matrix_block(m, i),
+       samples = s, groups = m$groups)
 }
 
 # Column indices in m$values for sample i (index or label).
@@ -179,21 +229,57 @@ col_summary <- function(values, using = "mean") {
 # groups larger than 16 rows numpy's quicksort is not stable, so the order of
 # exactly tied rows can differ from deeptools there.
 sort_rows <- function(m, method = "descend", using = "mean", samples = NULL) {
+  ord <- row_order(m, method, using, samples)
+  m$regions <- m$regions[ord, , drop = FALSE]
+  rownames(m$regions) <- NULL
+  if (!is.null(m$values)) m$values <- m$values[ord, , drop = FALSE]
+  if (!is.null(m$table)) m$table <- m$table[ord]
+  m
+}
+
+# The row permutation sort_rows() applies, without applying it.
+row_order <- function(m, method = "descend", using = "mean", samples = NULL) {
   method <- match.arg(method, c("keep", "no", "descend", "ascend"))
-  if (method %in% c("keep", "no")) return(m)
-  cols <- if (is.null(samples)) seq_len(ncol(m$values))
-          else unlist(lapply(samples, sample_columns, m = m))
-  score <- row_summary(m$values[, cols, drop = FALSE], using)
-  ord <- unlist(lapply(seq_len(nrow(m$groups)), function(g) {
+  n <- nrow(m$regions)
+  if (method %in% c("keep", "no")) return(seq_len(n))
+  score <- row_scores(m, using, samples)
+  unlist(lapply(seq_len(nrow(m$groups)), function(g) {
     if (m$groups$n[g] == 0) return(integer(0))
     idx <- m$groups$first[g]:m$groups$last[g]
     o <- idx[order(score[idx], na.last = TRUE, method = "radix")]
     if (method == "descend") rev(o) else o
   }))
-  m$regions <- m$regions[ord, , drop = FALSE]
-  rownames(m$regions) <- NULL
-  m$values <- m$values[ord, , drop = FALSE]
-  m
+}
+
+# NaN-aware summary of each row over the columns of `samples` (all when
+# NULL). Sums and counts accumulate sample by sample for mean/sum; the other
+# summaries need a row's values together and go through blocks of rows, so
+# neither holds a second copy of the whole matrix.
+row_scores <- function(m, using = "mean", samples = NULL) {
+  idx <- if (is.null(samples)) seq_len(nrow(m$samples))
+         else vapply(samples, function(s) match(s, m$samples$label), 0L)
+  if (anyNA(idx)) stop("No sample ", paste(samples[is.na(idx)], collapse = ", "), " in matrix")
+  n <- nrow(m$regions)
+  if (using %in% c("mean", "sum")) {
+    s <- numeric(n); k <- numeric(n)
+    for (i in idx) {
+      v <- matrix_block(m, i)
+      s <- s + rowSums(v, na.rm = TRUE)
+      k <- k + rowSums(!is.na(v))
+    }
+    if (using == "sum") return(s)          # np.nansum: 0 for an all-NaN row
+    return(ifelse(k == 0, NA_real_, s / k))
+  }
+  out <- numeric(n)
+  width <- sum(m$samples$nbins[idx])
+  step <- max(1L, as.integer(2e6 %/% max(width, 1)))
+  for (from in seq(1, max(n, 1), by = step)) {
+    if (n == 0) break
+    rows <- from:min(n, from + step - 1)
+    v <- do.call(cbind, lapply(idx, function(i) matrix_block(m, i, rows)))
+    out[rows] <- row_summary(v, using)
+  }
+  out
 }
 
 # Average profile per sample and region group: what plotProfile draws and
