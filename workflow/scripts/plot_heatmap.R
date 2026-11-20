@@ -119,7 +119,16 @@ default_heatmap_zlim <- function(m, display) {
 # to the missing colour.
 heatmap_colour_fun <- function(ramp, zmin, zmax, missing) {
   if (!is.finite(zmin) || !is.finite(zmax)) { zmin <- 0; zmax <- 1 }
-  if (zmax <= zmin) zmax <- zmin + max(abs(zmin) * 1e-6, 1e-12)
+  # A flat range (a column with one value throughout, e.g. no reads) is
+  # widened around that value, so the column is drawn in the middle of the
+  # ramp -- white on a diverging map -- not at its low end, where it would
+  # read as strong depletion. (matplotlib maps vmin == vmax to the low end.)
+  if (zmax <= zmin) {
+    mid <- (zmin + zmax) / 2
+    half <- max(abs(mid) * 0.5, 1)
+    zmin <- mid - half
+    zmax <- mid + half
+  }
   breaks <- seq(zmin, zmax, length.out = length(ramp))
   rgb <- grDevices::col2rgb(ramp) / 255
   missing <- grDevices::rgb(t(grDevices::col2rgb(missing) / 255))

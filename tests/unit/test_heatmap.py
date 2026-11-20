@@ -205,6 +205,15 @@ class TestResample:
                        "cat(f(c(-5, 0, 5, 10, 99, NA)))")
         assert out.split() == ["#000000", "#000000", "#808080", "#FFFFFF", "#FFFFFF", "#E5E5E5"]
 
+    @pytest.mark.parametrize("z", [0, 5, -3])
+    def test_a_flat_range_is_drawn_mid_ramp(self, z):
+        # A column with one value throughout (an sRNA size class with no
+        # reads) takes the ramp's middle colour, white on a diverging map, not
+        # its low end, which would read as strong depletion.
+        out = run_r_ok(f"f <- heatmap_colour_fun(c('#0000FF', '#FFFFFF', '#FF0000'), {z}, {z}, 'grey90'); "
+                       f"cat(f({z}), range(attr(f, 'breaks'))[1] < {z})")
+        assert out.split() == ["#FFFFFF", "TRUE"]
+
 
 # --- order, scales, groups ----------------------------------------------------
 
