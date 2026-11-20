@@ -396,6 +396,13 @@ dmc_methylation:
     # Minimum read coverage threshold for reporting a methylation call
     # Sites with fewer reads are excluded from bedMethyl output
     min_coverage: 3
+  # Methylation contexts dmC data carries calls in. Most ONT basecalling
+  # models call 5mC only at CpG (Dorado's 5mCG_5hmCG models), so their
+  # bedMethyl has no CHG/CHH position and a CHG/CHH DMR pair involving them
+  # has nothing to test. Set ["CG"] for such data: pairs with a dmC side are
+  # then called only in these contexts (within methylation_contexts), and
+  # their DMR summary omits the others. Unset/null = methylation_contexts.
+  # contexts: ["CG"]
 
 # DMR (Differentially Methylated Region) calling method for dmC samples
 # Options:
