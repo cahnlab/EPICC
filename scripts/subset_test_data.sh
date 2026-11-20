@@ -41,11 +41,22 @@
 #   {outdir}/{sample_id}.bam                      (dmC modBAM)
 #   {outdir}/{sample_id}.bedmethyl.gz             (dmC bedmethyl)
 #
+# sRNA: reads are adapter-trimmed with fastp (SUBSET_SRNA_ADAPTER, default the
+#   TruSeq/NextFlex small-RNA 3' adapter EPICC's own adapter1.sRNA uses; reads
+#   shorter than SUBSET_SRNA_MIN_LEN, default 15, dropped) before bowtie2, since
+#   a ~22 nt insert followed by ~80 nt of adapter never aligns end-to-end. The
+#   reads aligning to the target region are then taken by name from the
+#   *untrimmed* input, so the fixture still exercises EPICC's own trimming.
+#   SE only.
+#
 # Requirements: samtools, bowtie2, STAR, bismark, wget, fasterq-dump (sra-tools),
-#               pigz, awscli (for s3:// dmC sources)
+#               pigz, fastp (sRNA), awscli (for s3:// dmC sources)
 # Only the tools needed for the assay types in the manifest must be installed.
 
 set -euo pipefail
+# Job IDs come back through command substitutions (jid=$(submit_job ...)),
+# which drop errexit by default; keep it so a failed submission stops here.
+shopt -s inherit_errexit
 
 # ---------------------------------------------------------------------------
 # SLURM parameters
@@ -59,19 +70,27 @@ SITE_FLAGS=()
 [[ -n "$QOS" ]] && SITE_FLAGS+=(--qos="$QOS")
 ALIGN_THREADS=24           # alignment + samtools sort threads
 ALIGN_MEM="80G"            # per alignment job (~12GB per bismark --parallel instance)
-ALIGN_TMP="500G"
+ALIGN_TMP="${SUBSET_ALIGN_TMP:-500G}"   # node-local --tmp requests: override
 ALIGN_TIME="24:00:00"
 INDEX_THREADS=16
 INDEX_MEM="48G"            # STAR index needs ~32G for human
-INDEX_TMP="96G"
+INDEX_TMP="${SUBSET_INDEX_TMP:-96G}"    # with SUBSET_*_TMP where nodes have less
 INDEX_TIME="4:00:00"
 DOWNLOAD_THREADS=8
 DOWNLOAD_MEM="16G"
-DOWNLOAD_TMP="48G"
+DOWNLOAD_TMP="${SUBSET_DOWNLOAD_TMP:-48G}"
 DOWNLOAD_TIME="12:00:00"
 CTRL_MEM="4G"              # controller resubmission
 CTRL_TIME="2:00:00"
 CONDA_ENV="epicc"          # conda env with aligners + samtools
+# sRNA adapter trimming before alignment (see header). Keep the default in
+# step with adapter1.sRNA in config/epicc-options.yaml.
+SRNA_ADAPTER="${SUBSET_SRNA_ADAPTER:-TGGAATTCTCGGGTGCCAAGG}"
+SRNA_MIN_LEN="${SUBSET_SRNA_MIN_LEN:-15}"
+# fastp is not in the epicc env (EPICC runs it from a rule env), and the job
+# scripts' `conda activate` rebuilds PATH, so resolve it here, where the
+# caller's PATH applies, and hand the job an absolute path.
+FASTP_BIN="${SUBSET_FASTP:-$(command -v fastp || true)}"
 
 # ---------------------------------------------------------------------------
 # Defaults
@@ -203,7 +222,12 @@ submit_job() {
         echo "DRY_RUN_JOBID"
     else
         local output
-        output=$("${cmd[@]}")
+        # A command substitution does not inherit errexit, so a rejected
+        # sbatch would otherwise be logged as submitted with no job ID.
+        if ! output=$("${cmd[@]}"); then
+            log "ERROR: sbatch failed for $name"
+            exit 1
+        fi
         local jobid
         jobid=$(echo "$output" | grep -oP '\d+$')
         log "  Submitted $name: job $jobid"
@@ -247,7 +271,14 @@ BISMARK_REF=""
 for i in $(seq 0 $((N_SAMPLES - 1))); do
     ref="${REF_FASTAS[$i]}"
     case "${ASSAYS[$i]}" in
-        ChIP|sRNA)   needs_bt2=true;     BT2_REF="$ref" ;;
+        ChIP)        needs_bt2=true;     BT2_REF="$ref" ;;
+        sRNA)
+            needs_bt2=true; BT2_REF="$ref"
+            if [[ -z "$FASTP_BIN" || ! -x "$FASTP_BIN" ]]; then
+                echo "Error: sRNA samples need fastp; put it on PATH or set SUBSET_FASTP" >&2
+                exit 1
+            fi
+            ;;
         RNA|RAMPAGE)  needs_star=true;    STAR_REF="$ref" ;;
         WGBS|EMseq)
             if ! is_bam_or_cram "${SRR_COLS[$i]}"; then
@@ -440,6 +471,9 @@ MERGE_DIR="${MERGE_DIR}"
 STATUS_DIR="${STATUS_DIR}"
 THREADS=${ALIGN_THREADS}
 KEEP_ALIGNED=${KEEP_ALIGNED}
+SRNA_ADAPTER="${SRNA_ADAPTER}"
+SRNA_MIN_LEN=${SRNA_MIN_LEN}
+FASTP_BIN="${FASTP_BIN}"
 VARSEOF
 
     cat >> "$script" << 'BODYEOF'
@@ -698,7 +732,42 @@ bam_full="${OUTDIR}/tmp_${SAMPLE_ID}_full.bam"
 sort_mem="$(( ${THREADS} > 0 ? 1536 : 768 ))M"
 
 case "$ASSAY" in
-    ChIP|sRNA)
+    sRNA)
+        # Small-RNA reads are mostly adapter: a ~22 nt insert followed by
+        # ~80 nt of 3' adapter does not align end-to-end, so untrimmed only
+        # long-insert reads survive and the fixture holds no small RNAs.
+        # Trim first, align the trimmed reads, and keep the untrimmed
+        # originals by name (subset step below).
+        if [[ "$LAYOUT" != "SE" ]]; then
+            echo "ERROR: sRNA subsetting supports SE reads only (got $LAYOUT)"
+            exit 1
+        fi
+        if [[ ! -x "$FASTP_BIN" ]]; then
+            echo "ERROR: fastp not found (needed to trim sRNA adapters); put it on PATH or set SUBSET_FASTP"
+            exit 1
+        fi
+        ref_base="${REF_FASTA%.fa}"
+        ref_base="${ref_base%.fasta}"
+        srna_trimmed="${OUTDIR}/tmp_${SAMPLE_ID}_trimmed.fastq.gz"
+        log "Trimming sRNA adapter ${SRNA_ADAPTER} (min length ${SRNA_MIN_LEN}) ..."
+        "$FASTP_BIN" --thread "$(( THREADS < 16 ? THREADS : 16 ))" \
+            -i "${MERGE_DIR}/${SAMPLE_ID}_R0.fastq.gz" -o "$srna_trimmed" \
+            --adapter_sequence "$SRNA_ADAPTER" \
+            --length_required "$SRNA_MIN_LEN" \
+            --json /dev/null --html /dev/null 2>"${OUTDIR}/tmp_${SAMPLE_ID}_fastp.log"
+        grep -E "^(Reads passed|reads passed|reads failed|reads with adapter)" \
+            "${OUTDIR}/tmp_${SAMPLE_ID}_fastp.log" || true
+        rm -f "${OUTDIR}/tmp_${SAMPLE_ID}_fastp.log"
+        log "Aligning trimmed reads (SE, bowtie2) ..."
+        bowtie2 -p "$THREADS" -x "$ref_base" -U "$srna_trimmed" \
+            2>"${OUTDIR}/tmp_${SAMPLE_ID}_bt2.log" \
+            | samtools view -bh -F 4 -@ 2 \
+            | samtools sort -@ "$THREADS" -m "$sort_mem" -o "$bam_full"
+        cat "${OUTDIR}/tmp_${SAMPLE_ID}_bt2.log"
+        rm -f "${OUTDIR}/tmp_${SAMPLE_ID}_bt2.log" "$srna_trimmed"
+        ;;
+
+    ChIP)
         ref_base="${REF_FASTA%.fa}"
         ref_base="${ref_base%.fasta}"
         if [[ "$LAYOUT" == "PE" ]]; then
@@ -798,7 +867,20 @@ samtools view -b -h -@ 4 "$bam_full" "$TARGET_REGION" -o "$bam_subset"
 n_reads=$(samtools view -c "$bam_subset" 2>/dev/null || echo "?")
 log "Subset reads: $n_reads"
 
-if [[ "$LAYOUT" == "PE" ]]; then
+if [[ "$ASSAY" == "sRNA" ]]; then
+    # The alignment is of trimmed reads; write the untrimmed originals of the
+    # selected reads, matched on the read name (first header word).
+    names="${OUTDIR}/tmp_${SAMPLE_ID}_names.txt"
+    samtools view "$bam_subset" | cut -f1 | sort -u > "$names"
+    zcat "${MERGE_DIR}/${SAMPLE_ID}_R0.fastq.gz" \
+        | awk 'NR == FNR { keep[$1]; next }
+               FNR % 4 == 1 { n = substr($1, 2); sub(/\/[12]$/, "", n); p = (n in keep) }
+               p' "$names" - \
+        | gzip > "${OUTDIR}/${SAMPLE_ID}_R0.fastq.gz"
+    n_out=$(( $(zcat "${OUTDIR}/${SAMPLE_ID}_R0.fastq.gz" | wc -l) / 4 ))
+    log "Untrimmed reads written: $n_out (of $(wc -l < "$names") selected names)"
+    rm -f "$names"
+elif [[ "$LAYOUT" == "PE" ]]; then
     samtools sort -n -@ "$THREADS" -m "$sort_mem" -o "${bam_subset%.bam}.nsort.bam" "$bam_subset"
     samtools fastq -@ 4 \
         -1 "${OUTDIR}/${SAMPLE_ID}_R1.fastq.gz" \
