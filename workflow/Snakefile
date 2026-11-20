@@ -23,9 +23,6 @@ from scripts.rfam_classes import (
     selection_label as rfam_selection_label,
 )
 from scripts.heatmap_memory import heatmap_mem_mb
-from scripts.mc_contexts import (
-    normalize_contexts, dmc_contexts, dmr_contexts_for_pair,
-)
 from scripts.samplefile_validation import (
     check_table, check_genome_config, check_extra_output_files, resolve_data_path,
 )

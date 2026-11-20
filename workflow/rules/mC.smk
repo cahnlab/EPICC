@@ -136,31 +136,22 @@ def get_methylation_contexts():
     Subcontexts beyond CG/CHG/CHH (CAG, CAA, etc.) are not yet supported
     and raise an error.
     """
-    return normalize_contexts(
-        config.get("methylation_contexts", ["CG", "CHG", "CHH"]),
-        "methylation_contexts",
-    )
-
-# Contexts dmC data carries (dmc_methylation.contexts, within the run's
-# methylation_contexts). Computed once here so a bad value stops the run at
-# startup. See workflow/scripts/mc_contexts.py.
-DMC_CONTEXTS = dmc_contexts(config, get_methylation_contexts())
-
-def group_is_dmc(group_name):
-    """True when an analysis group's replicates are dmC (direct methylation)."""
-    rep_sids = get_replicate_sample_ids(group_name, samples) or [group_name]
-    return any(is_dmc_sample(sid) for sid in rep_sids)
-
-def dmr_contexts_for(sample1, sample2):
-    """Contexts the sample1 vs sample2 DMR pair is called in.
-
-    Every run context for two bisulfite groups; only DMC_CONTEXTS when either
-    side is dmC, whose data often carries CpG calls only.
-    """
-    return dmr_contexts_for_pair(
-        get_methylation_contexts(), DMC_CONTEXTS,
-        group_is_dmc(sample1), group_is_dmc(sample2),
-    )
+    valid = ["CG", "CHG", "CHH"]
+    contexts = config.get("methylation_contexts", valid)
+    if not isinstance(contexts, list) or not contexts:
+        raise ValueError(
+            "methylation_contexts must be a non-empty list, e.g. "
+            "[\"CG\", \"CHG\", \"CHH\"] or [\"CG\"] for animal genomes"
+        )
+    valid_set = set(valid)
+    for c in contexts:
+        if c not in valid_set:
+            raise ValueError(
+                f"methylation_contexts entry '{c}' not in {valid} "
+                "(CAG/CAA and other subcontexts are not yet supported; "
+                "support deferred to a future PR)"
+            )
+    return [c for c in valid if c in contexts]
 
 def define_final_mC_output(ref_genome):
     qc_option = config["QC_option"]
@@ -212,10 +203,6 @@ def define_final_mC_output(ref_genome):
         b_dict = b._asdict()
         sample1 = a_dict['sample_name']
         sample2 = b_dict['sample_name']
-        # A dmC pair shares no context with the run (dmc_methylation.contexts
-        # disjoint from methylation_contexts): nothing to call.
-        if not dmr_contexts_for(sample1, sample2):
-            continue
         dmr_files.append(f"{RESULTS_DIR}/mC/DMRs/summary__{sample1}__vs__{sample2}__DMRs.txt")
 
     results = map_files + bigwig_files + ont_files
@@ -632,7 +619,7 @@ if config.get('custom_script_dmrs', False):
             dmr_summary = f"{RESULTS_DIR}/mC/DMRs/summary__{{sample1}}__vs__{{sample2}}__DMRs.txt"
         params:
             script = os.path.join(REPO_FOLDER, "workflow", "scripts", "R_call_DMRs_custom.R"),
-            contexts = lambda wildcards: ",".join(dmr_contexts_for(wildcards.sample1, wildcards.sample2)),
+            contexts = ",".join(get_methylation_contexts()),
             sample1 = lambda wildcards: wildcards.sample1,
             sample2 = lambda wildcards: wildcards.sample2,
             nb_sample1 = lambda wildcards: len(define_DMR_samples(wildcards.sample1)),
@@ -645,9 +632,9 @@ if config.get('custom_script_dmrs', False):
             # Per-context minProportionDifference. The custom sweep does not
             # support "auto" calibration (that lives in the default path), so
             # fall back to the plant-tuned defaults when min_diff is "auto".
-            min_diff_spec = lambda wildcards: ",".join(
+            min_diff_spec = ",".join(
                 f"{ctx}={_DMR_THRESHOLD_DEFAULTS['min_diff'][ctx] if _dmr_min_diff_auto else get_dmr_threshold('min_diff', ctx)}"
-                for ctx in dmr_contexts_for(wildcards.sample1, wildcards.sample2)
+                for ctx in get_methylation_contexts()
             )
         log:
             temp(return_log_mc("{sample1}__vs__{sample2}", "DMRs", ""))
@@ -787,9 +774,7 @@ else:
         input:
             counts = lambda wildcards: [
                 f"{RESULTS_DIR}/mC/DMRs/.counts__{wildcards.sample1}__vs__{wildcards.sample2}__{ctx}.tsv"
-                # A pair with a dmC side is called only in the contexts dmC
-                # data carries; its summary has no column for the others.
-                for ctx in dmr_contexts_for(wildcards.sample1, wildcards.sample2)
+                for ctx in get_methylation_contexts()
             ]
         output:
             summary = f"{RESULTS_DIR}/mC/DMRs/summary__{{sample1}}__vs__{{sample2}}__DMRs.txt"
@@ -1330,7 +1315,9 @@ rule convert_bedmethyl_to_cx_report:
     and call_DMRs_pairwise.
 
     When methylation_contexts is a strict subset of {CG, CHG, CHH}, the
-    output is filtered to only those contexts.
+    output is filtered to only those contexts. A listed context with no
+    covered call (a CpG-only ONT model under CG/CHG/CHH) stops the rule with
+    an error naming methylation_contexts, before any per-context step runs.
     """
     input:
         bedmethyl = f"{RESULTS_DIR}/mC/dmc/pileup__{{sample_name}}.bedmethyl.gz",
@@ -1358,7 +1345,10 @@ rule convert_bedmethyl_to_cx_report:
         printf "Active methylation contexts: {params.context_filter}\n"
 
         # Convert bedMethyl to CX_report (context determined from reference)
-        python {params.script} {input.bedmethyl} {input.fasta} /dev/stdout > {config[output_dir]}/mC/dmc/tmp__{params.sample_name}.cx
+        # and stop if a context in methylation_contexts has no covered call
+        # (CpG-only ONT model) -- the earliest point the contexts are known.
+        python {params.script} {input.bedmethyl} {input.fasta} /dev/stdout "{params.context_filter}" "{params.sample_name}" > {config[output_dir]}/mC/dmc/tmp__{params.sample_name}.cx \
+            || {{ rm -f {config[output_dir]}/mC/dmc/tmp__{params.sample_name}.cx; exit 1; }}
 
         # Filter to active contexts if the user requested a strict subset.
         # The full set is "CG|CHG|CHH" — when that's what we got, skip the
