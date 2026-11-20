@@ -175,9 +175,7 @@ set-resources:
   merging_matrix: *single
   joining_all_matrix: *standard
   computing_matrix_scales: *single
-  sort_heatmap: *single
   plotting_heatmap_on_targetfile: {runtime: "8h"}  # mem_mb comes from the matrix size (heatmap_memory.py)
-  plotting_sorted_heatmap_on_targetfile: {runtime: "8h"}  # mem_mb comes from the matrix size (heatmap_memory.py)
   plotting_profile_on_targetfile: *single
   prep_chromosomes_for_browser: *low
   prep_browser_on_region: *heavy
@@ -299,9 +297,7 @@ set-threads:
   merging_matrix: 1
   joining_all_matrix: 1
   computing_matrix_scales: 1
-  sort_heatmap: 1
   plotting_heatmap_on_targetfile: 1
-  plotting_sorted_heatmap_on_targetfile: 1
   plotting_profile_on_targetfile: 1
   prep_chromosomes_for_browser: 1
   prep_browser_on_region: 4

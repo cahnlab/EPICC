@@ -3,8 +3,10 @@
 Status: groundwork landed (shared theme module `workflow/scripts/plot_theme.R`).
 Phase 1 done (env, `matrix_io.R`, the per-mark scales computed in R). Phase 2
 done (`Profile__` and `Profile_pergroup__` drawn in R, the profiles part of
-the flag translation back, the phase-1 findings settled). Phases 3–7 are still
-to do.
+the flag translation back, the phase-1 findings settled). Phase 3 done
+(`Heatmap__` drawn in R with ComplexHeatmap; the combined `Heatmap__…__all__`
+replaces `Heatmap_sorted__`; the heatmaps half of the flag translation back).
+Phases 4, 6 and 7 are still to do.
 
 The goal is for every plot EPICC draws to take its look from one editable theme
 and to be drawn in R. Today most of the combined-analysis plots come from
@@ -300,9 +302,9 @@ shares it is rerun.
   (all 91 matplotlib maps, 17 stops each; regenerate with
   `dev/gen_plot_colormaps.py`). `plot_theme.R` checks names against it, and so
   will the translation when it returns.
-- Open for phase 3: `heatmaps_plot_params` has `all`/`most` entries, which
-  translate to `heatmap_colors.all`/`.most`. Decide whether the cross-type
-  heatmaps use those or colour each column by its data type.
+- Settled in phase 3: each heatmap column is coloured by its data type, and
+  the `all`/`most` entries of `heatmaps_plot_params` translate onto `default`
+  and every non-mC type (an env's own entry wins).
 - **Per-type and per-mark scaling: `workflow/scripts/plot_scales.R`** is a
   port of `computing_matrix_scales` (bash, `dataRange`, `plotProfile
   --outFileNameData`). It was made a phase 1 acceptance requirement so that
@@ -460,7 +462,21 @@ As planned:
   a mark), on an interleaved stranded matrix. Phase 3 adds the same check for
   zMin/zMax in the heatmap.
 
-### Phase 3: heatmaps (`Heatmap__`, `Heatmap_sorted__`)
+### Phase 3: heatmaps (`Heatmap__`, `Heatmap_sorted__`) (done)
+
+Built as planned below; what the implementation settled is in
+`dev/docs/design-decisions.md` ("Heatmaps are drawn in R one sample column at a
+time, at pixel size"). Departures from the plan: the top profile is a custom
+annotation function rather than `anno_lines` (it needs `Profile__`'s limits,
+dash per group and se/std/fill bands), the colour bars sit under each column
+rather than in ComplexHeatmap's legend block, the data type of a column comes
+from a new `type` column of the display table, and the heatmap body is never
+handed to ComplexHeatmap (a `layer_fun` draws each slice's precomputed image).
+`dev/plot_compare.py --family heatmap` was not added; the comparison was done
+by rendering fixtures by hand. The risks below about region groups and sort
+semantics are covered by `tests/unit/test_heatmap.py` (the sorted BED matches
+plotHeatmap's, except deeptools' wrong `blockStart`).
+
 - `R_heatmap.R` on ComplexHeatmap: one `Heatmap` per matrix column, joined
   into a `HeatmapList` that shares one row order. Each column gets
   `circlize::colorRamp2` over its own zMin/zMax (`scale_for_column`, by key)

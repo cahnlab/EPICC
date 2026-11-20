@@ -6,7 +6,7 @@
 #                    <type|sample|default> <mean|median>
 #                    <Profile__.pdf> <Profile_pergroup__.pdf> [theme.json]
 #
-# columns.tsv: key, label, colour, track, series per matrix column, in column
+# columns.tsv: key, label, colour, track, series (, type) per matrix column, in column
 # order (matrix_sample_labels.py). The y-limits are worked out here, with
 # plot_scales.R, from the very curves drawn (heatmaps_scales,
 # profiles_scale) -- the y values computing_matrix_scales writes for the
@@ -31,9 +31,7 @@ if (!average %in% c("mean", "median")) stop("profiles_scale must be mean or medi
 th <- epicc_theme(if (length(args) == 9) args[9] else NULL)
 
 m <- read_matrix(args[1])
-display <- read.delim(args[2], header = FALSE, sep = "\t", quote = "", comment.char = "",
-                      col.names = c("key", "label", "colour", "track", "series"),
-                      colClasses = "character")
+display <- read_display_table(args[2])
 # One pass over the matrix for the curves; the limits come from them.
 d <- profile_data(m, average, .spread(th))
 limits <- profile_limits(m, d, mode)

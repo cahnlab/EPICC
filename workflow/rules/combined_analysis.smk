@@ -53,18 +53,6 @@ def get_matrix_inputs(wildcards):
         return [ f"{prefix}__plus.gz", f"{prefix}__minus.gz", f"{prefix}__nostrand.gz" ]
     return [ f"{prefix}__plus.gz", f"{prefix}__minus.gz" ]
 
-def define_sort_options(wildcards):
-    sort_options = config['heatmaps_sort_options']
-    if sort_options == "no":
-        return "--sortRegions keep"
-    elif sort_options == "mean":
-        return "--sortRegions descend --sortUsing mean"
-    elif sort_options == "median":
-        return "--sortRegions descend --sortUsing median"
-    else:
-        print("unclear option: no sorting done")
-        return "--sortRegions keep"
-
 def define_samples_for_upset(wildcards, string):
     # One entry per UpSet sample: its label components (build_plot_labels),
     # file and type. type is None for sRNA, whose plotted columns are the label
@@ -210,7 +198,9 @@ def make_it_lighter(palette, factor):
 def define_key_for_plots(wildcards, string):
     if string == "display":
         # Display rows for the heatmap and profile plots, "key<TAB>label<TAB>
-        # colour<TAB>track<TAB>series" per matrix column, looked up by key at plot time
+        # colour<TAB>track<TAB>series<TAB>type" per matrix column (type: the
+        # data type that picks a heatmap column's colours and interpolation --
+        # ChIP, ATAC, RNA, sRNA, or the mC context), looked up by key at plot time
         # (matrix_sample_labels.py). The plot rules don't know whether the
         # matrix came from the unstranded pass or the plus/minus/nostrand
         # passes, which carry different columns, so both are listed; keys they
@@ -219,7 +209,8 @@ def define_key_for_plots(wildcards, string):
         rows = {}
         for s in ("unstranded", "plus"):
             c = _plot_columns(SimpleNamespace(ref_genome=wildcards.ref_genome, env=wildcards.env, strand=s))
-            for key, *rest in zip(c["keys"], c["labels"], c["colors"], c["tracks"], c["series"]):
+            for key, *rest in zip(c["keys"], c["labels"], c["colors"], c["tracks"], c["series"],
+                                  c["dtypes"]):
                 rows.setdefault(key, rest)
         return "\n".join("\t".join([key] + rest) for key, rest in rows.items())
     c = _plot_columns(wildcards)
@@ -272,6 +263,19 @@ def _plot_columns(wildcards):
     if strand == "nostrand":
         strand = "plus"
 
+    def _data_type(row, mark):
+        # The display table's type: picks a heatmap column's colours and
+        # interpolation (theme, looked up type, then family before '_', then
+        # default) and, under heatmaps_scales: default, the columns that share a
+        # colour range. The env, the context for mC, and RNA_RAMPAGE for
+        # RAMPAGE: TSS-capture counts sit far below RNA-seq coverage, so a
+        # shared range would flatten them; the theme still finds it under RNA.
+        if row.env == "mC":
+            return mark
+        if row.Assay == "RAMPAGE":
+            return "RNA_RAMPAGE"
+        return row.env
+
     def add(group, row, sid, bw, mark, rep="", track=None, suffix=""):
         track = track or mark
         # The key names a column in every data file (matrix, browser scratch
@@ -281,7 +285,8 @@ def _plot_columns(wildcards):
         grouped[group].append({"bw": bw, "levels": row.Levels, "mark": mark,
                                "assay": row.Assay, "replicate": rep, "sid": sid,
                                "suffix": suffix, "track": track, "key": f"{sid}__{track}",
-                               "type": row.levels_label})
+                               "type": row.levels_label,
+                               "dtype": _data_type(row, mark)})
 
     def add_pair(group, row, sid, bw1, bw2, mark, rep=""):
         add(group, row, sid, bw1, mark, rep, f"{mark}_plus", "_plus")
@@ -419,10 +424,11 @@ def _plot_columns(wildcards):
     fillcolorsplus = [plus_palette[e["mark"]] for e in entries]
     fillcolorsminus = [minus_palette[e["mark"]] for e in entries]
     alignedmarks = [e["track"] for e in entries]
+    dtypes = [e["dtype"] for e in entries]
 
     return {
         "bigwigs": bigwigs, "keys": keys, "labels": labels, "series": series,
-        "tracks": alignedmarks, "colors": backcolors, "trackcolors": trackcolors,
+        "tracks": alignedmarks, "dtypes": dtypes, "colors": backcolors, "trackcolors": trackcolors,
         "fillcolorsplus": fillcolorsplus, "fillcolorsminus": fillcolorsminus,
     }
 
@@ -539,7 +545,6 @@ def define_final_combined_output(ref_genome):
     full_analysis = config['full_analysis']
     te_analysis = config['te_analysis']
     analysis_name = config['analysis_name']
-    mc_sort = config['heatmap_sort_mc_after_others']
     mc_contexts = get_methylation_contexts()
     plot_files = []
     te_plots = []
@@ -572,50 +577,22 @@ def define_final_combined_output(ref_genome):
     if len(rampage_analysis_samples) >=2:
         plot_files.append(f"{RESULTS_DIR}/combined/plots/Upset_combined_TSS__RAMPAGE__{analysis_name}__{ref_genome}.pdf")
 
-    if len(mc_analysis_samples) >=1:
-        if len(all_analysis_samples) > len(mc_analysis_samples) and mc_sort:
-            plot_files.append(f"{RESULTS_DIR}/combined/plots/Heatmap_sorted__regions__mC__{analysis_name}__{ref_genome}__all_genes.pdf")
-            plot_files.append(f"{RESULTS_DIR}/combined/plots/Heatmap_sorted__tss__mC__{analysis_name}__{ref_genome}__all_genes.pdf")
-            plot_files.append(f"{RESULTS_DIR}/combined/plots/Heatmap_sorted__tes__mC__{analysis_name}__{ref_genome}__all_genes.pdf")            
-            te_plots.append(f"{RESULTS_DIR}/combined/plots/Heatmap_sorted__regions__mC__{analysis_name}__{ref_genome}__{te_target}.pdf")
-            te_plots.append(f"{RESULTS_DIR}/combined/plots/Heatmap_sorted__tss__mC__{analysis_name}__{ref_genome}__{te_target}.pdf")
-            te_plots.append(f"{RESULTS_DIR}/combined/plots/Heatmap_sorted__tes__mC__{analysis_name}__{ref_genome}__{te_target}.pdf")
-            
-            plot_files.append(f"{RESULTS_DIR}/combined/plots/Profile__regions__most__{analysis_name}__{ref_genome}__all_genes.pdf")
-            plot_files.append(f"{RESULTS_DIR}/combined/plots/Profile__tss__most__{analysis_name}__{ref_genome}__all_genes.pdf")
-            plot_files.append(f"{RESULTS_DIR}/combined/plots/Profile__tes__most__{analysis_name}__{ref_genome}__all_genes.pdf")
-            te_plots.append(f"{RESULTS_DIR}/combined/plots/Profile__regions__most__{analysis_name}__{ref_genome}__{te_target}.pdf")
-            te_plots.append(f"{RESULTS_DIR}/combined/plots/Profile__tss__most__{analysis_name}__{ref_genome}__{te_target}.pdf")
-            te_plots.append(f"{RESULTS_DIR}/combined/plots/Profile__tes__most__{analysis_name}__{ref_genome}__{te_target}.pdf")
-        else:
-            plot_files.append(f"{RESULTS_DIR}/combined/plots/Heatmap__regions__mC__{analysis_name}__{ref_genome}__all_genes.pdf")
-            plot_files.append(f"{RESULTS_DIR}/combined/plots/Heatmap__tss__mC__{analysis_name}__{ref_genome}__all_genes.pdf")
-            plot_files.append(f"{RESULTS_DIR}/combined/plots/Heatmap__tes__mC__{analysis_name}__{ref_genome}__all_genes.pdf")
-            te_plots.append(f"{RESULTS_DIR}/combined/plots/Heatmap__regions__mC__{analysis_name}__{ref_genome}__{te_target}.pdf")
-            te_plots.append(f"{RESULTS_DIR}/combined/plots/Heatmap__tss__mC__{analysis_name}__{ref_genome}__{te_target}.pdf")
-            te_plots.append(f"{RESULTS_DIR}/combined/plots/Heatmap__tes__mC__{analysis_name}__{ref_genome}__{te_target}.pdf")
-        
-        plot_files.append(f"{RESULTS_DIR}/combined/plots/Profile__regions__mC__{analysis_name}__{ref_genome}__all_genes.pdf")
-        plot_files.append(f"{RESULTS_DIR}/combined/plots/Profile__tss__mC__{analysis_name}__{ref_genome}__all_genes.pdf")
-        plot_files.append(f"{RESULTS_DIR}/combined/plots/Profile__tes__mC__{analysis_name}__{ref_genome}__all_genes.pdf")
-        te_plots.append(f"{RESULTS_DIR}/combined/plots/Profile__regions__mC__{analysis_name}__{ref_genome}__{te_target}.pdf")
-        te_plots.append(f"{RESULTS_DIR}/combined/plots/Profile__tss__mC__{analysis_name}__{ref_genome}__{te_target}.pdf")
-        te_plots.append(f"{RESULTS_DIR}/combined/plots/Profile__tes__mC__{analysis_name}__{ref_genome}__{te_target}.pdf")
-        
-    else:
-        plot_files.append(f"{RESULTS_DIR}/combined/plots/Heatmap__regions__most__{analysis_name}__{ref_genome}__all_genes.pdf")
-        plot_files.append(f"{RESULTS_DIR}/combined/plots/Heatmap__tss__most__{analysis_name}__{ref_genome}__all_genes.pdf")
-        plot_files.append(f"{RESULTS_DIR}/combined/plots/Heatmap__tes__most__{analysis_name}__{ref_genome}__all_genes.pdf")
-        te_plots.append(f"{RESULTS_DIR}/combined/plots/Heatmap__regions__most__{analysis_name}__{ref_genome}__{te_target}.pdf")
-        te_plots.append(f"{RESULTS_DIR}/combined/plots/Heatmap__tss__most__{analysis_name}__{ref_genome}__{te_target}.pdf")
-        te_plots.append(f"{RESULTS_DIR}/combined/plots/Heatmap__tes__most__{analysis_name}__{ref_genome}__{te_target}.pdf")
-    
-        plot_files.append(f"{RESULTS_DIR}/combined/plots/Profile__regions__most__{analysis_name}__{ref_genome}__all_genes.pdf")
-        plot_files.append(f"{RESULTS_DIR}/combined/plots/Profile__tss__most__{analysis_name}__{ref_genome}__all_genes.pdf")
-        plot_files.append(f"{RESULTS_DIR}/combined/plots/Profile__tes__most__{analysis_name}__{ref_genome}__all_genes.pdf")
-        te_plots.append(f"{RESULTS_DIR}/combined/plots/Profile__regions__most__{analysis_name}__{ref_genome}__{te_target}.pdf")
-        te_plots.append(f"{RESULTS_DIR}/combined/plots/Profile__tss__most__{analysis_name}__{ref_genome}__{te_target}.pdf")
-        te_plots.append(f"{RESULTS_DIR}/combined/plots/Profile__tes__most__{analysis_name}__{ref_genome}__{te_target}.pdf")
+    # One heatmap per matrix kind and target, with every data type: the all
+    # env, joined from the most and mC matrices (joining_all_matrix), its rows
+    # sorted on the non-mC columns. The per-env heatmaps (Heatmap__..__mC__,
+    # __most__, ...) stay available on demand (epicc output --env).
+    profile_envs = []
+    if len(all_analysis_samples) > len(mc_analysis_samples) or len(mc_analysis_samples) == 0:
+        profile_envs.append("most")
+    if len(mc_analysis_samples) >= 1:
+        profile_envs.append("mC")
+    for mp in ("regions", "tss", "tes"):
+        plot_files.append(f"{RESULTS_DIR}/combined/plots/Heatmap__{mp}__all__{analysis_name}__{ref_genome}__all_genes.pdf")
+        te_plots.append(f"{RESULTS_DIR}/combined/plots/Heatmap__{mp}__all__{analysis_name}__{ref_genome}__{te_target}.pdf")
+    for env in profile_envs:
+        for mp in ("regions", "tss", "tes"):
+            plot_files.append(f"{RESULTS_DIR}/combined/plots/Profile__{mp}__{env}__{analysis_name}__{ref_genome}__all_genes.pdf")
+            te_plots.append(f"{RESULTS_DIR}/combined/plots/Profile__{mp}__{env}__{analysis_name}__{ref_genome}__{te_target}.pdf")
 
     mc_rep_samples = samples[ (samples['env'] == "mC") & (samples['ref_genome'] == ref_genome) ].copy()
     if len(mc_rep_samples) >=3:
@@ -1177,9 +1154,7 @@ rule computing_matrix_scales:
 rule plotting_heatmap_on_targetfile:
     input:
         matrix = f"{RESULTS_DIR}/combined/matrix/final_matrix_{{matrix_param}}__{{env}}__{{analysis_name}}__{{ref_genome}}__{{target_name}}.gz",
-        params_regions = f"{RESULTS_DIR}/combined/matrix/params_regions_final_matrix_{{matrix_param}}__{{env}}__{{analysis_name}}__{{ref_genome}}__{{target_name}}.txt",
-        params_heatmap = f"{RESULTS_DIR}/combined/matrix/params_heatmap_final_matrix_{{matrix_param}}__{{env}}__{{analysis_name}}__{{ref_genome}}__{{target_name}}.txt",
-        params_profile = f"{RESULTS_DIR}/combined/matrix/params_profile_final_matrix_{{matrix_param}}__{{env}}__{{analysis_name}}__{{ref_genome}}__{{target_name}}.txt"
+        params_heatmap = f"{RESULTS_DIR}/combined/matrix/params_heatmap_final_matrix_{{matrix_param}}__{{env}}__{{analysis_name}}__{{ref_genome}}__{{target_name}}.txt"
     output:
         plot = f"{RESULTS_DIR}/combined/plots/Heatmap__{{matrix_param}}__{{env}}__{{analysis_name}}__{{ref_genome}}__{{target_name}}.pdf",
         sorted_regions = f"{RESULTS_DIR}/combined/matrix/Heatmap__{{matrix_param}}__{{env}}__{{analysis_name}}__{{ref_genome}}__{{target_name}}_sorted_regions.bed"
@@ -1189,98 +1164,38 @@ rule plotting_heatmap_on_targetfile:
         target_name = lambda wildcards: wildcards.target_name,
         matrix = lambda wildcards: wildcards.matrix_param,
         env = lambda wildcards: wildcards.env,
-        plot_params = lambda wildcards: config['heatmaps_plot_params'][wildcards.env],
-        sort = lambda wildcards: define_sort_options(wildcards),
+        scales = config['heatmaps_scales'],
+        average = config['profiles_scale'],
+        sort = config['heatmaps_sort_options'],
         display = lambda wildcards: define_key_for_plots(wildcards, "display"),
         sample_labeller = os.path.join(REPO_FOLDER, "workflow", "scripts", "matrix_sample_labels.py"),
-        plot_heatmap = os.path.join(REPO_FOLDER, "workflow", "scripts", "plotheatmap_lowmem.py")
+        heatmap_script = os.path.join(REPO_FOLDER, "workflow", "scripts", "R_heatmap.R"),
+        theme = PLOT_THEME_JSON
     log:
         temp(return_log_combined("{analysis_name}", "{env}_{ref_genome}", "plot_heatmap_{matrix_param}_{target_name}"))
     # Sized from the matrix (heatmap_memory.py); the profile sets only runtime.
     resources:
         mem_mb = lambda wildcards, input, attempt: heatmap_mem_mb(input.matrix, attempt)
-    conda: CONDA_ENV
+    conda: CONDA_ENV_PLOTS
     shell:
         """
-        if [[ "{params.matrix}" == "tes" ]]; then
-            add="--refPointLabel end"
-        elif [[ "{params.matrix}" == "tss" ]]; then
-            add="--refPointLabel start"
-        else
-            add="--startLabel start --endLabel end"
-        fi
-        reg="$(cat {input.params_regions})"
-        heat="$(cat {input.params_heatmap})"
-        prof="$(cat {input.params_profile})"
-        printf '%s\n' "{params.display}" > "$TMPDIR/display.tsv"
-        lab="--samplesLabel $(python3 "{params.sample_labeller}" {input.matrix} "$TMPDIR/display.tsv" | cut -f2 | tr '\n' ' ')"
+        {{
         printf "Plotting heatmap {params.matrix} for {params.env} {params.target_name} on {params.ref_genome}\n"
-        # plotHeatmap through a wrapper that stops matplotlib keeping a
-        # full-figure canvas per heatmap in the PDF (plotheatmap_lowmem.py):
-        # memory grew with the square of the column count.
-        python3 "{params.plot_heatmap}" -m {input.matrix} -out {output.plot} {params.plot_params} {params.sort} ${{reg}} ${{heat}} ${{prof}} ${{lab}} ${{add}} --outFileSortedRegions {output.sorted_regions}
-        """
-
-rule sort_heatmap:
-    input: 
-        matrix = f"{RESULTS_DIR}/combined/matrix/final_matrix_{{matrix_param}}__mC__{{analysis_name}}__{{ref_genome}}__{{target_name}}.gz",
-        sorted_regions = f"{RESULTS_DIR}/combined/matrix/Heatmap__{{matrix_param}}__most__{{analysis_name}}__{{ref_genome}}__{{target_name}}_sorted_regions.bed",
-        params_regions = f"{RESULTS_DIR}/combined/matrix/params_regions_final_matrix_{{matrix_param}}__most__{{analysis_name}}__{{ref_genome}}__{{target_name}}.txt"
-    output:
-        temp_matrix = temp(f"{RESULTS_DIR}/combined/matrix/temp_sorted_final_matrix_{{matrix_param}}__mC__{{analysis_name}}__{{ref_genome}}__{{target_name}}.gz"),
-        matrix = f"{RESULTS_DIR}/combined/matrix/sorted_final_matrix_{{matrix_param}}__mC__{{analysis_name}}__{{ref_genome}}__{{target_name}}.gz"
-    params:
-        ref_genome = lambda wildcards: wildcards.ref_genome,
-        target_name = lambda wildcards: wildcards.target_name,
-        matrix = lambda wildcards: wildcards.matrix_param
-    log:
-        temp(return_log_combined("{analysis_name}", "mC_{ref_genome}", "sort_heatmap_{matrix_param}_{target_name}"))
-    conda: CONDA_ENV
-    shell:
-        """
-        printf "Sorting heatmap {params.matrix} for mC {params.target_name} on {params.ref_genome}\n"
-        # Everything after the flag: one label per region group, not just the first.
-        labels="$(cat {input.params_regions} | cut -d" " -f 2-)"
-        computeMatrixOperations relabel -m {input.matrix} --groupLabels ${{labels}} -o {output.temp_matrix}
-        computeMatrixOperations sort -m {output.temp_matrix} -R {input.sorted_regions} -o {output.matrix}
-        """
-
-rule plotting_sorted_heatmap_on_targetfile:
-    input:
-        matrix = f"{RESULTS_DIR}/combined/matrix/sorted_final_matrix_{{matrix_param}}__mC__{{analysis_name}}__{{ref_genome}}__{{target_name}}.gz",
-        params_heatmap = f"{RESULTS_DIR}/combined/matrix/params_heatmap_final_matrix_{{matrix_param}}__mC__{{analysis_name}}__{{ref_genome}}__{{target_name}}.txt",
-        params_profile = f"{RESULTS_DIR}/combined/matrix/params_profile_final_matrix_{{matrix_param}}__mC__{{analysis_name}}__{{ref_genome}}__{{target_name}}.txt"
-    output:
-        plot = f"{RESULTS_DIR}/combined/plots/Heatmap_sorted__{{matrix_param}}__mC__{{analysis_name}}__{{ref_genome}}__{{target_name}}.pdf"
-    params:
-        analysis_name = config['analysis_name'],
-        ref_genome = lambda wildcards: wildcards.ref_genome,
-        target_name = lambda wildcards: wildcards.target_name,
-        matrix = lambda wildcards: wildcards.matrix_param,
-        plot_params = lambda wildcards: config['heatmaps_plot_params']['mC'],
-        display = lambda wildcards: define_key_for_plots(SimpleNamespace(ref_genome=wildcards.ref_genome, env="mC"), "display"),
-        sample_labeller = os.path.join(REPO_FOLDER, "workflow", "scripts", "matrix_sample_labels.py"),
-        plot_heatmap = os.path.join(REPO_FOLDER, "workflow", "scripts", "plotheatmap_lowmem.py")
-    log:
-        temp(return_log_combined("{analysis_name}", "mC_{ref_genome}", "plot_sorted_heatmap_{matrix_param}_{target_name}"))
-    resources:
-        mem_mb = lambda wildcards, input, attempt: heatmap_mem_mb(input.matrix, attempt)
-    conda: CONDA_ENV
-    shell:
-        """
-        if [[ "{params.matrix}" == "tes" ]]; then
-            add="--refPointLabel end"
-        elif [[ "{params.matrix}" == "tss" ]]; then
-            add="--refPointLabel start"
-        else
-            add="--startLabel start --endLabel end"
-        fi
-        heat="$(cat {input.params_heatmap})"
-        prof="$(cat {input.params_profile})"
+        # Labels, colours and data types, one row per matrix column in column
+        # order, looked up by the column keys.
         printf '%s\n' "{params.display}" > "$TMPDIR/display.tsv"
-        lab="--samplesLabel $(python3 "{params.sample_labeller}" {input.matrix} "$TMPDIR/display.tsv" | cut -f2 | tr '\n' ' ')"
-        printf "Plotting heatmap {params.matrix} for mC {params.target_name} on {params.ref_genome}\n"
-        python3 "{params.plot_heatmap}" -m {input.matrix} -out {output.plot} {params.plot_params} --sortRegions 'keep' ${{heat}} ${{prof}} ${{lab}} ${{add}}
+        python3 "{params.sample_labeller}" {input.matrix} "$TMPDIR/display.tsv" > "$TMPDIR/columns.tsv"
+        printf '%s\n' {params.theme:q} > "$TMPDIR/plot_theme.json"
+        # ComplexHeatmap, a heatmap per matrix column in one row order: z
+        # limits per column from computing_matrix_scales (by key), colours and
+        # interpolation per data type from the theme, each image computed at
+        # the size it is drawn (rows averaged down to the pixel rows), and the
+        # top profiles from the curves Profile__ draws. In the all env the rows
+        # sort on the non-mC columns.
+        Rscript "{params.heatmap_script}" {input.matrix} "$TMPDIR/columns.tsv" "{params.matrix}" "{params.env}" \
+            "{params.scales}" "{params.average}" "{params.sort}" {input.params_heatmap} \
+            {output.plot} {output.sorted_regions} "$TMPDIR/plot_theme.json"
+        }} 2>&1 | tee -a "{log}"
         """
 
 rule plotting_profile_on_targetfile:

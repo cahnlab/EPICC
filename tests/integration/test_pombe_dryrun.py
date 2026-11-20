@@ -507,6 +507,25 @@ class TestAllEnvMatrix:
         assert not re.search(r"matrix_regions__all__\S*__(unstranded|plus|minus|nostrand)\.gz", out)
 
 
+    def test_combined_heatmap_reads_the_joined_matrix(self, snakemake_available, repo_root,
+                                                      test_options):
+        """The default heatmap (Heatmap__..__all__) is drawn in R from the all
+        matrix, not from a second join or a sorted mC matrix."""
+        if not snakemake_available:
+            pytest.skip("Snakemake not installed")
+
+        result = run_snakemake_dryrun(repo_root, test_options, ALL_HEATMAP_TARGET, ["--debug-dag"])
+        assert result.returncode == 0, f"Dry-run failed: {result.stderr}"
+        out = result.stdout + result.stderr
+        for rule in ("plotting_heatmap_on_targetfile", "computing_matrix_scales",
+                     "joining_all_matrix"):
+            assert f"rule {rule}:" in out
+        assert "sort_heatmap" not in out and "sorted_final_matrix" not in out
+
+
+ALL_HEATMAP_TARGET = f"{_OUTPUT_DIR}/combined/plots/Heatmap__regions__all__test_pombe__Spombe__all_genes.pdf"
+
+
 def _pca_rule_inputs(debug_dag_output):
     """Extract the input file list of the summarize_tracks_pca job.
 
