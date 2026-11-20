@@ -47,6 +47,12 @@
 
 * [ ] Remove all functions/scripts used for backward compatibility with previous config. 
 
+### Plotting (from the review of cahnlab/EPICC#125)
+
+* [ ] Heatmap colour settings in `tools/epicc-builder.html`: in the plotting options, a colour for each data type the sheet produces, including each ChIP mark, each mC context and each selected sRNA size (writes `plot_theme_overrides.heatmap_colors`).
+* [ ] User-set heatmap ranges per type, e.g. `epicc output --heatmap-scales ATAC=0:1,RNA=-5:50`, accepted only by `epicc output` (heatmap, profile and browser).
+* [ ] An `epicc output` flag for a heatmap without the profiles above it, as `plotHeatmap --whatToShow` allowed.
+
 * [ ] Test ColCEN datasets on different clusters (Elzar, Genotoul) to extract and compare performance (Jon to do).
 
 * [ ] Test run on laptop to check that it works (local executor), and compare with performance on cluster. Use Pombe testrun for small genome.
@@ -60,7 +66,7 @@
 #### H. sapiens test case
 
 * [ ] Re-examine hg38 chr21 test data quality. The current dataset has limitations:
-  * **sRNA**: EN-TEx sRNA libraries are rRNA-depleted total RNA, not true miRNA-seq. No miRNAs detected in the chr21 subset (zero reads in 21-24 nt range). Consider sourcing dedicated miRNA-seq libraries (e.g. TCGA miRNA-seq) or adding a second organism's sRNA test that exercises the miRNA discovery path.
+  * **sRNA**: EN-TEx sRNA libraries are rRNA-depleted total RNA, not true miRNA-seq. ~~No miRNAs detected in the chr21 subset (zero reads in 21-24 nt range).~~ **Fixed**: the zero was `scripts/subset_test_data.sh` aligning untrimmed reads, so only long inserts reached the subset; it now trims the adapter before aligning and keeps the untrimmed reads by name. The regenerated subset has a 22 nt peak among uniquely mapped reads and non-empty 21/22/24 nt tracks, but the library is still dominated by 32-33 nt tRNA fragments, and chr21 holds few miRNA loci. Consider sourcing dedicated miRNA-seq libraries (e.g. TCGA miRNA-seq) or adding a second organism's sRNA test that exercises the miRNA discovery path.
   * **dmC**: Only a pre-computed bedMethyl sample (HG002). Adding a modBAM sample would exercise the `modkit pileup` path (alignment, pileup, `--combine-mods` handling) which is currently untested in integration.
   * **mC coverage**: ~~WGBS samples have very low chr21 mapping rates (~0.001%), resulting in sparse methylation data that causes PCA failures and uninformative DMR calls. May be inherent to the chr21 subset approach with whole-genome libraries.~~ **Fixed**: Root cause was Snakemake's `OMP_NUM_THREADS` export breaking bowtie2 inside bismark (see commit caa0809). WGBS samples now map at 99.8-99.9%. mCHG/mCHH PCA plots are still empty/corrupt because animals lack asymmetric methylation — those contexts contain only background false-positive calls.
 
@@ -150,6 +156,8 @@ To look for novel splicing changes that occurred within the mC reader mutants, t
 N.B. we'll work on plotting improvements in a separate branch after the Big Refactor is complete
 
 * [ ] **Defer** See if we can improve browser plot sample label readability
+
+* [ ] **Defer** Heatmap colour range for sparse columns. Under `heatmaps_scales: type`, zMin/zMax are the 10th/90th percentiles of a mark's values (deeptools `dataRange`), and a mark whose range comes out 0..0 falls back to 0..0.005 (`.z_fallback` in `plot_scales.R`, same as the old deeptools rule). Columns that are zero over most regions hit that fallback: on the hg38 chr21 test, sRNA 21/22/24 nt (signal in ~5-8% of genes) and RAMPAGE. Any signal then saturates to solid red and the colour bar says nothing. Kept as is to match deeptools; alternatives previewed on the chr21 TSS heatmap: zMax = non-zero 90th percentile (0..490-890, dominated by a few miRNA loci, nearly everything navy: worse) and zMax = non-zero median (0..17-27, graded signal, readable). Other candidates: a log colour scale for count tracks, or a per-data-type theme switch. A change would alter the golden scales (`tests/unit/data/plot_scales_golden.json`, `test_plot_scales.py`) for any column on the fallback, and needs a `design-decisions.md` entry.
 
 * [ ] **Defer** In Plot Expression script, DOWN/UP color coding is based on "unique DEGS", i.e. genes differentially expressed in one sample vs all others, but does not show pairwise comparisons. Could be good to implement pairwise t-test with p-value/significance showing between all pairs of samples instead (or as a toggle option).
 

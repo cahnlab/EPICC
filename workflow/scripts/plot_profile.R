@@ -70,7 +70,8 @@ profile_data <- function(m, average = "mean", spread = c("none", "se", "std")) {
 # computing_matrix_scales writes). default: the single range deeptools shared
 # across panels (default_ylim()) on every column, or with `per_column` each
 # column's own default_ylim() -- for Profile__, whose panels each autoscale
-# under default, so a CHH or ChIP panel isn't drawn on mCG's range.
+# under default, so a CHH or ChIP panel isn't drawn on mCG's range. shared:
+# one default_ylim() over every curve, on every column.
 profile_limits <- function(m, d, mode = "type", per_column = FALSE) {
   keys <- m$samples$label
   if (mode %in% c("type", "sample")) return(profile_ylims(keys, d, mode))
@@ -170,6 +171,21 @@ profile_ggplot <- function(d, th, ticks, colour, colours, linetype = NULL, linet
   }
   if (!is.null(facet)) p <- p + facet
   p
+}
+
+# The display table a plot rule writes through matrix_sample_labels.py: one
+# row per matrix column in column order, key, label, colour, track, series and
+# the data type (heatmap colours and interpolation; blank in older tables).
+read_display_table <- function(path) {
+  cols <- c("key", "label", "colour", "track", "series", "type")
+  lines <- readLines(path, warn = FALSE)
+  lines <- lines[nzchar(lines)]
+  f <- strsplit(lines, "\t", fixed = FALSE)
+  f <- lapply(f, function(x) c(x, rep("", length(cols)))[seq_along(cols)])
+  d <- as.data.frame(do.call(rbind, f), stringsAsFactors = FALSE)
+  if (nrow(d) == 0) d <- as.data.frame(matrix(character(0), 0, length(cols)), stringsAsFactors = FALSE)
+  names(d) <- cols
+  d
 }
 
 # Join display rows (key, label, colour, track, series; one per matrix column

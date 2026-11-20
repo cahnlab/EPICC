@@ -3,10 +3,10 @@
 # (plotting_profile_on_targetfile), drawn in R from the matrix itself.
 #
 # Usage: R_profile.R <matrix.gz> <columns.tsv> <regions|tss|tes> <env>
-#                    <type|sample|default> <mean|median>
+#                    <type|sample|default|shared> <mean|median>
 #                    <Profile__.pdf> <Profile_pergroup__.pdf> [theme.json]
 #
-# columns.tsv: key, label, colour, track, series per matrix column, in column
+# columns.tsv: key, label, colour, track, series (, type) per matrix column, in column
 # order (matrix_sample_labels.py). The y-limits are worked out here, with
 # plot_scales.R, from the very curves drawn (heatmaps_scales,
 # profiles_scale) -- the y values computing_matrix_scales writes for the
@@ -31,16 +31,15 @@ if (!average %in% c("mean", "median")) stop("profiles_scale must be mean or medi
 th <- epicc_theme(if (length(args) == 9) args[9] else NULL)
 
 m <- read_matrix(args[1])
-display <- read.delim(args[2], header = FALSE, sep = "\t", quote = "", comment.char = "",
-                      col.names = c("key", "label", "colour", "track", "series"),
-                      colClasses = "character")
+display <- read_display_table(args[2])
 # One pass over the matrix for the curves; the limits come from them.
 d <- profile_data(m, average, .spread(th))
 limits <- profile_limits(m, d, mode)
 ylab <- paste(average, switch(env, mC = "methylation", all = "signal / methylation", "signal"))
 
 # Under heatmaps_scales: default each Profile__ panel autoscales on its own
-# curves, as the mC per-context panels below do.
+# curves, as the mC per-context panels below do; under shared every panel
+# takes one range over all the curves.
 limits1 <- if (mode == "default") profile_limits(m, d, mode, per_column = TRUE) else limits
 p1 <- plot_profile_per_column(m, display, th, limits1, average, kind, ylab, data = d)
 epicc_save(p1$plot, args[7], p1$width, p1$height)
@@ -48,7 +47,8 @@ epicc_save(p1$plot, args[7], p1$width, p1$height)
 p2 <- if (env %in% c("mC", "all")) {
   # A panel per mark (per context for mC): `all` mixes methylation (tens of
   # percent) with ChIP/RNA signal, which one shared range would flatten.
-  # heatmaps_scales: default left each context panel to autoscale before; keep that.
+  # heatmaps_scales: default left each context panel to autoscale before; keep
+  # that. shared puts every panel on one range.
   plot_profile_by_context(m, display, th, limits, average, kind, ylab,
                           use_limits = mode != "default", data = d)
 } else {

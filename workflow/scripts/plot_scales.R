@@ -83,10 +83,12 @@ column_ranges <- function(m) {
   if (mark %in% names(mc_zmax)) c(0, unname(mc_zmax[[mark]])) else c(0, 0.005)
 }
 
-# heatmaps_scales as the scripts take it: type | sample | default, anything
-# else treated as default (as the bash rule did), with a message.
+# heatmaps_scales as the scripts take it: type | sample | default | shared,
+# anything else treated as default (as the bash rule did), with a message.
+# Like default, shared writes no per-column limits: the plots work out one
+# range over every column themselves.
 scale_mode <- function(mode) {
-  if (mode %in% c("type", "sample", "default")) return(mode)
+  if (mode %in% c("type", "sample", "default", "shared")) return(mode)
   message(mode, " unknown. Returning default")
   "default"
 }
@@ -157,14 +159,79 @@ matrix_scales <- function(m, mode = "type", average = "mean",
 # approximated by the matrix's NaN-aware min/max), and plotProfile shares one
 # y axis across panels, autoscaled with matplotlib's 5% margins.
 default_scales <- function(m, average = "mean") {
-  v <- m$values
+  z <- default_zlim(m$values)
+  y <- default_ylim(group_means(m, average))
+  list(zmin = z[1], zmax = z[2], ymin = y[1], ymax = y[2])
+}
+
+# The z half of default_scales() for the values `v` of the whole matrix.
+default_zlim <- function(v) {
   z <- if (length(v) == 0 || anyNA(v)) c(NA_real_, NA_real_)
        else unname(stats::quantile(v, c(0.01, 0.98), type = 7, names = FALSE))
   if (anyNA(z) || z[2] <= z[1]) {
     z <- if (all(is.na(v))) c(0, 1) else range(v, na.rm = TRUE)
   }
-  y <- default_ylim(group_means(m, average))
-  list(zmin = z[1], zmax = z[2], ymin = y[1], ymax = y[2])
+  z
+}
+
+# default_zlim() over values held column by column (`get(j)` returns column
+# j, j = 1..ncols; read_matrix_table's table), without gathering them into one
+# vector: the same numbers, in memory proportional to one column. The 1st and
+# 98th percentiles (R's type 7, as quantile() and numpy compute them) are
+# found by counting the values into 2^16 buckets of their range, then sorting
+# only the buckets that hold the wanted ranks.
+default_zlim_columns <- function(get, ncols) {
+  n <- 0; lo <- Inf; hi <- -Inf
+  for (j in seq_len(ncols)) {
+    v <- get(j)
+    if (anyNA(v)) return(.range_columns(get, ncols))   # numpy's percentile gives NaN
+    n <- n + length(v)
+    if (length(v)) { lo <- min(lo, v); hi <- max(hi, v) }
+  }
+  if (n == 0) return(c(0, 1))
+  index <- 1 + (n - 1) * c(0.01, 0.98)
+  ranks <- sort(unique(c(floor(index), ceiling(index))))
+  value_at <- if (hi == lo) setNames(rep(lo, length(ranks)), ranks) else {
+    nb <- 65536
+    breaks <- seq(lo, hi, length.out = nb + 1)
+    counts <- numeric(nb)
+    for (j in seq_len(ncols)) {
+      counts <- counts + tabulate(findInterval(get(j), breaks, rightmost.closed = TRUE,
+                                               all.inside = TRUE), nb)
+    }
+    cum <- cumsum(counts)
+    bucket <- findInterval(ranks - 1, cum) + 1           # bucket holding each rank
+    want <- unique(bucket)
+    held <- unlist(lapply(seq_len(ncols), function(j) {
+      v <- get(j)
+      v[findInterval(v, breaks, rightmost.closed = TRUE, all.inside = TRUE) %in% want]
+    }), use.names = FALSE)
+    held <- sort(held)
+    before <- c(0, cum)[want]                            # values below each wanted bucket
+    first <- cumsum(c(0, counts[want]))[seq_along(want)] # where each bucket starts in `held`
+    setNames(vapply(seq_along(ranks), function(k) {
+      w <- match(bucket[k], want)
+      held[first[w] + ranks[k] - before[w]]
+    }, 0), ranks)
+  }
+  q <- vapply(index, function(i) {
+    a <- value_at[[as.character(floor(i))]]
+    b <- value_at[[as.character(ceiling(i))]]
+    h <- i - floor(i)
+    if (i > floor(i) && b != a) (1 - h) * a + h * b else a
+  }, 0)
+  if (q[2] <= q[1]) q <- c(lo, hi)
+  q
+}
+
+.range_columns <- function(get, ncols) {
+  lo <- Inf; hi <- -Inf
+  for (j in seq_len(ncols)) {
+    v <- get(j)
+    v <- v[!is.na(v)]
+    if (length(v)) { lo <- min(lo, v); hi <- max(hi, v) }
+  }
+  if (!is.finite(lo)) c(0, 1) else c(lo, hi)
 }
 
 # The shared y range of default_scales() from average profiles already

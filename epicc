@@ -679,6 +679,8 @@ def _collect_config_overrides(args):
     # Restrict the run to one reference genome of a multi-genome sheet
     if getattr(args, "ref_genome", None):
         ov.append(f"only_genome={args.ref_genome}")
+    if getattr(args, "heatmaps_scales", None):
+        ov.append(f"heatmaps_scales={args.heatmaps_scales}")
     return ov
 
 
@@ -717,6 +719,10 @@ def _collect_nested_overrides(args):
         nested.append(("cut_callpeaks.broad_caller", args.cut_broad_caller))
     if getattr(args, "cut_narrow_caller", None) is not None:
         nested.append(("cut_callpeaks.narrow_caller", args.cut_narrow_caller))
+
+    # Heatmap colours, entry by entry, so the options file's other entries stay.
+    for key, value in (getattr(args, "heatmap_colors", None) or {}).items():
+        nested.append((("plot_theme_overrides", "heatmap_colors", key), value))
 
     # Browser extra tracks (epicc output): a list of mappings, which --config
     # can't express, so it goes through the merged options file too.
@@ -1601,6 +1607,8 @@ def cmd_output(args, extra_args):
         config_overrides.append(f"only_genome={ref_genome}")
     if getattr(args, "te_file", None) and args.plot_type == "browser":
         config_overrides.append("browser_TE_file=true")
+    if getattr(args, "heatmaps_scales", None):
+        config_overrides.append(f"heatmaps_scales={args.heatmaps_scales}")
 
     # --- Build snakemake command (re-uses the same execution-mode logic)
     cmd = ["snakemake"]
@@ -1968,6 +1976,55 @@ def add_graph_options(parser):
     )
 
 
+HEATMAPS_SCALES = ("type", "sample", "default", "shared")
+
+
+def _parse_heatmap_colors(s):
+    """--heatmap-colors 'H3K9me2=Reds,RNA=white:darkgreen' -> {key: map or [colours]}.
+
+    A key is a data type (ChIP, RNA, mCG, ...) or one mark (an IP_target,
+    RAMPAGE, sRNA_24nt); a value is a matplotlib colour-map name or colours
+    joined by ':' (hex or R names). Checked again at startup
+    (config_validation.plot_theme_spec)."""
+    out = {}
+    for item in (p.strip() for p in s.split(",")):
+        if not item:
+            continue
+        key, eq, value = item.partition("=")
+        key, value = key.strip(), value.strip()
+        if not eq or not key or not value:
+            raise argparse.ArgumentTypeError(
+                f"'{item}': expected KEY=COLORMAP or KEY=COLOR:COLOR[:...]")
+        colours = [c.strip() for c in value.split(":")]
+        if len(colours) > 1 and not all(colours):
+            raise argparse.ArgumentTypeError(f"'{item}': empty colour in {value!r}")
+        out[key] = colours if len(colours) > 1 else value
+    if not out:
+        raise argparse.ArgumentTypeError("expected at least one KEY=VALUE")
+    return out
+
+
+def add_plot_options(parser):
+    """Heatmap/profile look, for run/validate/output. Override the options file."""
+    group = parser.add_argument_group("heatmap and profile plots")
+    group.add_argument(
+        "--heatmap-colors", dest="heatmap_colors", type=_parse_heatmap_colors,
+        metavar="KEY=VALUE[,...]",
+        help="Heatmap colours per data type (ChIP, ATAC, RNA, RNA_RAMPAGE, sRNA, "
+             "mCG, ...) or per mark (an IP_target such as H3K9me2, RAMPAGE, "
+             "sRNA_24nt), which wins over its data type. VALUE is a matplotlib "
+             "colour-map name (Reds, viridis, RdBu_r) or colours joined by ':' "
+             "(white:darkgreen). Sets plot_theme_overrides.heatmap_colors.KEY; "
+             "entries the flag doesn't name keep their options-file value.",
+    )
+    group.add_argument(
+        "--heatmaps-scales", dest="heatmaps_scales", choices=HEATMAPS_SCALES,
+        help="Heatmap colour ranges and profile y axes: type (one per mark), "
+             "sample (one per column), default (one per data type, automatic), "
+             "shared (one range for every column). Sets heatmaps_scales.",
+    )
+
+
 def add_analysis_options(parser):
     """Add analysis configuration overrides for run/validate.
 
@@ -2154,6 +2211,7 @@ def build_parser():
     add_run_options(p_run)
     add_lock_options(p_run)
     add_analysis_options(p_run)
+    add_plot_options(p_run)
 
     # --- validate ---
     p_val = subparsers.add_parser(
@@ -2165,6 +2223,7 @@ def build_parser():
     add_lock_options(p_val, validate=True)
     add_graph_options(p_val)
     add_analysis_options(p_val)
+    add_plot_options(p_val)
     p_val.add_argument(
         "--build-envs", action="store_true",
         help="After validation passes, pre-build all rule conda envs "
@@ -2181,6 +2240,7 @@ def build_parser():
                     + ", ".join(OUTPUT_TYPES.keys()) + ".",
     )
     add_common_options(p_out)
+    add_plot_options(p_out)
     p_out.add_argument(
         "--plot-type", required=True, choices=sorted(OUTPUT_TYPES.keys()),
         help="Output product to generate.",

@@ -7,6 +7,7 @@ check. Skipped where Rscript with ggplot2 and jsonlite is not installed.
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -19,12 +20,12 @@ THEME = REPO / "workflow" / "scripts" / "plot_theme.R"
 SMK = REPO / "workflow" / "rules" / "combined_analysis.smk"
 
 sys.path.insert(0, os.path.join(REPO, "workflow", "scripts"))
-from config_validation import legacy_plot_params, plot_theme_spec  # noqa: E402
+from config_validation import (  # noqa: E402
+    REMOVED_PLOT_OPTIONS, THEME_TYPES, plot_theme_spec, unmatched_theme_entries)
 
 
-def spec_json(cfg, r_drawn=()):
-    text, _ = plot_theme_spec(cfg, r_drawn)
-    return json.loads(text)
+def spec_json(cfg):
+    return json.loads(plot_theme_spec(cfg))
 
 
 def _have_r():
@@ -82,84 +83,79 @@ class TestPlotThemeSpec:
         assert a == b
 
 
-# --- deprecated profiles_plot_params ------------------------------------------
-# (heatmaps_plot_params is translated from phase 3, when R draws the heatmaps;
-# that code and its tests wait on branch claude/r-plot-legacy-flags, fc1130c.)
+# --- removed deeptools plot options, map entries, unmatched keys -------------
 
-SHIPPED_HEATMAP_PARAMS = {
-    env: "--colorMap seismic --interpolationMethod bilinear"
-    for env in ("all", "most", "ChIP", "TF", "RNA", "sRNA", "ATAC")
-}
-SHIPPED_HEATMAP_PARAMS["mC"] = "--colorMap Oranges --missingDataColor 0.9 --interpolationMethod nearest"
-PROFILES = ("profiles",)
-
-
-class TestLegacyPlotParams:
+class TestRemovedPlotOptions:
     def test_shipped_options_file(self):
         import yaml
         cfg = yaml.safe_load((REPO / "config" / "epicc-options.yaml").read_text())
-        # Heatmaps are still drawn by deeptools, with these flags untouched.
-        assert cfg["heatmaps_plot_params"] == SHIPPED_HEATMAP_PARAMS
-        # Profiles are drawn in R: the key is gone from the shipped file and
-        # only translated when an older options file still has it.
-        assert "profiles_plot_params" not in cfg
+        for key in REMOVED_PLOT_OPTIONS:
+            assert key not in cfg
+        plot_theme_spec(cfg)
 
-    def test_nothing_translated_while_deeptools_draws(self):
-        cfg = {"heatmaps_plot_params": {"RNA": "--colorMap viridis --kmeans 3"},
-               "profiles_plot_params": "--plotType overlapped_lines"}
-        assert legacy_plot_params(cfg) == ({}, [])
-        assert spec_json(cfg)["overrides"] == {}
+    @pytest.mark.parametrize("key,value", [
+        ("heatmaps_plot_params", {"all": "--colorMap seismic"}),
+        ("profiles_plot_params", "--plotType lines"),
+        ("heatmap_sort_mc_after_others", False),
+    ])
+    def test_each_stops_the_run_naming_its_replacement(self, key, value):
+        with pytest.raises(ValueError, match=key) as e:
+            plot_theme_spec({key: value})
+        assert REMOVED_PLOT_OPTIONS[key] in str(e.value)
 
-    def test_heatmap_flags_are_not_translated_yet(self):
-        cfg = {"heatmaps_plot_params": {"RNA": "--colorMap viridis --kmeans 3"}}
-        assert legacy_plot_params(cfg, ("profiles", "heatmaps")) == ({}, [])
-
-    def test_old_default_adds_no_overrides(self):
-        overrides, warnings = legacy_plot_params({"profiles_plot_params": "--plotType lines"},
-                                                 PROFILES)
-        assert overrides == {}
-        assert len(warnings) == 1
-        assert "deprecated" in warnings[0] and "match the theme defaults" in warnings[0]
-
-    def test_flag_without_theme_equivalent_stops_the_run(self):
-        with pytest.raises(ValueError, match="'--yAxisLabel'"):
-            legacy_plot_params({"profiles_plot_params": "--yAxisLabel x"}, PROFILES)
-
-    def test_plot_type(self):
-        overrides, warnings = legacy_plot_params({"profiles_plot_params": "--plotType se"}, PROFILES)
-        assert overrides == {"profile_type": "se"}
-        assert 'profile_type="se"' in warnings[0]
-        with pytest.raises(ValueError, match="--plotType heatmap is not drawn in R"):
-            legacy_plot_params({"profiles_plot_params": "--plotType heatmap"}, PROFILES)
-
-    @pytest.mark.parametrize("flags", ["--plotType=se", "--plotType se", "--plotType=se "])
-    def test_plot_type_equals_form(self, flags):
-        # argparse (and so deeptools) took --flag=value as well as --flag value
-        assert legacy_plot_params({"profiles_plot_params": flags}, PROFILES)[0] == \
-            {"profile_type": "se"}
-
-    def test_equals_form_of_an_unknown_flag_names_the_flag(self):
-        with pytest.raises(ValueError, match="'--yAxisLabel'"):
-            legacy_plot_params({"profiles_plot_params": "--yAxisLabel=x"}, PROFILES)
-
-    def test_user_overrides_win(self):
-        cfg = {"profiles_plot_params": "--plotType fill",
-               "plot_theme_overrides": {"profile_type": "se"}}
-        assert spec_json(cfg, PROFILES)["overrides"] == {"profile_type": "se"}
-
-    def test_snakefile_translates_profiles_only(self):
-        # Phase 2: profiles are drawn in R; heatmaps still by deeptools.
+    def test_snakefile_has_no_translation_left(self):
         text = (REPO / "workflow" / "Snakefile").read_text()
-        assert 'R_DRAWN_PLOT_FAMILIES = ("profiles",)' in text
+        assert "R_DRAWN_PLOT_FAMILIES" not in text
+        assert "PLOT_THEME_JSON = plot_theme_spec(config)" in text
 
-    def test_warnings_print_from_the_main_process_only(self):
-        # Every cluster job re-parses the Snakefile; the deprecation warning
-        # would otherwise land in every job log.
-        text = (REPO / "workflow" / "Snakefile").read_text()
-        block = text[text.index("PLOT_THEME_JSON, _plot_theme_warnings"):]
-        block = block[:block.index("# ----")]
-        assert "if workflow.is_main_process:" in block
-        assert block.index("if workflow.is_main_process:") < block.index("_plot_theme_warnings:")
+
+class TestTypeMapEntries:
+    def test_colour_maps_lists_and_marks_pass(self):
+        cfg = {"plot_theme_overrides": {
+            "heatmap_colors": {"RNA": "viridis", "H3K9me2": "Reds_r",
+                               "sRNA_24nt": ["white", "#00ff00"]},
+            "heatmap_interpolation": {"ChIP": "nearest"}}}
+        assert spec_json(cfg)["overrides"] == cfg["plot_theme_overrides"]
+
+    def test_unknown_colour_map(self):
+        with pytest.raises(ValueError, match="heatmap_colors.RNA: unknown colour map 'nonesuch'"):
+            plot_theme_spec({"plot_theme_overrides": {"heatmap_colors": {"RNA": "nonesuch"}}})
+
+    @pytest.mark.parametrize("value", [["red"], 3, [1, 2]])
+    def test_a_colour_list_needs_two_colours(self, value):
+        with pytest.raises(ValueError, match="at least two colours"):
+            plot_theme_spec({"plot_theme_overrides": {"heatmap_colors": {"RNA": value}}})
+
+    @pytest.mark.parametrize("method", ["bicubic", "none", "lanczos"])
+    def test_only_bilinear_and_nearest(self, method):
+        with pytest.raises(ValueError, match="bilinear, nearest"):
+            plot_theme_spec({"plot_theme_overrides": {"heatmap_interpolation": {"RNA": method}}})
+
+    def test_a_map_must_be_a_mapping(self):
+        with pytest.raises(ValueError, match="heatmap_colors must map"):
+            plot_theme_spec({"plot_theme_overrides": {"heatmap_colors": "viridis"}})
+
+    def test_unmatched_entries(self):
+        cfg = {"plot_theme_overrides": {
+            "heatmap_colors": {"RNA": "viridis", "H3K9me2": "Reds", "H3K9me": "Blues",
+                               "RAMPAGE": "PuOr", "mCHG": "Greens"},
+            "heatmap_interpolation": {"sRNA_25nt": "nearest", "sRNA_24nt": "nearest"}}}
+        marks = {"H3K9me2", "RAMPAGE", "sRNA_24nt"}
+        assert unmatched_theme_entries(cfg, marks) == [
+            "plot_theme_overrides.heatmap_colors.H3K9me",
+            "plot_theme_overrides.heatmap_interpolation.sRNA_25nt"]
+        assert unmatched_theme_entries({}, marks) == []
+
+    def test_theme_types_match_the_theme(self):
+        # Every entry plot_theme.R gives heatmap_colors / heatmap_interpolation
+        # is a THEME_TYPE, so no default entry is reported as unmatched.
+        text = THEME.read_text()
+        for key in ("heatmap_colors", "heatmap_interpolation"):
+            block = text[text.index(f"  {key} = list(") + len(f"  {key} = list("):]
+            block = block[:block.index("\n  )")]
+            entries = re.findall(r"^\s+(\w+) =", block, flags=re.M)
+            assert set(entries) <= set(THEME_TYPES), key
+        assert {"mCG", "mCHG", "mCHH"} <= set(THEME_TYPES)
 
 
 def test_colour_map_table_is_sorted_and_complete():
@@ -237,6 +233,27 @@ class TestTheme:
         assert proc.returncode == 0, proc.stderr
         assert proc.stdout.split() == ["white", "black", "|", "#FFF5EB"]
 
+    def test_a_marks_entry_wins_over_its_type(self, tmp_path):
+        spec = {"theme": "default",
+                "overrides": {"heatmap_colors": {"H3K9me2": ["white", "black"],
+                                                 "ChIP": ["white", "blue"]},
+                              "heatmap_interpolation": {"sRNA_24nt": "nearest"}}}
+        proc = _r("cat(epicc_heatmap_colors(th, 'ChIP', 'H3K9me2'), '|', "
+                  "epicc_heatmap_colors(th, 'ChIP', 'H3K27me3'), '|', "
+                  "epicc_heatmap_colors(th, 'ChIP'), '|', "
+                  "epicc_heatmap_interpolation(th, 'sRNA', 'sRNA_24nt'), "
+                  "epicc_heatmap_interpolation(th, 'sRNA', 'sRNA_21nt'))", spec, tmp_path)
+        assert proc.returncode == 0, proc.stderr
+        assert proc.stdout.split() == ["white", "black", "|", "white", "blue", "|",
+                                       "white", "blue", "|", "nearest", "bilinear"]
+
+    def test_rampage_has_a_ramp_of_its_own(self, tmp_path):
+        proc = _r("cat(identical(epicc_heatmap_colors(th, 'RNA_RAMPAGE', 'RAMPAGE'), "
+                  "epicc_colormap('PRGn')), identical(epicc_heatmap_colors(th, 'RNA_RAMPAGE'), "
+                  "epicc_heatmap_colors(th, 'RNA')))")
+        assert proc.returncode == 0, proc.stderr
+        assert proc.stdout.split() == ["TRUE", "FALSE"]
+
     def test_heatmap_colour_single_name_must_be_a_colour_map(self, tmp_path):
         # One string is a colour-map name; a single colour is not a ramp.
         spec = {"theme": "default", "overrides": {"heatmap_colors": {"RNA": "red"}}}
@@ -258,6 +275,38 @@ class TestTheme:
         proc = _r("m <- toupper(epicc_colormap('seismic')); cat(m[c(1, 5, 13, 17)])")
         assert proc.returncode == 0, proc.stderr
         assert proc.stdout.split() == ["#00004C", "#0101FF", "#FE0000", "#800000"]
+
+    @pytest.mark.parametrize("dtype,mode", [
+        ("ChIP", "bilinear"), ("RNA", "bilinear"), ("mC", "nearest"),
+        ("mCHH", "nearest"),        # context -> mC
+        ("ChIP_narrow", "bilinear"),
+        ("H3K9me2", "bilinear"),    # unknown -> default
+    ])
+    def test_heatmap_interpolation_defaults_and_fallbacks(self, tmp_path, dtype, mode):
+        proc = _r(f"cat(epicc_heatmap_interpolation(th, '{dtype}'))")
+        assert proc.returncode == 0, proc.stderr
+        assert proc.stdout.strip() == mode
+
+    def test_heatmap_interpolation_is_an_open_map(self, tmp_path):
+        spec = {"theme": "default",
+                "overrides": {"heatmap_interpolation": {"mCG": "bilinear", "default": "nearest"}}}
+        proc = _r("cat(epicc_heatmap_interpolation(th, 'mCG'), epicc_heatmap_interpolation(th, 'mCHG'), "
+                  "epicc_heatmap_interpolation(th, 'ChIP'), epicc_heatmap_interpolation(th, 'H3K4me3'))",
+                  spec, tmp_path)
+        assert proc.returncode == 0, proc.stderr
+        assert proc.stdout.split() == ["bilinear", "nearest", "bilinear", "nearest"]
+
+    def test_heatmap_interpolation_values(self, tmp_path):
+        bad = _r("", {"theme": "default", "overrides": {"heatmap_interpolation": {"RNA": "bicubic"}}},
+                 tmp_path)
+        assert bad.returncode != 0
+        assert "heatmap_interpolation.RNA must be one of bilinear, nearest" in bad.stderr
+
+    def test_heatmap_raster_dpi(self, tmp_path):
+        ok = _r("cat(th$heatmap_raster_dpi)",
+                {"theme": "default", "overrides": {"heatmap_raster_dpi": 300}}, tmp_path)
+        assert ok.returncode == 0, ok.stderr
+        assert ok.stdout.strip() == "300"
 
     def test_profile_type_choices(self, tmp_path):
         ok = _r("cat(th$profile_type)", {"theme": "default", "overrides": {"profile_type": "se"}},

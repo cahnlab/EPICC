@@ -26,9 +26,11 @@
 # Override rules: a key the theme doesn't define is an error (a typo must not
 # be silently ignored), and a value must have the type of the default it
 # replaces. `heatmap_colors` is the one open map -- it may gain entries for
-# data types the defaults don't name. A `heatmap_colors` entry is either a list
-# of at least two colours or one matplotlib colour-map name ("viridis",
-# "RdBu_r"), looked up in plot_colormaps.json beside this file.
+# data types the defaults don't name, and for single marks (an IP_target such
+# as H3K9me2, RAMPAGE, sRNA_24nt), which win over their data type. A
+# `heatmap_colors` entry is either a list of at least two colours or one
+# matplotlib colour-map name ("viridis", "RdBu_r"), looked up in
+# plot_colormaps.json beside this file.
 
 suppressPackageStartupMessages({
   library(ggplot2)
@@ -77,10 +79,28 @@ suppressPackageStartupMessages({
     TF = .EPICC_SEISMIC,
     ATAC = .EPICC_SEISMIC,
     RNA = .EPICC_SEISMIC,
+    # TSS-capture counts, on a range of their own: a ramp of their own too,
+    # so they don't read as RNA-seq next to it.
+    RNA_RAMPAGE = "PRGn",
     sRNA = .EPICC_SEISMIC,
     mC = .EPICC_ORANGES
   ),
   heatmap_missing_color = "grey90",
+  # How a heatmap column is resampled to its pixels, per data type (same
+  # lookup as heatmap_colors): bilinear smooths between bins (continuous
+  # tracks), nearest draws each bin as a block (mC's coarse, often-missing
+  # bins). Done in R before drawing (plot_heatmap.R), so every viewer shows
+  # the same image.
+  heatmap_interpolation = list(
+    default = "bilinear",
+    ChIP = "bilinear",
+    TF = "bilinear",
+    ATAC = "bilinear",
+    RNA = "bilinear",
+    sRNA = "bilinear",
+    mC = "nearest"
+  ),
+  heatmap_raster_dpi = 150,   # pixels per inch of the drawn heatmap images
   # PDF dimensions, inches
   panel_width = 3.2,         # one profile/facet panel
   panel_height = 3.2,
@@ -102,8 +122,10 @@ EPICC_THEMES <- list(
   ))
 )
 
-# Keys whose value is an open name -> value map rather than a fixed record.
-.EPICC_OPEN_MAPS <- c("heatmap_colors")
+# Keys whose value is an open map from data type to a value rather than a
+# fixed record: they may gain entries for types the defaults don't name.
+.EPICC_OPEN_MAPS <- c("heatmap_colors", "heatmap_interpolation")
+.EPICC_INTERPOLATIONS <- c("bilinear", "nearest")
 
 # Keys that take one of a fixed set of values.
 .EPICC_CHOICES <- list(
@@ -162,10 +184,16 @@ epicc_merge_theme <- function(base, overrides, where = "plot_theme_overrides") {
       if (!is.list(value) || is.null(names(value))) stop(at, " must be a mapping")
       for (entry in names(value)) {
         v <- value[[entry]]
-        if (!is.character(v) || length(v) < 1) {
-          stop(at, ".", entry, " must be a colour-map name or a list of at least two colours")
+        if (key == "heatmap_interpolation") {
+          if (!is.character(v) || length(v) != 1 || !v %in% .EPICC_INTERPOLATIONS) {
+            stop(at, ".", entry, " must be one of ", paste(.EPICC_INTERPOLATIONS, collapse = ", "))
+          }
+        } else {
+          if (!is.character(v) || length(v) < 1) {
+            stop(at, ".", entry, " must be a colour-map name or a list of at least two colours")
+          }
+          if (length(v) == 1) epicc_colormap(v)   # errors on an unknown name
         }
-        if (length(v) == 1) epicc_colormap(v)   # errors on an unknown name
         base[[key]][[entry]] <- v
       }
     } else if (is.list(base[[key]])) {
@@ -247,18 +275,30 @@ epicc_dashes <- function(th, colours) {
   setNames(cycle[(rank - 1) %% length(cycle) + 1], names(colours))
 }
 
-# Colour ramp (hex stops) for a heatmap of one data type: the type's own
-# entry, else its family (mCG/mCHG/mCHH -> mC, ChIP_broad -> ChIP), else
-# 'default' (e.g. a mark name such as H3K9me2 that has no entry of its own).
-# A colour-map name is expanded to its stops.
-epicc_heatmap_colors <- function(th, type) {
-  maps <- th$heatmap_colors
-  family <- sub("_.*$", "", type)
-  v <- if (!is.null(maps[[type]])) maps[[type]]
-       else if (grepl("^mC", type) && !is.null(maps[["mC"]])) maps[["mC"]]
-       else if (!is.null(maps[[family]])) maps[[family]]
-       else maps[["default"]]
+# Colour ramp (hex stops) for a heatmap column of one data type and mark: the
+# mark's own entry (an IP_target such as H3K9me2, RAMPAGE, sRNA_24nt), else
+# the type's, else its family's (mCG/mCHG/mCHH -> mC, RNA_RAMPAGE -> RNA),
+# else 'default'. A colour-map name is expanded to its stops.
+epicc_heatmap_colors <- function(th, type, mark = NULL) {
+  v <- .epicc_type_entry(th$heatmap_colors, type, mark)
   if (length(v) == 1) epicc_colormap(v) else v
+}
+
+# bilinear | nearest for a heatmap column of one data type and mark, with the
+# same fallbacks as epicc_heatmap_colors().
+epicc_heatmap_interpolation <- function(th, type, mark = NULL) {
+  .epicc_type_entry(th$heatmap_interpolation, type, mark)
+}
+
+# A per-type map's entry: the mark's own, else the type's, else its family
+# (mCG/mCHG/mCHH -> mC, RNA_RAMPAGE -> RNA), else 'default'.
+.epicc_type_entry <- function(maps, type, mark = NULL) {
+  family <- sub("_.*$", "", type)
+  if (length(mark) == 1 && !is.na(mark) && nzchar(mark) && !is.null(maps[[mark]])) maps[[mark]]
+  else if (!is.null(maps[[type]])) maps[[type]]
+  else if (grepl("^mC", type) && !is.null(maps[["mC"]])) maps[["mC"]]
+  else if (!is.null(maps[[family]])) maps[[family]]
+  else maps[["default"]]
 }
 
 # Write a ggplot to PDF at the given size in inches.

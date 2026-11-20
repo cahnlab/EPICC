@@ -14,6 +14,7 @@ from scripts.config_validation import (
     find_quoted_params,
     format_quoted_params_error,
     plot_theme_spec,
+    unmatched_theme_entries,
 )
 from scripts.rfam_classes import (
     validate_structural_rna_classes,
@@ -173,21 +174,12 @@ if _quoted_params:
     sys.exit(format_quoted_params_error(_quoted_params))
 
 # Plot theme for the R plotting scripts (workflow/scripts/plot_theme.R).
-# Plot rules take it as a param, so changing it reruns plots only.
-# R_DRAWN_PLOT_FAMILIES lists the plot families already drawn in R: their
-# deprecated deeptools flags (profiles_plot_params; heatmaps_plot_params from
-# phase 3) are translated onto theme keys. The others' flags still go to
-# deeptools untouched.
-R_DRAWN_PLOT_FAMILIES = ("profiles",)
+# Plot rules take it as a param, so changing it reruns plots only. An option
+# of the old deeptools plots (heatmaps_plot_params, ...) stops the run.
 try:
-    PLOT_THEME_JSON, _plot_theme_warnings = plot_theme_spec(config, R_DRAWN_PLOT_FAMILIES)
+    PLOT_THEME_JSON = plot_theme_spec(config)
 except ValueError as e:
     sys.exit(f"ERROR: {e}")
-# Every cluster job parses the Snakefile again; warn once, from the main
-# process, not from each job.
-if workflow.is_main_process:
-    for _w in _plot_theme_warnings:
-        print(f"WARNING: {_w}", file=sys.stderr)
 
 # ---------------------------------------------------------------------------
 # Rfam classes depleted from sRNA libraries (auto-derived structural RNAs)
@@ -332,6 +324,19 @@ if not analysis_samples.empty:
     # can use mapped_name uniformly for post-alignment paths on either kind of row
     # without appending the genome twice.
     analysis_samples["mapped_name"] = analysis_samples["sample_name"]
+
+# Heatmap theme entries (plot_theme_overrides.heatmap_colors / _interpolation)
+# may name a data type or one mark of the run: an IP_target, the RNA assay
+# (RNAseq, RAMPAGE), sRNA_<size>nt, ATAC. An entry naming neither is never
+# looked up, so warn about it (once, from the main process: every cluster job
+# parses the Snakefile again).
+if workflow.is_main_process and not analysis_samples.empty:
+    _theme_marks = set(analysis_samples.loc[analysis_samples["env"] == "ChIP", "sample_type"])
+    _theme_marks |= set(analysis_samples.loc[analysis_samples["env"] == "RNA", "data_type"])
+    _theme_marks |= {f"sRNA_{n}nt" for n in config.get("srna_heatmap_sizes") or []}
+    for _entry in unmatched_theme_entries(config, _theme_marks):
+        print(f"WARNING: {_entry} names no data type or mark of this run; "
+              "its columns keep their data type's entry.", file=sys.stderr)
 
 # ---------------------------------------------------------------------------
 # Backward-compat helper functions (used by rule files during migration)

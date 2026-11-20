@@ -46,99 +46,91 @@ def format_quoted_params_error(problems):
     return "\n".join(lines)
 
 
-# --- deprecated deeptools plot flags -----------------------------------------
-#
-# profiles_plot_params holds deeptools flags that set how plotProfile drew.
-# Profiles are drawn in R now, so its flags are translated onto plot-theme
-# keys with a deprecation warning, and any flag with no theme equivalent stops
-# the run. The Snakefile lists the families drawn in R in
-# R_DRAWN_PLOT_FAMILIES. heatmaps_plot_params still goes to plotHeatmap
-# untouched; its translation (--colorMap, --colorList, --missingDataColor,
-# --interpolationMethod) returns with the R heatmaps in phase 3
-# (dev/docs/r-plotting-plan.md).
+# --- plot theme --------------------------------------------------------------
 
 PROFILE_TYPES = ("lines", "fill", "se", "std")
+HEATMAP_INTERPOLATIONS = ("bilinear", "nearest")
+
+# Data types the theme's per-type maps name (plot_theme.R's heatmap_colors /
+# heatmap_interpolation, kept in step by a test), plus the mC contexts the
+# display table uses as types. A map entry may also name a single mark.
+THEME_TYPES = ("default", "ChIP", "TF", "ATAC", "RNA", "RNA_RAMPAGE", "sRNA", "mC",
+               "mCG", "mCHG", "mCHH")
+
+# Options of the deeptools-drawn plots, removed once heatmaps and profiles
+# were drawn in R, and what replaces each.
+REMOVED_PLOT_OPTIONS = {
+    "heatmaps_plot_params": "plot_theme_overrides: heatmap_colors, heatmap_interpolation "
+                            "and heatmap_missing_color (see config/epicc-options.yaml)",
+    "profiles_plot_params": "plot_theme_overrides.profile_type (lines | fill | se | std)",
+    "heatmap_sort_mc_after_others": "nothing: Heatmap__...__all__ sorts its rows on the "
+                                    "non-mC columns; for mC sorted on itself, "
+                                    "epicc output --plot-type heatmap --env mC",
+}
+
+# Theme keys that are maps from data type (or mark) to a value.
+_TYPE_MAPS = ("heatmap_colors", "heatmap_interpolation")
 
 
-def _flag_values(words):
-    """Split ['--a', 'x', 'y', '--b=z'] into [('--a', ['x', 'y']), ('--b', ['z'])].
-
-    A long flag may carry its value after '=' (argparse's --flag=value form,
-    which deeptools accepted)."""
-    out = []
-    for w in words:
-        if w.startswith("--"):
-            flag, eq, value = w.partition("=")
-            out.append((flag, [value] if eq else []))
-        elif w.startswith("-") and len(w) == 2 and w[1].isalpha():
-            out.append((w, []))
-        elif out:
-            out[-1][1].append(w)
-        else:
-            out.append((None, [w]))
-    return out
-
-
-def legacy_plot_params(config, r_drawn=()):
-    """Translate profiles_plot_params onto theme keys.
-
-    `r_drawn` names the plot families already drawn in R; only "profiles" is
-    translated so far. Returns (overrides, warnings): theme overrides to apply
-    under the user's own plot_theme_overrides, and one deprecation warning per
-    key translated. Raises ValueError for a flag or value with no theme
-    equivalent.
-
-      --plotType T   -> profile_type (lines | fill | se | std)
-    """
-    overrides, warnings = {}, []
-    if "profiles" in r_drawn and config.get("profiles_plot_params"):
-        for flag, vals in _flag_values(str(config["profiles_plot_params"]).split()):
-            if flag == "--plotType":
-                if len(vals) != 1 or vals[0] not in PROFILE_TYPES:
-                    raise ValueError(
-                        f"profiles_plot_params: --plotType {' '.join(vals)} is not drawn in R; "
-                        f"use one of {', '.join(PROFILE_TYPES)} (plot_theme_overrides.profile_type).")
-                # The default is dropped, so the old shipped value adds
-                # nothing to the theme JSON (and reruns nothing).
-                if vals[0] != "lines":
-                    overrides["profile_type"] = vals[0]
-            else:
-                raise ValueError(
-                    f"profiles_plot_params: '{flag or vals[0]}' has no equivalent now that "
-                    "profiles are drawn in R. Remove it; set the look with plot_theme / "
-                    "plot_theme_overrides (keys: profile_type, line_width, panel_width, "
-                    "panel_height).")
-        warnings.append(
-            "profiles_plot_params is deprecated: profiles are drawn in R and take their look "
-            "from plot_theme / plot_theme_overrides. "
-            + (f"Translated to plot_theme_overrides: {overrides_summary(overrides)}. "
-               if overrides else "Its settings match the theme defaults. ")
-            + "Remove profiles_plot_params from the options file.")
-    return overrides, warnings
-
-
-def overrides_summary(overrides):
+def _colormap_names():
     import json
-    return ", ".join(f"{k}={json.dumps(v)}" for k, v in sorted(overrides.items()))
+    import os
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "plot_colormaps.json")
+    with open(path) as fh:
+        return set(json.load(fh)["maps"])
 
 
-def plot_theme_spec(config, r_drawn=()):
+def _known_colormap(name, names):
+    return name in names or (name.endswith("_r") and name[:-2] in names)
+
+
+def _check_type_maps(overrides):
+    """Refuse a malformed heatmap_colors / heatmap_interpolation entry at
+    startup rather than when the first heatmap is drawn. Colour names in a
+    list are left to R, which knows them."""
+    names = None
+    for key in _TYPE_MAPS:
+        value = overrides.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, dict):
+            raise ValueError(f"plot_theme_overrides.{key} must map data types or marks to values")
+        for entry, v in value.items():
+            at = f"plot_theme_overrides.{key}.{entry}"
+            if key == "heatmap_interpolation":
+                if v not in HEATMAP_INTERPOLATIONS:
+                    raise ValueError(f"{at} must be one of {', '.join(HEATMAP_INTERPOLATIONS)}, got {v!r}")
+            elif isinstance(v, str):
+                names = names or _colormap_names()
+                if not _known_colormap(v, names):
+                    raise ValueError(
+                        f"{at}: unknown colour map {v!r} (add _r to reverse one). "
+                        f"Known maps: {', '.join(sorted(names))}")
+            elif not (isinstance(v, list) and len(v) >= 2 and all(isinstance(c, str) for c in v)):
+                raise ValueError(f"{at} must be a colour-map name or a list of at least two colours")
+
+
+def plot_theme_spec(config):
     """The plot-theme choice handed to the R plotting scripts, as JSON.
 
     `plot_theme` names a built-in theme of workflow/scripts/plot_theme.R and
-    `plot_theme_overrides` replaces individual keys of it. Only the shape is
-    checked here; plot_theme.R owns the key list and refuses unknown keys and
-    wrong value types when a plot is drawn.
+    `plot_theme_overrides` replaces individual keys of it. The shape is checked
+    here, and the per-type maps' entries; plot_theme.R owns the key list and
+    refuses unknown keys and wrong value types when a plot is drawn.
 
-    The deprecated deeptools flags of the families in `r_drawn` are translated
-    (legacy_plot_params) and applied beneath plot_theme_overrides, which wins
-    key by key.
-
-    Returns (json, warnings). Raises ValueError on a malformed setting so the
-    Snakefile can refuse it at startup.
+    Raises ValueError on a malformed setting, or on an option of the old
+    deeptools plots (REMOVED_PLOT_OPTIONS), so the Snakefile can refuse it at
+    startup.
     """
     import json
 
+    removed = [k for k in REMOVED_PLOT_OPTIONS if k in config]
+    if removed:
+        raise ValueError(
+            "Option(s) of the old deeptools plots, removed now that heatmaps and profiles "
+            "are drawn in R: " + "; ".join(
+                f"{k} -> {REMOVED_PLOT_OPTIONS[k]}" for k in removed)
+            + ". Remove them from the options file.")
     name = config.get("plot_theme") or "default"
     overrides = config.get("plot_theme_overrides") or {}
     if not isinstance(name, str):
@@ -147,6 +139,18 @@ def plot_theme_spec(config, r_drawn=()):
         raise ValueError(
             "plot_theme_overrides must be a mapping of theme keys to values, "
             f"got {type(overrides).__name__}")
-    legacy, warnings = legacy_plot_params(config, r_drawn)
-    merged = {**legacy, **overrides}
-    return json.dumps({"theme": name, "overrides": merged}, sort_keys=True), warnings
+    _check_type_maps(overrides)
+    return json.dumps({"theme": name, "overrides": overrides}, sort_keys=True)
+
+
+def unmatched_theme_entries(config, marks):
+    """heatmap_colors / heatmap_interpolation entries that name neither a data
+    type of the theme nor one of `marks`, the marks this run plots. Such an
+    entry is never looked up -- a typo, most likely -- and its columns fall
+    back to their data type's entry."""
+    overrides = config.get("plot_theme_overrides") or {}
+    known = set(THEME_TYPES) | set(marks)
+    return [f"plot_theme_overrides.{key}.{entry}"
+            for key in _TYPE_MAPS
+            for entry in (overrides.get(key) or {})
+            if entry not in known]
