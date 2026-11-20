@@ -953,7 +953,7 @@ gather() {
     log "Output files:"
     du -sh "${OUTDIR}"/*.fastq.gz "${OUTDIR}"/*.bam "${OUTDIR}"/*.bedmethyl.gz 2>/dev/null | while read -r sz fn; do
         log "  $sz  $(basename "$fn")"
-    done
+    done || true  # du exits 1 on an unmatched glob (e.g. no *.bam outputs)
 
     log ""
     log "All $total samples complete. Outputs in: $OUTDIR"
