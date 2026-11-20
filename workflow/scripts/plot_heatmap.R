@@ -94,6 +94,7 @@ read_heatmap_zlim <- function(path, keys) {
 # sRNA, ATAC, mCG, ...), not one over the matrix: percentages, log2 ratios and
 # read counts on one range would leave all but one kind a single colour.
 default_heatmap_zlim <- function(m, display) {
+  .check_display(m, display)
   family <- column_types(display)
   zlim <- data.frame(key = m$samples$label, zmin = NA_real_, zmax = NA_real_,
                      ymin = NA_real_, ymax = NA_real_, stringsAsFactors = FALSE)
@@ -295,15 +296,24 @@ prepare_heatmap <- function(m, display, th, sort_method = "descend", sort_using 
     popViewport()
     bar_h <- 0.12
     zr <- c(zmin, zmax)
+    # A flat column (one value throughout) is drawn mid-ramp on a widened
+    # range (heatmap_colour_fun); its bar is labelled with that one value only,
+    # so the placeholder range does not read as the data's.
+    flat <- all(is.finite(zr)) && zr[2] <= zr[1]
     if (!all(is.finite(zr)) || zr[2] <= zr[1]) zr <- range(attr(cf, "breaks"))
     pushViewport(viewport(y = unit(1, "npc") - unit(tick_h + 0.1, "in"), height = unit(bar_h, "in"),
                           width = unit(0.8, "npc"), just = "top", xscale = zr))
     grid.raster(matrix(cf(seq(zr[1], zr[2], length.out = 256)), nrow = 1),
                 width = unit(1, "npc"), height = unit(1, "npc"), interpolate = FALSE)
     grid.rect(gp = gpar(col = "grey30", fill = NA, lwd = 0.5))
-    at <- pretty(zr, 3)
-    at <- at[at >= zr[1] - 1e-12 & at <= zr[2] + 1e-12]
-    grid.xaxis(at = at, gp = epicc_gpar(th, 0.55), main = TRUE)
+    if (flat) {
+      v <- (zmin + zmax) / 2
+      grid.xaxis(at = v, label = format(signif(v, 3)), gp = epicc_gpar(th, 0.55), main = TRUE)
+    } else {
+      at <- pretty(zr, 3)
+      at <- at[at >= zr[1] - 1e-12 & at <= zr[2] + 1e-12]
+      grid.xaxis(at = at, gp = epicc_gpar(th, 0.55), main = TRUE)
+    }
     popViewport()
   }
   AnnotationFunction(fun = fun, which = "column", height = height,

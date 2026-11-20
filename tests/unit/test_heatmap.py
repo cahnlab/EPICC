@@ -314,6 +314,17 @@ class TestPrepare:
             'z$zmax[1] != z$zmax[3] && z$zmax[1] < z$zmin[5])')
         assert out.split() == ["TRUE", "TRUE", "TRUE"]
 
+    def test_default_scale_checks_the_display_first(self, all_matrix, tmp_path):
+        # A display table that does not match the matrix gets the clear
+        # message, not an indexing error from the per-type grouping.
+        path, cols, rows = all_matrix
+        short = tmp_path / "short.tsv"
+        short.write_text("\n".join(cols.read_text().splitlines()[:-1]) + "\n")
+        proc = run_r(f'm <- read_matrix_table("{path}"); '
+                     f'default_heatmap_zlim(m, read_display_table("{short}"))')
+        assert proc.returncode != 0
+        assert "Display rows do not match the matrix columns" in proc.stderr
+
     def test_images_per_group_in_row_order(self, all_matrix):
         path, cols, rows = all_matrix
         out = run_r_ok(

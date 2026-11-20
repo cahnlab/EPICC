@@ -451,14 +451,14 @@ plot_theme: "default" # look of the plots drawn in R (workflow/scripts/plot_them
 #   base_size: 12
 #   line_width: 0.8
 #   profile_type: "se" # metaplot style: lines | fill | se | std (replaces profiles_plot_params "--plotType")
-#   heatmap_colors: # per data type: ChIP, ATAC, RNA, sRNA, mC (or mCG/mCHG/mCHH), default (the fallback)
+#   heatmap_colors: # per data type: ChIP, ATAC, RNA, RNA_RAMPAGE (falls back to RNA), sRNA, mC (or mCG/mCHG/mCHH), default (the fallback)
 #     RNA: ["white", "darkgreen"] # a colour list, or one matplotlib map name: RNA: "viridis"
 #   heatmap_interpolation: # per data type: bilinear (smooth) | nearest (blocks); default bilinear, mC nearest
 #     ChIP: "nearest"
 #   heatmap_missing_color: "grey90" # heatmap cells with no data (uncovered cytosines)
 plot_allreps: false # whether to use data from all individual replicates or from merged samples when multiple replicates are present. Default to false (using merged replicates).
 # For heatmaps and profiles (metaplots)
-heatmaps_scales: "type" # options, for heatmap colours and profile y axes: [ 'default' = one scale for all samples | 'sample' = each sample on its own scale | 'type' = each type of data on a different scale (each ChIP mark + each TF + RNA + sRNA + each mC context) ]
+heatmaps_scales: "type" # options, for heatmap colours and profile y axes: [ 'default' = automatic limits (heatmaps: 1st-98th percentile per data type -- ChIP, ATAC, RNA, RAMPAGE, sRNA, each mC context -- or the full range where values are missing; profiles: each autoscaled) | 'sample' = each sample on its own scale | 'type' = each type of data on a different scale (each ChIP mark + each TF + RNA + sRNA + each mC context) ]
 stranded_heatmaps: true # chose whether the heatmap should be done with stranded information or not. If true, stranded data types (RNAseq, sRNA) contribute their sense-strand track for each region. Regions whose 6th column is neither "+" nor "-" have no sense strand, so they are plotted as a separate region group rather than dropped.
 heatmaps_sort_options: "mean" # options: [ 'no' | 'mean' | median' ]; mean = "--sortRegions descend --sortUsing mean"
 profiles_scale: "mean" # options: [ 'mean' | median' ]; how profiles average regions, for both the curves and their y-limits
