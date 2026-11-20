@@ -282,6 +282,11 @@ rna_deduplicate: false
 # methylation, so set ["CG"] to skip the empty mCHG/mCHH bigwigs, DMR
 # calls, and PCA plots for animal samples. Subcontexts (CAG, CAA, etc.)
 # are not yet supported.
+# The setting covers every mC assay, dmC (ONT/PacBio) included. Most ONT
+# basecalling models call CpG only (Dorado's 5mCG_5hmCG models): a dmC
+# sample with no call in a listed context stops at the bedMethyl conversion.
+# Either list only the contexts its calls cover, or call the reads with an
+# all-context model (Dorado's 5mC_5hmC models).
 methylation_contexts: ["CG", "CHG", "CHH"]
 pca_bs: 1000 # binsize for PCA 
 pca_step: 10000 # step between bins for PCA 

@@ -39,7 +39,10 @@ CX_report format (Bismark):
     6: trinucleotide sequence
 
 Usage:
-    python bedmethyl_to_cx_report.py input.bed.gz reference.fa output.CX_report.txt.gz
+    python bedmethyl_to_cx_report.py input.bed.gz reference.fa output.CX_report.txt.gz [required_contexts sample_name]
+
+    required_contexts ("CG|CHG|CHH", from methylation_contexts): each must have
+    at least one covered call, or the script exits 1 naming the fix.
 """
 
 import sys
@@ -118,11 +121,35 @@ def infer_strand_from_reference(chrom_seq, pos):
     return None
 
 
-def convert_bedmethyl_to_cx_report(input_file, reference_file, output_file):
+def missing_contexts_error(sample, missing, counts):
+    """Message for a dmC sample with no calls in a listed context."""
+    have = ", ".join(f"{c} {n:,}" for c, n in counts.items() if n) or "none"
+    return (
+        f"Error: dmC sample {sample} has no covered "
+        f"{'/'.join(missing)} position, but methylation_contexts lists "
+        f"{'it' if len(missing) == 1 else 'them'} (calls per context: {have}).\n"
+        "  Most ONT basecalling models call 5mC at CpG only (Dorado's "
+        "5mCG_5hmCG models), so their bedMethyl has nothing in CHG or CHH, "
+        "and every DMR, bigwig and PCA step in those contexts would have "
+        "nothing to work on. Either:\n"
+        "  - set methylation_contexts to the contexts the ONT/PacBio calls "
+        "cover (e.g. [\"CG\"]); it applies to every mC sample in the run; or\n"
+        "  - call the reads with an all-context model (Dorado's 5mC_5hmC "
+        "models) and rerun modkit pileup.\n"
+    )
+
+
+def convert_bedmethyl_to_cx_report(input_file, reference_file, output_file,
+                                   require_contexts=None, sample=None):
     """Convert bedMethyl to CX_report format with context from reference.
 
     Filters to 5mC calls only (mod_code 'm') or combined calls ('C').
     Infers strand from reference when bedMethyl has combined strands.
+
+    ``require_contexts`` lists contexts (from ``methylation_contexts``) that
+    must each have at least one covered call. If any has none, the error is
+    printed and ``SystemExit(1)`` raised after the conversion. Returns the
+    number of covered calls per context.
     """
 
     fasta = pysam.FastaFile(reference_file)
@@ -133,6 +160,7 @@ def convert_bedmethyl_to_cx_report(input_file, reference_file, output_file):
     chrom_len = 0
 
     n_kept = 0
+    covered = {"CG": 0, "CHG": 0, "CHH": 0}
     n_skipped_mod = 0
     n_skipped_strand = 0
     n_skipped_no_ref = 0
@@ -210,6 +238,8 @@ def convert_bedmethyl_to_cx_report(input_file, reference_file, output_file):
             # Write CX_report format
             outfile.write(f"{chrom}\t{position}\t{strand}\t{n_mod}\t{n_canonical}\t{context}\t{trinuc}\n")
             n_kept += 1
+            if n_mod + n_canonical > 0 and context in covered:
+                covered[context] += 1
 
     fasta.close()
 
@@ -220,18 +250,36 @@ def convert_bedmethyl_to_cx_report(input_file, reference_file, output_file):
         print(f"Skipped {n_skipped_strand:,} positions where reference base was neither C nor G", file=sys.stderr)
     if n_skipped_no_ref:
         print(f"Skipped {n_skipped_no_ref:,} positions on chromosomes absent from the reference", file=sys.stderr)
+    print("Covered calls per context: "
+          + ", ".join(f"{c} {n:,}" for c, n in covered.items()), file=sys.stderr)
+
+    # Each context methylation_contexts lists must have data, or every
+    # per-context step downstream would run on nothing (metilene segfaults on
+    # an empty group). A CpG-only ONT model is the usual cause, so say so
+    # here, at the first step that knows the contexts, instead of at DMRs.
+    missing = [c for c in (require_contexts or []) if covered.get(c, 0) == 0]
+    if missing:
+        print(missing_contexts_error(sample or input_file, missing, covered),
+              file=sys.stderr)
+        raise SystemExit(1)
+    return covered
 
 
 def main():
-    if len(sys.argv) != 4:
-        print(f"Usage: {sys.argv[0]} input.bed.gz reference.fa output.CX_report.txt.gz")
+    if len(sys.argv) not in (4, 6):
+        print(f"Usage: {sys.argv[0]} input.bed.gz reference.fa output.CX_report.txt.gz "
+              "[required_contexts sample_name]\n"
+              "  required_contexts: '|'-separated, e.g. 'CG|CHG|CHH'")
         sys.exit(1)
 
     input_file = sys.argv[1]
     reference_file = sys.argv[2]
     output_file = sys.argv[3]
+    require = sys.argv[4].split("|") if len(sys.argv) == 6 else None
+    sample = sys.argv[5] if len(sys.argv) == 6 else None
 
-    convert_bedmethyl_to_cx_report(input_file, reference_file, output_file)
+    convert_bedmethyl_to_cx_report(input_file, reference_file, output_file,
+                                   require_contexts=require, sample=sample)
 
 
 if __name__ == "__main__":
