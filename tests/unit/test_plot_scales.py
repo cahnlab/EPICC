@@ -293,9 +293,10 @@ class TestAgainstTheRule:
         for flag, col in (("--zMin", 2), ("--zMax", 3), ("--yMin", 4), ("--yMax", 5)):
             assert [float(r[col]) for r in got] == pytest.approx(want[flag], rel=1e-5, abs=1e-6), flag
 
-    def test_default_writes_nothing(self, matrix, tmp_path):
+    @pytest.mark.parametrize("mode", ["default", "shared"])
+    def test_default_writes_nothing(self, matrix, tmp_path, mode):
         path, _ = matrix
-        assert run_scales_rule(path, tmp_path / "rule", "default") == ("", "")
+        assert run_scales_rule(path, tmp_path / "rule", mode) == ("", "")
 
     @pytest.mark.parametrize("mode", ["type", "sample", "default"])
     @pytest.mark.parametrize("average", ["mean", "median"])

@@ -20,12 +20,12 @@ THEME = REPO / "workflow" / "scripts" / "plot_theme.R"
 SMK = REPO / "workflow" / "rules" / "combined_analysis.smk"
 
 sys.path.insert(0, os.path.join(REPO, "workflow", "scripts"))
-from config_validation import legacy_plot_params, plot_theme_spec  # noqa: E402
+from config_validation import (  # noqa: E402
+    REMOVED_PLOT_OPTIONS, THEME_TYPES, plot_theme_spec, unmatched_theme_entries)
 
 
-def spec_json(cfg, r_drawn=()):
-    text, _ = plot_theme_spec(cfg, r_drawn)
-    return json.loads(text)
+def spec_json(cfg):
+    return json.loads(plot_theme_spec(cfg))
 
 
 def _have_r():
@@ -83,202 +83,79 @@ class TestPlotThemeSpec:
         assert a == b
 
 
-# --- deprecated heatmaps_plot_params / profiles_plot_params -------------------
-# (the heatmaps half restored from branch claude/r-plot-legacy-flags, fc1130c,
-# with --interpolationMethod now translated rather than dropped)
+# --- removed deeptools plot options, map entries, unmatched keys -------------
 
-# What the options file shipped before both families moved to R.
-SHIPPED_HEATMAP_PARAMS = {
-    env: "--colorMap seismic --interpolationMethod bilinear"
-    for env in ("all", "most", "ChIP", "TF", "RNA", "sRNA", "ATAC")
-}
-SHIPPED_HEATMAP_PARAMS["mC"] = "--colorMap Oranges --missingDataColor 0.9 --interpolationMethod nearest"
-SHIPPED = {"heatmaps_plot_params": SHIPPED_HEATMAP_PARAMS,
-           "profiles_plot_params": "--plotType lines"}
-PROFILES = ("profiles",)
-HEATMAPS = ("heatmaps",)
-BOTH = ("heatmaps", "profiles")
-
-
-class TestLegacyPlotParams:
+class TestRemovedPlotOptions:
     def test_shipped_options_file(self):
         import yaml
         cfg = yaml.safe_load((REPO / "config" / "epicc-options.yaml").read_text())
-        # Both families are drawn in R: the keys are gone from the shipped
-        # file and only translated when an older options file still has them.
-        for key in ("profiles_plot_params", "heatmaps_plot_params",
-                    "heatmap_sort_mc_after_others"):
+        for key in REMOVED_PLOT_OPTIONS:
             assert key not in cfg
+        plot_theme_spec(cfg)
 
-    def test_nothing_translated_while_deeptools_draws(self):
-        cfg = {"heatmaps_plot_params": {"RNA": "--colorMap viridis --kmeans 3"},
-               "profiles_plot_params": "--plotType overlapped_lines",
-               "heatmap_sort_mc_after_others": True}
-        assert legacy_plot_params(cfg) == ({}, [])
-        assert spec_json(cfg)["overrides"] == {}
+    @pytest.mark.parametrize("key,value", [
+        ("heatmaps_plot_params", {"all": "--colorMap seismic"}),
+        ("profiles_plot_params", "--plotType lines"),
+        ("heatmap_sort_mc_after_others", False),
+    ])
+    def test_each_stops_the_run_naming_its_replacement(self, key, value):
+        with pytest.raises(ValueError, match=key) as e:
+            plot_theme_spec({key: value})
+        assert REMOVED_PLOT_OPTIONS[key] in str(e.value)
 
-    def test_old_defaults_add_no_overrides(self):
-        overrides, warnings = legacy_plot_params(SHIPPED, BOTH)
-        assert overrides == {}
-        assert len(warnings) == 2
-        assert all("deprecated" in w and "match the theme defaults" in w for w in warnings)
+    def test_snakefile_has_no_translation_left(self):
+        text = (REPO / "workflow" / "Snakefile").read_text()
+        assert "R_DRAWN_PLOT_FAMILIES" not in text
+        assert "PLOT_THEME_JSON = plot_theme_spec(config)" in text
 
-    def test_colour_maps_lists_and_missing_colour(self):
-        cfg = {"heatmaps_plot_params": {
-            "RNA": "--colorMap viridis --interpolationMethod bilinear",
-            "ChIP": "--colorList white,darkgreen",
-            "TF": "--colorMap seismic",
-            "mC": "--colorMap Reds_r --missingDataColor 0.5"}}
-        overrides, warnings = legacy_plot_params(cfg, HEATMAPS)
-        assert overrides == {
-            "heatmap_colors": {"RNA": "viridis", "ChIP": ["white", "darkgreen"], "mC": "Reds_r"},
-            "heatmap_missing_color": "#808080"}
-        assert "Translated to plot_theme_overrides" in warnings[0]
 
-    def test_all_and_most_set_every_non_mc_type(self):
-        # The theme has its own entry per non-mC type, which the lookup tries
-        # before 'default': 'all'/'most' setting the fallback alone would
-        # change no column.
-        cfg = {"heatmaps_plot_params": {"all": "--colorMap viridis --interpolationMethod nearest",
-                                        "most": "--colorMap=viridis"}}
-        overrides, _ = legacy_plot_params(cfg, HEATMAPS)
-        non_mc = ("default", "ChIP", "TF", "ATAC", "RNA", "sRNA")
-        assert overrides == {"heatmap_colors": {t: "viridis" for t in non_mc},
-                             "heatmap_interpolation": {t: "nearest" for t in non_mc}}
-        cfg = {"heatmaps_plot_params": {"all": "--colorMap viridis", "most": "--colorMap magma"}}
-        with pytest.raises(ValueError, match="both set heatmap_colors of every non-mC type"):
-            legacy_plot_params(cfg, HEATMAPS)
+class TestTypeMapEntries:
+    def test_colour_maps_lists_and_marks_pass(self):
+        cfg = {"plot_theme_overrides": {
+            "heatmap_colors": {"RNA": "viridis", "H3K9me2": "Reds_r",
+                               "sRNA_24nt": ["white", "#00ff00"]},
+            "heatmap_interpolation": {"ChIP": "nearest"}}}
+        assert spec_json(cfg)["overrides"] == cfg["plot_theme_overrides"]
 
-    def test_an_envs_own_entry_wins_over_most(self):
-        cfg = {"heatmaps_plot_params": {"most": "--colorMap viridis", "RNA": "--colorMap magma",
-                                        "mC": "--colorMap Oranges"}}
-        overrides, _ = legacy_plot_params(cfg, HEATMAPS)
-        assert overrides["heatmap_colors"]["RNA"] == "magma"
-        assert overrides["heatmap_colors"]["ChIP"] == "viridis"
-        assert "mC" not in overrides["heatmap_colors"]
+    def test_unknown_colour_map(self):
+        with pytest.raises(ValueError, match="heatmap_colors.RNA: unknown colour map 'nonesuch'"):
+            plot_theme_spec({"plot_theme_overrides": {"heatmap_colors": {"RNA": "nonesuch"}}})
 
-    def test_non_mc_types_match_the_theme(self):
-        # config_validation's list must name every non-mC entry plot_theme.R
-        # gives heatmap_colors and heatmap_interpolation.
-        from config_validation import _NON_MC_TYPES
+    @pytest.mark.parametrize("value", [["red"], 3, [1, 2]])
+    def test_a_colour_list_needs_two_colours(self, value):
+        with pytest.raises(ValueError, match="at least two colours"):
+            plot_theme_spec({"plot_theme_overrides": {"heatmap_colors": {"RNA": value}}})
+
+    @pytest.mark.parametrize("method", ["bicubic", "none", "lanczos"])
+    def test_only_bilinear_and_nearest(self, method):
+        with pytest.raises(ValueError, match="bilinear, nearest"):
+            plot_theme_spec({"plot_theme_overrides": {"heatmap_interpolation": {"RNA": method}}})
+
+    def test_a_map_must_be_a_mapping(self):
+        with pytest.raises(ValueError, match="heatmap_colors must map"):
+            plot_theme_spec({"plot_theme_overrides": {"heatmap_colors": "viridis"}})
+
+    def test_unmatched_entries(self):
+        cfg = {"plot_theme_overrides": {
+            "heatmap_colors": {"RNA": "viridis", "H3K9me2": "Reds", "H3K9me": "Blues",
+                               "RAMPAGE": "PuOr", "mCHG": "Greens"},
+            "heatmap_interpolation": {"sRNA_25nt": "nearest", "sRNA_24nt": "nearest"}}}
+        marks = {"H3K9me2", "RAMPAGE", "sRNA_24nt"}
+        assert unmatched_theme_entries(cfg, marks) == [
+            "plot_theme_overrides.heatmap_colors.H3K9me",
+            "plot_theme_overrides.heatmap_interpolation.sRNA_25nt"]
+        assert unmatched_theme_entries({}, marks) == []
+
+    def test_theme_types_match_the_theme(self):
+        # Every entry plot_theme.R gives heatmap_colors / heatmap_interpolation
+        # is a THEME_TYPE, so no default entry is reported as unmatched.
         text = THEME.read_text()
         for key in ("heatmap_colors", "heatmap_interpolation"):
             block = text[text.index(f"  {key} = list(") + len(f"  {key} = list("):]
             block = block[:block.index("\n  )")]
             entries = re.findall(r"^\s+(\w+) =", block, flags=re.M)
-            assert sorted(e for e in entries if e != "mC") == sorted(_NON_MC_TYPES), key
-
-    @needs_r
-    def test_most_flags_reach_the_chip_columns(self, tmp_path):
-        text, _ = plot_theme_spec({"heatmaps_plot_params": {"most": "--interpolationMethod nearest"}},
-                                  HEATMAPS)
-        out = _r('cat(epicc_heatmap_interpolation(th, "ChIP"), '
-                 'epicc_heatmap_interpolation(th, "mCG"))', json.loads(text), tmp_path)
-        assert out.stdout.split() == ["nearest", "nearest"]
-
-    def test_interpolation(self):
-        cfg = {"heatmaps_plot_params": {"ChIP": "--interpolationMethod nearest",
-                                        "mC": "--interpolationMethod bilinear",
-                                        "RNA": "--interpolationMethod bilinear"}}
-        overrides, _ = legacy_plot_params(cfg, HEATMAPS)
-        # RNA bilinear is the default and is dropped.
-        assert overrides == {"heatmap_interpolation": {"ChIP": "nearest", "mC": "bilinear"}}
-
-    @pytest.mark.parametrize("method,mode", [("none", "nearest"), ("bicubic", "bilinear"),
-                                             ("lanczos", "bilinear"), ("antialiased", "bilinear")])
-    def test_other_matplotlib_methods_map_with_a_note(self, method, mode):
-        cfg = {"heatmaps_plot_params": {"sRNA": f"--interpolationMethod {method}"}}
-        overrides, warnings = legacy_plot_params(cfg, HEATMAPS)
-        assert overrides.get("heatmap_interpolation", {}).get("sRNA", "bilinear") == mode
-        assert f"--interpolationMethod {method} is drawn as '{mode}'" in warnings[0]
-
-    def test_unknown_interpolation_method(self):
-        with pytest.raises(ValueError, match="not a matplotlib interpolation method"):
-            legacy_plot_params({"heatmaps_plot_params": {"RNA": "--interpolationMethod smooth"}},
-                               HEATMAPS)
-
-    def test_unknown_colour_map(self):
-        with pytest.raises(ValueError, match="unknown colour map 'nonesuch'"):
-            legacy_plot_params({"heatmaps_plot_params": {"RNA": "--colorMap nonesuch"}}, HEATMAPS)
-
-    def test_flag_without_theme_equivalent_stops_the_run(self):
-        with pytest.raises(ValueError, match=r"heatmaps_plot_params\.RNA: '--kmeans'"):
-            legacy_plot_params({"heatmaps_plot_params": {"RNA": "--colorMap seismic --kmeans 3"}},
-                               HEATMAPS)
-        with pytest.raises(ValueError, match="'--yAxisLabel'"):
-            legacy_plot_params({"profiles_plot_params": "--yAxisLabel x"}, PROFILES)
-
-    def test_per_sample_colour_maps_are_refused(self):
-        with pytest.raises(ValueError, match="one colour map per data type"):
-            legacy_plot_params({"heatmaps_plot_params": {"RNA": "--colorMap Reds Blues"}},
-                               HEATMAPS)
-
-    def test_conflicting_missing_colours(self):
-        cfg = {"heatmaps_plot_params": {"RNA": "--missingDataColor black",
-                                        "mC": "--missingDataColor white"}}
-        with pytest.raises(ValueError, match="differs between envs"):
-            legacy_plot_params(cfg, HEATMAPS)
-
-    def test_heatmap_params_must_be_a_mapping(self):
-        with pytest.raises(ValueError, match="must map each env"):
-            legacy_plot_params({"heatmaps_plot_params": "--colorMap viridis"}, HEATMAPS)
-
-    def test_sort_mc_after_others_is_reported_as_ignored(self):
-        for value in (True, False):
-            overrides, warnings = legacy_plot_params(
-                {"heatmap_sort_mc_after_others": value}, HEATMAPS)
-            assert overrides == {}
-            assert len(warnings) == 1
-            assert "heatmap_sort_mc_after_others is deprecated and ignored" in warnings[0]
-            assert "--env mC" in warnings[0]
-
-    def test_plot_type(self):
-        overrides, warnings = legacy_plot_params({"profiles_plot_params": "--plotType se"}, PROFILES)
-        assert overrides == {"profile_type": "se"}
-        assert 'profile_type="se"' in warnings[0]
-        with pytest.raises(ValueError, match="--plotType heatmap is not drawn in R"):
-            legacy_plot_params({"profiles_plot_params": "--plotType heatmap"}, PROFILES)
-
-    @pytest.mark.parametrize("flags", ["--plotType=se", "--plotType se", "--plotType=se "])
-    def test_plot_type_equals_form(self, flags):
-        # argparse (and so deeptools) took --flag=value as well as --flag value
-        assert legacy_plot_params({"profiles_plot_params": flags}, PROFILES)[0] == \
-            {"profile_type": "se"}
-
-    def test_equals_form_of_an_unknown_flag_names_the_flag(self):
-        with pytest.raises(ValueError, match="'--yAxisLabel'"):
-            legacy_plot_params({"profiles_plot_params": "--yAxisLabel=x"}, PROFILES)
-
-    def test_only_drawn_families_are_translated(self):
-        cfg = {"heatmaps_plot_params": {"RNA": "--colorMap viridis"},
-               "profiles_plot_params": "--plotType fill"}
-        assert legacy_plot_params(cfg, PROFILES)[0] == {"profile_type": "fill"}
-        assert legacy_plot_params(cfg, HEATMAPS)[0] == {"heatmap_colors": {"RNA": "viridis"}}
-
-    def test_user_overrides_win(self):
-        cfg = {"heatmaps_plot_params": {"RNA": "--colorMap viridis", "sRNA": "--colorMap magma",
-                                        "ChIP": "--interpolationMethod nearest"},
-               "profiles_plot_params": "--plotType fill",
-               "plot_theme_overrides": {"profile_type": "se",
-                                        "heatmap_colors": {"RNA": ["white", "red"]},
-                                        "heatmap_interpolation": {"mC": "bilinear"}}}
-        assert spec_json(cfg, BOTH)["overrides"] == {
-            "profile_type": "se",
-            "heatmap_colors": {"RNA": ["white", "red"], "sRNA": "magma"},
-            "heatmap_interpolation": {"ChIP": "nearest", "mC": "bilinear"}}
-
-    def test_snakefile_translates_both_families(self):
-        text = (REPO / "workflow" / "Snakefile").read_text()
-        assert 'R_DRAWN_PLOT_FAMILIES = ("heatmaps", "profiles")' in text
-
-    def test_warnings_print_from_the_main_process_only(self):
-        # Every cluster job re-parses the Snakefile; the deprecation warning
-        # would otherwise land in every job log.
-        text = (REPO / "workflow" / "Snakefile").read_text()
-        block = text[text.index("PLOT_THEME_JSON, _plot_theme_warnings"):]
-        block = block[:block.index("# ----")]
-        assert "if workflow.is_main_process:" in block
-        assert block.index("if workflow.is_main_process:") < block.index("_plot_theme_warnings:")
+            assert set(entries) <= set(THEME_TYPES), key
+        assert {"mCG", "mCHG", "mCHH"} <= set(THEME_TYPES)
 
 
 def test_colour_map_table_is_sorted_and_complete():
@@ -355,6 +232,27 @@ class TestTheme:
                   "epicc_heatmap_colors(th, 'mC')[1])", spec, tmp_path)
         assert proc.returncode == 0, proc.stderr
         assert proc.stdout.split() == ["white", "black", "|", "#FFF5EB"]
+
+    def test_a_marks_entry_wins_over_its_type(self, tmp_path):
+        spec = {"theme": "default",
+                "overrides": {"heatmap_colors": {"H3K9me2": ["white", "black"],
+                                                 "ChIP": ["white", "blue"]},
+                              "heatmap_interpolation": {"sRNA_24nt": "nearest"}}}
+        proc = _r("cat(epicc_heatmap_colors(th, 'ChIP', 'H3K9me2'), '|', "
+                  "epicc_heatmap_colors(th, 'ChIP', 'H3K27me3'), '|', "
+                  "epicc_heatmap_colors(th, 'ChIP'), '|', "
+                  "epicc_heatmap_interpolation(th, 'sRNA', 'sRNA_24nt'), "
+                  "epicc_heatmap_interpolation(th, 'sRNA', 'sRNA_21nt'))", spec, tmp_path)
+        assert proc.returncode == 0, proc.stderr
+        assert proc.stdout.split() == ["white", "black", "|", "white", "blue", "|",
+                                       "white", "blue", "|", "nearest", "bilinear"]
+
+    def test_rampage_has_a_ramp_of_its_own(self, tmp_path):
+        proc = _r("cat(identical(epicc_heatmap_colors(th, 'RNA_RAMPAGE', 'RAMPAGE'), "
+                  "epicc_colormap('PRGn')), identical(epicc_heatmap_colors(th, 'RNA_RAMPAGE'), "
+                  "epicc_heatmap_colors(th, 'RNA')))")
+        assert proc.returncode == 0, proc.stderr
+        assert proc.stdout.split() == ["TRUE", "FALSE"]
 
     def test_heatmap_colour_single_name_must_be_a_colour_map(self, tmp_path):
         # One string is a colour-map name; a single colour is not a ramp.

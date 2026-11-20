@@ -127,7 +127,7 @@ def parse_ranges(out):
 
 @needs_r
 class TestScript:
-    @pytest.mark.parametrize("mode", ["type", "sample", "default"])
+    @pytest.mark.parametrize("mode", ["type", "sample", "default", "shared"])
     @pytest.mark.parametrize("average", ["mean", "median"])
     def test_draws_both_pdfs(self, most, tmp_path, mode, average):
         path, cols, _ = most
@@ -135,7 +135,7 @@ class TestScript:
         assert proc.returncode == 0, proc.stderr
         assert p1.read_bytes().startswith(b"%PDF") and p2.read_bytes().startswith(b"%PDF")
 
-    @pytest.mark.parametrize("mode", ["type", "default"])
+    @pytest.mark.parametrize("mode", ["type", "default", "shared"])
     def test_mc(self, mc, tmp_path, mode):
         path, cols, _ = mc
         proc, p1, p2 = run_script(tmp_path, path, cols, env="mC", mode=mode)
@@ -316,7 +316,7 @@ class TestAllEnv:
         columns_tsv(cols, self.KEYS)
         return out, cols
 
-    @pytest.mark.parametrize("mode", ["type", "sample", "default"])
+    @pytest.mark.parametrize("mode", ["type", "sample", "default", "shared"])
     def test_script_draws_the_joined_matrix(self, tmp_path, joined, mode):
         path, cols = joined
         proc, out1, out2 = run_script(tmp_path, path, cols, env="all", mode=mode)
@@ -337,6 +337,18 @@ class TestAllEnv:
         assert all(len(v) == 2 for v in r.values())  # one per region group
         assert all(hi < 1 for _, hi in r["H3K4me3"])
         assert all(lo > 20 for lo, _ in r["mCG"])
+
+    def test_shared_puts_every_panel_on_one_range(self, joined):
+        """heatmaps_scales: shared -- one y range over every curve."""
+        path, cols = joined
+        out = run_r_ok(PANEL_RANGES + f'''
+            m <- read_matrix("{path}")
+            d <- profile_data(m, "mean")
+            p <- plot_profile_by_context(m, display("{cols}"), epicc_theme(),
+                                         profile_limits(m, d, "shared"), data = d)$plot
+            panel_ranges(p, "context")''')
+        r = parse_ranges(out)
+        assert len({rng for v in r.values() for rng in v}) == 1
 
 
 @needs_r

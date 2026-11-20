@@ -314,6 +314,23 @@ class TestPrepare:
             'z$zmax[1] != z$zmax[3] && z$zmax[1] < z$zmin[5])')
         assert out.split() == ["TRUE", "TRUE", "TRUE"]
 
+    def test_shared_scale_is_one_range_over_every_column(self, all_matrix):
+        # heatmaps_scales: shared -- deeptools' one scale for the whole figure.
+        path, cols, rows = all_matrix
+        out = run_r_ok(
+            f'm <- read_matrix_table("{path}"); d <- read_display_table("{cols}"); '
+            'z <- default_heatmap_zlim(m, d, shared = TRUE); '
+            'v <- unlist(lapply(seq_len(nrow(m$samples)), function(s) '
+            'unlist(m$table[, sample_columns(m, s), with = FALSE]))); '
+            'want <- default_zlim(v); '
+            'cat(all(z$zmin == want[1]), all(z$zmax == want[2]))')
+        assert out.split() == ["TRUE", "TRUE"]
+
+    def test_theme_marks_drop_the_strand(self, all_matrix):
+        path, cols, rows = all_matrix
+        out = run_r_ok(f'cat(column_theme_marks(read_display_table("{cols}")))')
+        assert out.split() == ["H3K9me2", "H3K9me2", "RNAseq", "RNAseq", "mCG", "mCG", "mCHH"]
+
     def test_default_scale_checks_the_display_first(self, all_matrix, tmp_path):
         # A display table that does not match the matrix gets the clear
         # message, not an indexing error from the per-type grouping.
@@ -370,12 +387,12 @@ class TestPrepare:
 
 @needs_ch
 class TestScript:
-    @pytest.mark.parametrize("mode", ["type", "sample", "default"])
+    @pytest.mark.parametrize("mode", ["type", "sample", "default", "shared"])
     def test_all_env_end_to_end(self, tmp_path, mode):
         path, cols, scales = tmp_path / "all.gz", tmp_path / "cols.tsv", tmp_path / "s.txt"
         rows = build(path, nan_rows=(2,))
         columns_tsv(cols)
-        scales_txt(scales, empty=mode == "default")
+        scales_txt(scales, empty=mode in ("default", "shared"))
         proc, pdf, bed = run_script(tmp_path, path, cols, scales, mode=mode)
         assert proc.returncode == 0, proc.stderr
         assert pdf.read_bytes().startswith(b"%PDF")
@@ -391,7 +408,8 @@ class TestScript:
         scales_txt(scales)
         theme = tmp_path / "t.json"
         theme.write_text('{"theme": "presentation", "overrides": '
-                         '{"heatmap_interpolation": {"mC": "bilinear"}, "profile_type": "se"}}')
+                         '{"heatmap_interpolation": {"mC": "bilinear"}, "profile_type": "se", '
+                         '"heatmap_colors": {"H3K9me2": "Reds", "RNAseq": ["white", "darkgreen"]}}}')
         proc, pdf, bed = run_script(tmp_path, path, cols, scales, env="most", sort="no",
                                     theme=theme)
         assert proc.returncode == 0, proc.stderr

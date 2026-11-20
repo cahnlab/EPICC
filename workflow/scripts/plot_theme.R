@@ -26,9 +26,11 @@
 # Override rules: a key the theme doesn't define is an error (a typo must not
 # be silently ignored), and a value must have the type of the default it
 # replaces. `heatmap_colors` is the one open map -- it may gain entries for
-# data types the defaults don't name. A `heatmap_colors` entry is either a list
-# of at least two colours or one matplotlib colour-map name ("viridis",
-# "RdBu_r"), looked up in plot_colormaps.json beside this file.
+# data types the defaults don't name, and for single marks (an IP_target such
+# as H3K9me2, RAMPAGE, sRNA_24nt), which win over their data type. A
+# `heatmap_colors` entry is either a list of at least two colours or one
+# matplotlib colour-map name ("viridis", "RdBu_r"), looked up in
+# plot_colormaps.json beside this file.
 
 suppressPackageStartupMessages({
   library(ggplot2)
@@ -77,6 +79,9 @@ suppressPackageStartupMessages({
     TF = .EPICC_SEISMIC,
     ATAC = .EPICC_SEISMIC,
     RNA = .EPICC_SEISMIC,
+    # TSS-capture counts, on a range of their own: a ramp of their own too,
+    # so they don't read as RNA-seq next to it.
+    RNA_RAMPAGE = "PRGn",
     sRNA = .EPICC_SEISMIC,
     mC = .EPICC_ORANGES
   ),
@@ -270,26 +275,27 @@ epicc_dashes <- function(th, colours) {
   setNames(cycle[(rank - 1) %% length(cycle) + 1], names(colours))
 }
 
-# Colour ramp (hex stops) for a heatmap of one data type: the type's own
-# entry, else its family (mCG/mCHG/mCHH -> mC, ChIP_broad -> ChIP), else
-# 'default' (e.g. a mark name such as H3K9me2 that has no entry of its own).
-# A colour-map name is expanded to its stops.
-epicc_heatmap_colors <- function(th, type) {
-  v <- .epicc_type_entry(th$heatmap_colors, type)
+# Colour ramp (hex stops) for a heatmap column of one data type and mark: the
+# mark's own entry (an IP_target such as H3K9me2, RAMPAGE, sRNA_24nt), else
+# the type's, else its family's (mCG/mCHG/mCHH -> mC, RNA_RAMPAGE -> RNA),
+# else 'default'. A colour-map name is expanded to its stops.
+epicc_heatmap_colors <- function(th, type, mark = NULL) {
+  v <- .epicc_type_entry(th$heatmap_colors, type, mark)
   if (length(v) == 1) epicc_colormap(v) else v
 }
 
-# bilinear | nearest for a heatmap column of one data type, with the same
-# fallbacks as epicc_heatmap_colors().
-epicc_heatmap_interpolation <- function(th, type) {
-  .epicc_type_entry(th$heatmap_interpolation, type)
+# bilinear | nearest for a heatmap column of one data type and mark, with the
+# same fallbacks as epicc_heatmap_colors().
+epicc_heatmap_interpolation <- function(th, type, mark = NULL) {
+  .epicc_type_entry(th$heatmap_interpolation, type, mark)
 }
 
-# A per-type map's entry: the type's own, else its family (mCG/mCHG/mCHH ->
-# mC, ChIP_broad -> ChIP), else 'default'.
-.epicc_type_entry <- function(maps, type) {
+# A per-type map's entry: the mark's own, else the type's, else its family
+# (mCG/mCHG/mCHH -> mC, RNA_RAMPAGE -> RNA), else 'default'.
+.epicc_type_entry <- function(maps, type, mark = NULL) {
   family <- sub("_.*$", "", type)
-  if (!is.null(maps[[type]])) maps[[type]]
+  if (length(mark) == 1 && !is.na(mark) && nzchar(mark) && !is.null(maps[[mark]])) maps[[mark]]
+  else if (!is.null(maps[[type]])) maps[[type]]
   else if (grepl("^mC", type) && !is.null(maps[["mC"]])) maps[["mC"]]
   else if (!is.null(maps[[family]])) maps[[family]]
   else maps[["default"]]

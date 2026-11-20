@@ -47,6 +47,12 @@
 
 * [ ] Remove all functions/scripts used for backward compatibility with previous config. 
 
+### Plotting (from the review of cahnlab/EPICC#125)
+
+* [ ] Heatmap colour settings in `tools/epicc-builder.html`: in the plotting options, a colour for each data type the sheet produces, including each ChIP mark, each mC context and each selected sRNA size (writes `plot_theme_overrides.heatmap_colors`).
+* [ ] User-set heatmap ranges per type, e.g. `epicc output --heatmap-scales ATAC=0:1,RNA=-5:50`, accepted only by `epicc output` (heatmap, profile and browser).
+* [ ] An `epicc output` flag for a heatmap without the profiles above it, as `plotHeatmap --whatToShow` allowed.
+
 * [ ] Test ColCEN datasets on different clusters (Elzar, Genotoul) to extract and compare performance (Jon to do).
 
 * [ ] Test run on laptop to check that it works (local executor), and compare with performance on cluster. Use Pombe testrun for small genome.
