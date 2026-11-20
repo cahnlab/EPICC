@@ -70,7 +70,8 @@ profile_data <- function(m, average = "mean", spread = c("none", "se", "std")) {
 # computing_matrix_scales writes). default: the single range deeptools shared
 # across panels (default_ylim()) on every column, or with `per_column` each
 # column's own default_ylim() -- for Profile__, whose panels each autoscale
-# under default, so a CHH or ChIP panel isn't drawn on mCG's range.
+# under default, so a CHH or ChIP panel isn't drawn on mCG's range. shared:
+# one default_ylim() over every curve, on every column.
 profile_limits <- function(m, d, mode = "type", per_column = FALSE) {
   keys <- m$samples$label
   if (mode %in% c("type", "sample")) return(profile_ylims(keys, d, mode))

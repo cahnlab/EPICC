@@ -2,9 +2,10 @@
 # Per-column heatmap and profile limits for one computeMatrix matrix
 # (computing_matrix_scales). Writes the deeptools flag files the plot rules
 # read: "--zMin ... --zMax ..." and "--yMin ... --yMax ...", one value per
-# matrix column in column order; both empty for heatmaps_scales: default.
+# matrix column in column order; both empty for heatmaps_scales: default and
+# shared, whose limits the plots work out themselves.
 #
-# Usage: R_matrix_scales.R <matrix.gz> <type|sample|default> <mean|median>
+# Usage: R_matrix_scales.R <matrix.gz> <type|sample|default|shared> <mean|median>
 #                          <heat_mcg> <heat_mchg> <heat_mchh>
 #                          <params_heatmap.txt> <params_profile.txt>
 #
@@ -27,7 +28,7 @@ if (!average %in% c("mean", "median")) stop("profiles_scale must be mean or medi
 mc <- c(mCG = as.numeric(args[4]), mCHG = as.numeric(args[5]), mCHH = as.numeric(args[6]))
 
 flags <- c(heatmap = "", profile = "")
-if (mode != "default") {
+if (mode %in% c("type", "sample")) {
   m <- read_matrix(args[1])
   flags <- scale_flags(matrix_scales(m, mode, average, mc))
 }

@@ -83,10 +83,12 @@ column_ranges <- function(m) {
   if (mark %in% names(mc_zmax)) c(0, unname(mc_zmax[[mark]])) else c(0, 0.005)
 }
 
-# heatmaps_scales as the scripts take it: type | sample | default, anything
-# else treated as default (as the bash rule did), with a message.
+# heatmaps_scales as the scripts take it: type | sample | default | shared,
+# anything else treated as default (as the bash rule did), with a message.
+# Like default, shared writes no per-column limits: the plots work out one
+# range over every column themselves.
 scale_mode <- function(mode) {
-  if (mode %in% c("type", "sample", "default")) return(mode)
+  if (mode %in% c("type", "sample", "default", "shared")) return(mode)
   message(mode, " unknown. Returning default")
   "default"
 }

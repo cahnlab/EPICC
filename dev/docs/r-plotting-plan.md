@@ -297,14 +297,20 @@ shares it is rerun.
   `--interpolationMethod`, the per-env missing-colour check) from the same
   commit, with `--interpolationMethod` translated instead of dropped (phase
   3).
+  **Dropped after phase 3** (review of cahnlab/EPICC#125): no translation is
+  kept. `heatmaps_plot_params`, `profiles_plot_params` and
+  `heatmap_sort_mc_after_others` stop the run with their replacement named
+  (`REMOVED_PLOT_OPTIONS`), and `R_DRAWN_PLOT_FAMILIES` is gone. A later phase
+  that moves another family to R removes its deeptools options the same way.
 - A `heatmap_colors` entry may now be one matplotlib colour-map name
   (`viridis`, `RdBu_r`), resolved through `workflow/scripts/plot_colormaps.json`
   (all 91 matplotlib maps, 17 stops each; regenerate with
   `dev/gen_plot_colormaps.py`). `plot_theme.R` checks names against it, and so
   will the translation when it returns.
-- Settled in phase 3: each heatmap column is coloured by its data type, and
-  the `all`/`most` entries of `heatmaps_plot_params` translate onto `default`
-  and every non-mC type (an env's own entry wins).
+- Settled in phase 3: each heatmap column is coloured by its data type.
+  After it, a mark's own entry (an IP_target, `RAMPAGE`, `sRNA_24nt`) wins
+  over its type's (`--heatmap-colors` on the CLI), RAMPAGE got a map of its
+  own, and `heatmaps_scales: shared` brought back one range for every column.
 - **Per-type and per-mark scaling: `workflow/scripts/plot_scales.R`** is a
   port of `computing_matrix_scales` (bash, `dataRange`, `plotProfile
   --outFileNameData`). It was made a phase 1 acceptance requirement so that

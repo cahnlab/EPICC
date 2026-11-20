@@ -579,3 +579,24 @@ The combined tokens remain as an **internal** representation: `add_compat_column
 **Rationale**: Drawing at the output's pixel size makes memory follow the figure rather than the region count, so the columns² blowup of #122 cannot come back, and the image is the same in every PDF viewer. Taking one sample at a time from a table read once avoids the two extra full copies `as.matrix` and a sort would make; that copying is what put deeptools at 31 bytes per value. Reading the z limits from `computing_matrix_scales` keeps one source for them; the y limits come from the curves drawn, as in `Profile__`.
 
 **Alternatives considered**: (1) ComplexHeatmap's own rasterisation (`use_raster`, `raster_resize_mat`, `raster_by_magick`). Rejected: its result depends on ImageMagick and the device. It also needs the full matrix in the `Heatmap` object and redoes the colour mapping per cell, where the resampling here is done once and tested. (2) Each column's legend through ComplexHeatmap's heatmap legends. Rejected: 60–120 legends pile up in one block away from their columns; deeptools put a bar under each column. (3) `read_matrix` (a numeric matrix) plus `sort_rows`. Kept for the other scripts, but it holds the values two to three times over during the read and sort. (4) Computing z limits in the heatmap script. Rejected: it would repeat the percentile pass `computing_matrix_scales` already makes, and the two could drift. (5) Reproducing deeptools' `blockStart` value in the sorted BED. Rejected: it is a bug, and nothing reads the file. Under `heatmaps_scales: default`: (a) one scale over the whole matrix, as plotHeatmap chose it. Rejected: the `all` heatmap mixes mC percentages, ChIP log2 ratios and read counts, so one range left all but one kind of column a single colour (on chr21 the ChIP and RNA columns were solid; the range ran to ~30,000 because the mC columns' missing values switch the percentiles to min/max). (b) mC vs the rest. Rejected: RAMPAGE and sRNA still disappeared against ChIP and RNA-seq. RAMPAGE gets its own type, `RNA_RAMPAGE`, rather than a scale split by mark, so the per-type rule stays the one rule and the theme still finds it under `RNA`. A flat column (zMin = zMax) drawn at the ramp's low end, as matplotlib does, was rejected: on a diverging map that reads as strong depletion, where there is no variation at all (an sRNA size class with no reads).
+
+### Heatmap colours by mark, a shared-scale mode, and no translation of the old deeptools plot options
+
+**Decision** (review of cahnlab/EPICC#125):
+- **Colours by mark:** `heatmap_colors` / `heatmap_interpolation` entries may name a single mark: an IP_target such as `H3K9me2`, `RAMPAGE`, or `sRNA_24nt`. A mark's own entry wins over its data type's, and a mark with no entry takes its type's. The mark is the column key's track without `_plus`/`_minus` (`column_theme_marks`).
+  - `epicc run/validate/output --heatmap-colors KEY=MAP|C1:C2,…` sets the entries for one run.
+  - `plot_theme_spec` checks every entry at startup.
+  - An entry that names no theme type and no mark of the run gets a warning, not an error. Its columns keep their type's colours.
+- **RAMPAGE colours:** RAMPAGE gets its own default map, `PRGn`.
+- **`heatmaps_scales: shared`:** one automatic range for every column. For heatmaps this is `default_zlim` over the whole matrix; for profiles it is one `default_ylim` over every curve. It is the deeptools look, so it is now chosen on purpose rather than being what `default` did.
+- **Old deeptools options removed:** `heatmaps_plot_params`, `profiles_plot_params` and `heatmap_sort_mc_after_others` stop the run, and the error names each one's replacement. The translation layer (`legacy_plot_params`, `R_DRAWN_PLOT_FAMILIES`) is gone.
+
+**Rationale**:
+- The colour lookup works by mark, while scale groups stay per data type. That way, colouring H3K9me2 apart from H3K27me3 does not change their `default` range.
+- A typo in a mark name only costs a colour, so a warning is enough. Requiring an entry for every mark would make the option all-or-nothing.
+- Translating the old flags kept an option surface that had no future. The options file and builder no longer write those options, and a run that stops with the replacement named is clearer than a silent translation.
+
+**Alternatives considered**:
+1. Make the display table's `type` per mark (`ChIP_H3K9me2`). Rejected: the type also groups columns for `heatmaps_scales: default`, which would then become per mark, almost the same as `type`.
+2. A colour column in the sample sheet. Rejected: colours are about how the output looks, and a sheet column would put them into the analysis keys' source.
+3. Fail on an unknown key. Rejected as too strict for a cosmetic setting.

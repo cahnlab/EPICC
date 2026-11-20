@@ -93,9 +93,11 @@ read_heatmap_zlim <- function(path, keys) {
 # scale per data type (the display table's type: ChIP, RNA, RNA_RAMPAGE,
 # sRNA, ATAC, mCG, ...), not one over the matrix: percentages, log2 ratios and
 # read counts on one range would leave all but one kind a single colour.
-default_heatmap_zlim <- function(m, display) {
+# heatmaps_scales: shared (`shared = TRUE`) -- the same, over every column at
+# once: one scale for the whole figure, as plotHeatmap drew it.
+default_heatmap_zlim <- function(m, display, shared = FALSE) {
   .check_display(m, display)
-  family <- column_types(display)
+  family <- if (shared) rep("all", nrow(display)) else column_types(display)
   zlim <- data.frame(key = m$samples$label, zmin = NA_real_, zmax = NA_real_,
                      ymin = NA_real_, ymax = NA_real_, stringsAsFactors = FALSE)
   for (f in unique(family)) {
@@ -161,6 +163,12 @@ column_types <- function(display) {
   fallback <- ifelse(grepl("^mC(G|HG|HH)$", column_marks(display$key)),
                      column_marks(display$key), "default")
   ifelse(is.na(type) | type == "", fallback, type)
+}
+
+# The mark of each column as the theme's per-mark entries name it: the key's
+# track without a stranded track's _plus/_minus (H3K9me2, RAMPAGE, sRNA_24nt).
+column_theme_marks <- function(display) {
+  sub("_(plus|minus)$", "", column_marks(display$key))
 }
 
 # The columns the rows are sorted on: in the all env the non-mC ones (a run
@@ -327,6 +335,7 @@ prepare_heatmap <- function(m, display, th, sort_method = "descend", sort_using 
 build_heatmap <- function(m, display, th, prep, zlim, ylim, kind = "regions") {
   .check_display(m, display)
   types <- column_types(display)
+  marks <- column_theme_marks(display)
   strips <- group_strip_labels(m)
   ngroups <- length(strips)
   dashes <- setNames(th$dash_cycle[(seq_len(ngroups) - 1) %% length(th$dash_cycle) + 1],
@@ -353,9 +362,9 @@ build_heatmap <- function(m, display, th, prep, zlim, ylim, kind = "regions") {
     key <- m$samples$label[i]
     z <- scale_for_column(zlim, key)
     y <- ylim[match(key, ylim$key), c("ymin", "ymax")]
-    cf <- heatmap_colour_fun(epicc_heatmap_colors(th, types[i]), z$zmin, z$zmax,
+    cf <- heatmap_colour_fun(epicc_heatmap_colors(th, types[i], marks[i]), z$zmin, z$zmax,
                              th$heatmap_missing_color)
-    mode <- epicc_heatmap_interpolation(th, types[i])
+    mode <- epicc_heatmap_interpolation(th, types[i], marks[i])
     imgs <- prep$images[[i]]
     nb <- nbins[i]
     layer <- local({

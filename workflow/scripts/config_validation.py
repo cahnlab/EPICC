@@ -46,42 +46,30 @@ def format_quoted_params_error(problems):
     return "\n".join(lines)
 
 
-# --- deprecated deeptools plot flags -----------------------------------------
-#
-# heatmaps_plot_params (per env) and profiles_plot_params hold deeptools flags
-# that set how plotHeatmap / plotProfile drew. Both families are drawn in R
-# now, so their flags are translated onto plot-theme keys with a deprecation
-# warning, and any flag with no theme equivalent stops the run. The Snakefile
-# lists the families drawn in R in R_DRAWN_PLOT_FAMILIES; only their flags are
-# translated.
+# --- plot theme --------------------------------------------------------------
 
 PROFILE_TYPES = ("lines", "fill", "se", "std")
 HEATMAP_INTERPOLATIONS = ("bilinear", "nearest")
 
-# Translations equal to the theme's defaults are dropped, so the shipped
-# options file adds nothing to the theme JSON (and reruns nothing).
-_DEFAULT_COLORMAP = {"mC": "Oranges"}           # every other type: seismic
-_DEFAULT_INTERPOLATION = {"mC": "nearest"}      # every other type: bilinear
-_DEFAULT_MISSING = {"0.9", "grey90", "gray90", "#e6e6e6", "#e5e5e5"}
+# Data types the theme's per-type maps name (plot_theme.R's heatmap_colors /
+# heatmap_interpolation, kept in step by a test), plus the mC contexts the
+# display table uses as types. A map entry may also name a single mark.
+THEME_TYPES = ("default", "ChIP", "TF", "ATAC", "RNA", "RNA_RAMPAGE", "sRNA", "mC",
+               "mCG", "mCHG", "mCHH")
 
-# The other values matplotlib's imshow takes for --interpolationMethod, and
-# the one of the two R modes each is closer to.
-_MATPLOTLIB_INTERPOLATIONS = {
-    "none": "nearest",
-    **{name: "bilinear" for name in (
-        "antialiased", "auto", "bicubic", "spline16", "spline36", "hanning", "hamming",
-        "hermite", "kaiser", "quadric", "catrom", "gaussian", "bessel", "mitchell", "sinc",
-        "lanczos", "blackman")},
+# Options of the deeptools-drawn plots, removed once heatmaps and profiles
+# were drawn in R, and what replaces each.
+REMOVED_PLOT_OPTIONS = {
+    "heatmaps_plot_params": "plot_theme_overrides: heatmap_colors, heatmap_interpolation "
+                            "and heatmap_missing_color (see config/epicc-options.yaml)",
+    "profiles_plot_params": "plot_theme_overrides.profile_type (lines | fill | se | std)",
+    "heatmap_sort_mc_after_others": "nothing: Heatmap__...__all__ sorts its rows on the "
+                                    "non-mC columns; for mC sorted on itself, "
+                                    "epicc output --plot-type heatmap --env mC",
 }
 
-# heatmaps_plot_params is keyed by env; the theme maps are keyed by data type.
-# 'all' and 'most' were the heatmaps of the non-mC types, so their flags go to
-# the fallback and to every non-mC type the theme names (plot_theme.R's
-# heatmap_colors / heatmap_interpolation): setting the fallback alone would be
-# shadowed by those types' own entries. An env's own entry (ChIP, RNA, ...)
-# wins over them.
-_GENERIC_ENVS = ("all", "most")
-_NON_MC_TYPES = ("default", "ChIP", "TF", "ATAC", "RNA", "sRNA")
+# Theme keys that are maps from data type (or mark) to a value.
+_TYPE_MAPS = ("heatmap_colors", "heatmap_interpolation")
 
 
 def _colormap_names():
@@ -96,224 +84,53 @@ def _known_colormap(name, names):
     return name in names or (name.endswith("_r") and name[:-2] in names)
 
 
-def _flag_values(words):
-    """Split ['--a', 'x', 'y', '--b=z'] into [('--a', ['x', 'y']), ('--b', ['z'])].
-
-    A long flag may carry its value after '=' (argparse's --flag=value form,
-    which deeptools accepted)."""
-    out = []
-    for w in words:
-        if w.startswith("--"):
-            flag, eq, value = w.partition("=")
-            out.append((flag, [value] if eq else []))
-        elif w.startswith("-") and len(w) == 2 and w[1].isalpha():
-            out.append((w, []))
-        elif out:
-            out[-1][1].append(w)
-        else:
-            out.append((None, [w]))
-    return out
-
-
-def _missing_color(value):
-    """deeptools takes a matplotlib colour; a bare number in [0, 1] is a grey."""
-    try:
-        f = float(value)
-    except ValueError:
-        return value
-    if not 0 <= f <= 1:
-        raise ValueError(f"--missingDataColor {value}: a grey level must be in [0, 1]")
-    level = round(f * 255)
-    return "#{0:02x}{0:02x}{0:02x}".format(level)
-
-
-def _set_type_entry(store, dtype, value, where, key):
-    """One theme-map entry per data type ('*' for 'all' and 'most', which
-    both set every non-mC type, so they must agree)."""
-    if dtype in store and store[dtype][0] != value:
-        target = " of every non-mC type" if dtype == "*" else f".{dtype}"
-        raise ValueError(
-            f"{where}: {key} {value!r} differs from {store[dtype][1]}'s {store[dtype][0]!r}; "
-            f"both set heatmap_{key}{target}. Set plot_theme_overrides.heatmap_{key}.")
-    store[dtype] = (value, where)
-
-
-def _expand_generic(store):
-    """{type: (value, where)} -> {type: value}, the 'all'/'most' entry ('*')
-    spread over every non-mC type an env of its own did not set."""
-    out = {}
-    if "*" in store:
-        out = {t: store["*"][0] for t in _NON_MC_TYPES}
-    out.update({t: v for t, (v, _) in store.items() if t != "*"})
-    return out
-
-
-def _translate_heatmap_params(hp):
-    """heatmaps_plot_params -> (overrides, notes)."""
-    if not isinstance(hp, dict):
-        raise ValueError("heatmaps_plot_params must map each env to a flag string")
-    names = _colormap_names()
-    colors, interp, missing, notes = {}, {}, {}, []
-    for env, flags in hp.items():
-        where = f"heatmaps_plot_params.{env}"
-        dtype = "*" if env in _GENERIC_ENVS else env    # '*': every non-mC type
-        for flag, vals in _flag_values(str(flags or "").split()):
-            if flag == "--colorMap":
-                if len(vals) != 1:
+def _check_type_maps(overrides):
+    """Refuse a malformed heatmap_colors / heatmap_interpolation entry at
+    startup rather than when the first heatmap is drawn. Colour names in a
+    list are left to R, which knows them."""
+    names = None
+    for key in _TYPE_MAPS:
+        value = overrides.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, dict):
+            raise ValueError(f"plot_theme_overrides.{key} must map data types or marks to values")
+        for entry, v in value.items():
+            at = f"plot_theme_overrides.{key}.{entry}"
+            if key == "heatmap_interpolation":
+                if v not in HEATMAP_INTERPOLATIONS:
+                    raise ValueError(f"{at} must be one of {', '.join(HEATMAP_INTERPOLATIONS)}, got {v!r}")
+            elif isinstance(v, str):
+                names = names or _colormap_names()
+                if not _known_colormap(v, names):
                     raise ValueError(
-                        f"{where}: --colorMap with {len(vals)} maps; the R heatmaps take one "
-                        "colour map per data type. Set plot_theme_overrides.heatmap_colors.")
-                if not _known_colormap(vals[0], names):
-                    raise ValueError(f"{where}: unknown colour map '{vals[0]}'")
-                _set_type_entry(colors, dtype, vals[0], where, "colors")
-            elif flag == "--colorList":
-                if len(vals) != 1:
-                    raise ValueError(
-                        f"{where}: --colorList with {len(vals)} lists; the R heatmaps take one "
-                        "list per data type. Set plot_theme_overrides.heatmap_colors.")
-                stops = [c for c in vals[0].split(",") if c]
-                if len(stops) < 2:
-                    raise ValueError(f"{where}: --colorList needs at least two colours")
-                _set_type_entry(colors, dtype, stops, where, "colors")
-            elif flag == "--missingDataColor":
-                if len(vals) != 1:
-                    raise ValueError(f"{where}: --missingDataColor takes one colour")
-                missing[env] = vals[0]
-            elif flag == "--interpolationMethod":
-                if len(vals) != 1:
-                    raise ValueError(f"{where}: --interpolationMethod takes one method")
-                method = vals[0]
-                if method not in HEATMAP_INTERPOLATIONS:
-                    if method not in _MATPLOTLIB_INTERPOLATIONS:
-                        raise ValueError(
-                            f"{where}: --interpolationMethod {method} is not a matplotlib "
-                            "interpolation method")
-                    sub = _MATPLOTLIB_INTERPOLATIONS[method]
-                    notes.append(f"{where}: --interpolationMethod {method} is drawn as "
-                                 f"'{sub}' (the R heatmaps do bilinear or nearest)")
-                    method = sub
-                _set_type_entry(interp, dtype, method, where, "interpolation")
-            else:
-                raise ValueError(
-                    f"{where}: '{flag or vals[0]}' has no equivalent now that heatmaps are "
-                    "drawn in R. Remove it; set the look with plot_theme / "
-                    "plot_theme_overrides (keys: heatmap_colors, heatmap_interpolation, "
-                    "heatmap_missing_color, heatmap_column_width, heatmap_height, "
-                    "profile_strip_height).")
-    overrides = {}
-    colors = {t: v for t, v in _expand_generic(colors).items()
-              if v != _DEFAULT_COLORMAP.get(t, "seismic")}
-    if colors:
-        overrides["heatmap_colors"] = colors
-    interp = {t: v for t, v in _expand_generic(interp).items()
-              if v != _DEFAULT_INTERPOLATION.get(t, "bilinear")}
-    if interp:
-        overrides["heatmap_interpolation"] = interp
-    distinct = {v.lower() for v in missing.values()} - _DEFAULT_MISSING
-    if len(distinct) > 1:
-        raise ValueError(
-            "heatmaps_plot_params: --missingDataColor differs between envs "
-            f"({', '.join(f'{e}={v}' for e, v in sorted(missing.items()))}); the theme has one "
-            "heatmap_missing_color. Set plot_theme_overrides.heatmap_missing_color.")
-    if distinct:
-        overrides["heatmap_missing_color"] = _missing_color(
-            next(v for v in missing.values() if v.lower() in distinct))
-    return overrides, notes
+                        f"{at}: unknown colour map {v!r} (add _r to reverse one). "
+                        f"Known maps: {', '.join(sorted(names))}")
+            elif not (isinstance(v, list) and len(v) >= 2 and all(isinstance(c, str) for c in v)):
+                raise ValueError(f"{at} must be a colour-map name or a list of at least two colours")
 
 
-def legacy_plot_params(config, r_drawn=()):
-    """Translate heatmaps_plot_params / profiles_plot_params onto theme keys.
-
-    `r_drawn` names the plot families drawn in R ("heatmaps", "profiles");
-    only their flags are translated. Returns (overrides, warnings): theme
-    overrides to apply under the user's own plot_theme_overrides, and one
-    deprecation warning per option translated. Raises ValueError for a flag or
-    value with no theme equivalent.
-
-      --colorMap NAME           -> heatmap_colors.<type>: NAME (a matplotlib map)
-      --colorList C1,C2,...     -> heatmap_colors.<type>: [C1, C2, ...]
-      --missingDataColor X      -> heatmap_missing_color
-      --interpolationMethod M   -> heatmap_interpolation.<type>: bilinear | nearest
-                                   (other matplotlib methods: the closer of the
-                                   two, with a note in the warning)
-      --plotType T              -> profile_type (lines | fill | se | std)
-
-    <type> is the env key of heatmaps_plot_params, except 'all' and 'most',
-    which set the fallback ('default') and every non-mC type the theme names
-    (an env's own entry wins over them).
-    """
-    overrides, warnings = {}, []
-    if "heatmaps" in r_drawn and config.get("heatmaps_plot_params"):
-        added, notes = _translate_heatmap_params(config["heatmaps_plot_params"])
-        overrides.update(added)
-        warnings.append(
-            "heatmaps_plot_params is deprecated: heatmaps are drawn in R and take their look "
-            "from plot_theme / plot_theme_overrides. "
-            + (f"Translated to plot_theme_overrides: {overrides_summary(added)}. "
-               if added else "Its settings match the theme defaults. ")
-            + "".join(f"{n}. " for n in notes)
-            + "Remove heatmaps_plot_params from the options file.")
-    if "heatmaps" in r_drawn and "heatmap_sort_mc_after_others" in config:
-        warnings.append(
-            "heatmap_sort_mc_after_others is deprecated and ignored: the default heatmap "
-            "(Heatmap__<matrix>__all__...) draws every data type in one figure, its rows "
-            "sorted on the non-mC columns. For mC sorted on itself, make the mC-only heatmap: "
-            "epicc output --plot-type heatmap --env mC. Remove the option from the options file.")
-    if "profiles" in r_drawn and config.get("profiles_plot_params"):
-        added = {}
-        for flag, vals in _flag_values(str(config["profiles_plot_params"]).split()):
-            if flag == "--plotType":
-                if len(vals) != 1 or vals[0] not in PROFILE_TYPES:
-                    raise ValueError(
-                        f"profiles_plot_params: --plotType {' '.join(vals)} is not drawn in R; "
-                        f"use one of {', '.join(PROFILE_TYPES)} (plot_theme_overrides.profile_type).")
-                # The default is dropped, so the old shipped value adds
-                # nothing to the theme JSON (and reruns nothing).
-                if vals[0] != "lines":
-                    added["profile_type"] = vals[0]
-            else:
-                raise ValueError(
-                    f"profiles_plot_params: '{flag or vals[0]}' has no equivalent now that "
-                    "profiles are drawn in R. Remove it; set the look with plot_theme / "
-                    "plot_theme_overrides (keys: profile_type, line_width, panel_width, "
-                    "panel_height).")
-        overrides.update(added)
-        warnings.append(
-            "profiles_plot_params is deprecated: profiles are drawn in R and take their look "
-            "from plot_theme / plot_theme_overrides. "
-            + (f"Translated to plot_theme_overrides: {overrides_summary(added)}. "
-               if added else "Its settings match the theme defaults. ")
-            + "Remove profiles_plot_params from the options file.")
-    return overrides, warnings
-
-
-# Theme keys that are maps from data type to a value (plot_theme.R's open maps).
-_TYPE_MAPS = ("heatmap_colors", "heatmap_interpolation")
-
-
-def overrides_summary(overrides):
-    import json
-    return ", ".join(f"{k}={json.dumps(v)}" for k, v in sorted(overrides.items()))
-
-
-def plot_theme_spec(config, r_drawn=()):
+def plot_theme_spec(config):
     """The plot-theme choice handed to the R plotting scripts, as JSON.
 
     `plot_theme` names a built-in theme of workflow/scripts/plot_theme.R and
-    `plot_theme_overrides` replaces individual keys of it. Only the shape is
-    checked here; plot_theme.R owns the key list and refuses unknown keys and
-    wrong value types when a plot is drawn.
+    `plot_theme_overrides` replaces individual keys of it. The shape is checked
+    here, and the per-type maps' entries; plot_theme.R owns the key list and
+    refuses unknown keys and wrong value types when a plot is drawn.
 
-    The deprecated deeptools flags of the families in `r_drawn` are translated
-    (legacy_plot_params) and applied beneath plot_theme_overrides, which wins
-    key by key (the per-type maps heatmap_colors and heatmap_interpolation
-    entry by entry).
-
-    Returns (json, warnings). Raises ValueError on a malformed setting so the
-    Snakefile can refuse it at startup.
+    Raises ValueError on a malformed setting, or on an option of the old
+    deeptools plots (REMOVED_PLOT_OPTIONS), so the Snakefile can refuse it at
+    startup.
     """
     import json
 
+    removed = [k for k in REMOVED_PLOT_OPTIONS if k in config]
+    if removed:
+        raise ValueError(
+            "Option(s) of the old deeptools plots, removed now that heatmaps and profiles "
+            "are drawn in R: " + "; ".join(
+                f"{k} -> {REMOVED_PLOT_OPTIONS[k]}" for k in removed)
+            + ". Remove them from the options file.")
     name = config.get("plot_theme") or "default"
     overrides = config.get("plot_theme_overrides") or {}
     if not isinstance(name, str):
@@ -322,11 +139,18 @@ def plot_theme_spec(config, r_drawn=()):
         raise ValueError(
             "plot_theme_overrides must be a mapping of theme keys to values, "
             f"got {type(overrides).__name__}")
-    legacy, warnings = legacy_plot_params(config, r_drawn)
-    merged = dict(legacy)
-    for key, value in overrides.items():
-        if key in _TYPE_MAPS and isinstance(value, dict) and isinstance(merged.get(key), dict):
-            merged[key] = {**merged[key], **value}
-        else:
-            merged[key] = value
-    return json.dumps({"theme": name, "overrides": merged}, sort_keys=True), warnings
+    _check_type_maps(overrides)
+    return json.dumps({"theme": name, "overrides": overrides}, sort_keys=True)
+
+
+def unmatched_theme_entries(config, marks):
+    """heatmap_colors / heatmap_interpolation entries that name neither a data
+    type of the theme nor one of `marks`, the marks this run plots. Such an
+    entry is never looked up -- a typo, most likely -- and its columns fall
+    back to their data type's entry."""
+    overrides = config.get("plot_theme_overrides") or {}
+    known = set(THEME_TYPES) | set(marks)
+    return [f"plot_theme_overrides.{key}.{entry}"
+            for key in _TYPE_MAPS
+            for entry in (overrides.get(key) or {})
+            if entry not in known]

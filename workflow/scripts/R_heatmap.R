@@ -3,15 +3,16 @@
 # drawn in R with ComplexHeatmap from the matrix itself (plot_heatmap.R).
 #
 # Usage: R_heatmap.R <matrix.gz> <columns.tsv> <regions|tss|tes> <env>
-#                    <type|sample|default> <mean|median> <no|mean|median>
+#                    <type|sample|default|shared> <mean|median> <no|mean|median>
 #                    <params_heatmap.txt> <Heatmap__.pdf> <sorted_regions.bed>
 #                    [theme.json]
 #
 # columns.tsv: key, label, colour, track, series, type per matrix column, in
 # column order (matrix_sample_labels.py). params_heatmap.txt: the
 # "--zMin ... --zMax ..." computing_matrix_scales writes, one value per column
-# in column order; empty under heatmaps_scales: default, when the scales are
-# worked out here (default_heatmap_zlim: one per data type). The top profiles'
+# in column order; empty under heatmaps_scales: default and shared, when the
+# scales are worked out here (default_heatmap_zlim: one per data type, or one
+# over every column for shared). The top profiles'
 # y-limits come from the very curves drawn, as in Profile__.
 #
 # Rows sort within each region group (heatmaps_sort_options: mean/median =
@@ -48,14 +49,15 @@ display <- read_display_table(args[2])
 
 keys <- m$samples$label
 zlim <- read_heatmap_zlim(args[8], keys)
-if (is.null(zlim)) zlim <- default_heatmap_zlim(m, display)
+if (is.null(zlim)) zlim <- default_heatmap_zlim(m, display, shared = mode == "shared")
 
 prep <- prepare_heatmap(m, display, th, sort[1], sort[2], average, env)
 # The table is no longer needed: everything the figure draws is in `prep`.
 m$table <- NULL
 invisible(gc())
 
-# Top profiles on Profile__'s limits (each column its own range under default).
+# Top profiles on Profile__'s limits (each column its own range under default,
+# one range over every column under shared).
 ylim <- profile_limits(m, prep$d, mode, per_column = mode == "default")
 write_sorted_regions(m, prep$ord, args[10])
 fig <- build_heatmap(m, display, th, prep, zlim, ylim, kind)
