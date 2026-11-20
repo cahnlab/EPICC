@@ -75,8 +75,13 @@ _MATPLOTLIB_INTERPOLATIONS = {
 }
 
 # heatmaps_plot_params is keyed by env; the theme maps are keyed by data type.
-# 'all' and 'most' hold every type, so they set the fallback entry only.
-_ENV_TO_TYPE = {"all": "default", "most": "default"}
+# 'all' and 'most' were the heatmaps of the non-mC types, so their flags go to
+# the fallback and to every non-mC type the theme names (plot_theme.R's
+# heatmap_colors / heatmap_interpolation): setting the fallback alone would be
+# shadowed by those types' own entries. An env's own entry (ChIP, RNA, ...)
+# wins over them.
+_GENERIC_ENVS = ("all", "most")
+_NON_MC_TYPES = ("default", "ChIP", "TF", "ATAC", "RNA", "sRNA")
 
 
 def _colormap_names():
@@ -123,13 +128,24 @@ def _missing_color(value):
 
 
 def _set_type_entry(store, dtype, value, where, key):
-    """One theme-map entry per data type; 'all' and 'most' both land on
-    'default', so they must agree."""
+    """One theme-map entry per data type ('*' for 'all' and 'most', which
+    both set every non-mC type, so they must agree)."""
     if dtype in store and store[dtype][0] != value:
+        target = " of every non-mC type" if dtype == "*" else f".{dtype}"
         raise ValueError(
             f"{where}: {key} {value!r} differs from {store[dtype][1]}'s {store[dtype][0]!r}; "
-            f"both set heatmap_{key}.{dtype}. Set plot_theme_overrides.heatmap_{key}.")
+            f"both set heatmap_{key}{target}. Set plot_theme_overrides.heatmap_{key}.")
     store[dtype] = (value, where)
+
+
+def _expand_generic(store):
+    """{type: (value, where)} -> {type: value}, the 'all'/'most' entry ('*')
+    spread over every non-mC type an env of its own did not set."""
+    out = {}
+    if "*" in store:
+        out = {t: store["*"][0] for t in _NON_MC_TYPES}
+    out.update({t: v for t, (v, _) in store.items() if t != "*"})
+    return out
 
 
 def _translate_heatmap_params(hp):
@@ -140,7 +156,7 @@ def _translate_heatmap_params(hp):
     colors, interp, missing, notes = {}, {}, {}, []
     for env, flags in hp.items():
         where = f"heatmaps_plot_params.{env}"
-        dtype = _ENV_TO_TYPE.get(env, env)
+        dtype = "*" if env in _GENERIC_ENVS else env    # '*': every non-mC type
         for flag, vals in _flag_values(str(flags or "").split()):
             if flag == "--colorMap":
                 if len(vals) != 1:
@@ -185,11 +201,11 @@ def _translate_heatmap_params(hp):
                     "heatmap_missing_color, heatmap_column_width, heatmap_height, "
                     "profile_strip_height).")
     overrides = {}
-    colors = {t: v for t, (v, _) in colors.items()
+    colors = {t: v for t, v in _expand_generic(colors).items()
               if v != _DEFAULT_COLORMAP.get(t, "seismic")}
     if colors:
         overrides["heatmap_colors"] = colors
-    interp = {t: v for t, (v, _) in interp.items()
+    interp = {t: v for t, v in _expand_generic(interp).items()
               if v != _DEFAULT_INTERPOLATION.get(t, "bilinear")}
     if interp:
         overrides["heatmap_interpolation"] = interp
@@ -223,7 +239,8 @@ def legacy_plot_params(config, r_drawn=()):
       --plotType T              -> profile_type (lines | fill | se | std)
 
     <type> is the env key of heatmaps_plot_params, except 'all' and 'most',
-    which set the 'default' entry (the fallback for every type).
+    which set the fallback ('default') and every non-mC type the theme names
+    (an env's own entry wins over them).
     """
     overrides, warnings = {}, []
     if "heatmaps" in r_drawn and config.get("heatmaps_plot_params"):

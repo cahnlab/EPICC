@@ -87,6 +87,30 @@ read_heatmap_zlim <- function(path, keys) {
   }
   z
 }
+# heatmaps_scales: default -- the colour scale plotHeatmap chose with no
+# --zMin/--zMax (default_zlim: 1st/98th percentiles), from read_matrix_table's
+# table column by column. One scale for the mC columns and one for the rest,
+# not one over both: percentages and log2 ratios on one range would leave the
+# non-mC columns a single colour. (Before the all heatmap, the most and mC
+# heatmaps were separate plots and got one range each.)
+default_heatmap_zlim <- function(m, display) {
+  family <- ifelse(grepl("^mC", column_types(display)), "mC", "other")
+  zlim <- data.frame(key = m$samples$label, zmin = NA_real_, zmax = NA_real_,
+                     ymin = NA_real_, ymax = NA_real_, stringsAsFactors = FALSE)
+  for (f in unique(family)) {
+    which_col <- which(family == f)
+    cols <- unlist(lapply(which_col, sample_columns, m = m))
+    z <- default_zlim_columns(function(j) {
+      v <- m$table[[cols[j]]]
+      v[!is.finite(v)] <- NA_real_
+      v
+    }, length(cols))
+    zlim$zmin[which_col] <- z[1]
+    zlim$zmax[which_col] <- z[2]
+  }
+  zlim
+}
+
 # --- colours ------------------------------------------------------------------
 
 # A function mapping values to colours for one column: the ramp's stops spread
@@ -236,8 +260,8 @@ prepare_heatmap <- function(m, display, th, sort_method = "descend", sort_using 
                            lwd = th$line_width * ggplot2::.pt))
     }
     popViewport()
-    grid.yaxis(at = pretty(yr, 3)[pretty(yr, 3) >= yr[1] & pretty(yr, 3) <= yr[2]],
-               gp = epicc_gpar(th, 0.6))
+    at <- pretty(yr, 3)
+    grid.yaxis(at = at[at >= yr[1] & at <= yr[2]], gp = epicc_gpar(th, 0.6))
     popViewport()
   }
   AnnotationFunction(fun = fun, which = "column", height = height,
@@ -248,7 +272,6 @@ prepare_heatmap <- function(m, display, th, sort_method = "descend", sort_using 
 # and a horizontal colour bar over the column's zmin..zmax.
 .bottom_annotation <- function(nbins, ticks, cf, zmin, zmax, th, height) {
   fun <- function(index, k, n) {
-    h <- convertHeight(unit(1, "npc"), "in", valueOnly = TRUE)
     tick_h <- 0.38
     pushViewport(viewport(y = unit(1, "npc"), height = unit(tick_h, "in"), just = "top",
                           xscale = c(-0.5, nbins - 0.5)))
@@ -289,7 +312,6 @@ build_heatmap <- function(m, display, th, prep, zlim, ylim, kind = "regions") {
   ngroups <- length(strips)
   dashes <- setNames(th$dash_cycle[(seq_len(ngroups) - 1) %% length(th$dash_cycle) + 1],
                      m$groups$label)
-  ticks <- profile_ticks(m, kind)
   nbins <- m$samples$nbins
   dpi <- th$heatmap_raster_dpi
   # Rows ComplexHeatmap lays out per group: the binned image rows, so the
@@ -331,16 +353,14 @@ build_heatmap <- function(m, display, th, prep, zlim, ylim, kind = "regions") {
       }
     })
     dk <- prep$d[as.character(prep$d$sample) == key, , drop = FALSE]
+    col_ticks <- matrix_ticks(m, i, ref_label = if (kind == "tes") "end" else "start",
+                              start_label = "start", end_label = "end")
     top <- HeatmapAnnotation(
       profile = .profile_annotation(dk, nb, y$ymin, y$ymax, display$colour[i], dashes, th,
-                                    matrix_ticks(m, i, ref_label = if (kind == "tes") "end" else "start",
-                                                 start_label = "start", end_label = "end"),
-                                    unit(th$profile_strip_height, "in")),
+                                    col_ticks, unit(th$profile_strip_height, "in")),
       show_annotation_name = FALSE)
     bottom <- HeatmapAnnotation(
-      axis = .bottom_annotation(nb, matrix_ticks(m, i, ref_label = if (kind == "tes") "end" else "start",
-                                                 start_label = "start", end_label = "end"),
-                                cf, z$zmin, z$zmax, th, unit(0.85, "in")),
+      axis = .bottom_annotation(nb, col_ticks, cf, z$zmin, z$zmax, th, unit(0.85, "in")),
       show_annotation_name = FALSE)
     ht <- Heatmap(
       matrix(0, length(split), 1), name = key, col = c("white"), rect_gp = gpar(type = "none"),

@@ -302,9 +302,9 @@ shares it is rerun.
   (all 91 matplotlib maps, 17 stops each; regenerate with
   `dev/gen_plot_colormaps.py`). `plot_theme.R` checks names against it, and so
   will the translation when it returns.
-- Open for phase 3: `heatmaps_plot_params` has `all`/`most` entries, which
-  translate to `heatmap_colors.all`/`.most`. Decide whether the cross-type
-  heatmaps use those or colour each column by its data type.
+- Settled in phase 3: each heatmap column is coloured by its data type, and
+  the `all`/`most` entries of `heatmaps_plot_params` translate onto `default`
+  and every non-mC type (an env's own entry wins).
 - **Per-type and per-mark scaling: `workflow/scripts/plot_scales.R`** is a
   port of `computing_matrix_scales` (bash, `dataRange`, `plotProfile
   --outFileNameData`). It was made a phase 1 acceptance requirement so that

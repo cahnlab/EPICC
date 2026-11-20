@@ -7,6 +7,7 @@ check. Skipped where Rscript with ggplot2 and jsonlite is not installed.
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -134,15 +135,46 @@ class TestLegacyPlotParams:
             "heatmap_missing_color": "#808080"}
         assert "Translated to plot_theme_overrides" in warnings[0]
 
-    def test_all_and_most_set_the_fallback(self):
+    def test_all_and_most_set_every_non_mc_type(self):
+        # The theme has its own entry per non-mC type, which the lookup tries
+        # before 'default': 'all'/'most' setting the fallback alone would
+        # change no column.
         cfg = {"heatmaps_plot_params": {"all": "--colorMap viridis --interpolationMethod nearest",
                                         "most": "--colorMap=viridis"}}
         overrides, _ = legacy_plot_params(cfg, HEATMAPS)
-        assert overrides == {"heatmap_colors": {"default": "viridis"},
-                             "heatmap_interpolation": {"default": "nearest"}}
+        non_mc = ("default", "ChIP", "TF", "ATAC", "RNA", "sRNA")
+        assert overrides == {"heatmap_colors": {t: "viridis" for t in non_mc},
+                             "heatmap_interpolation": {t: "nearest" for t in non_mc}}
         cfg = {"heatmaps_plot_params": {"all": "--colorMap viridis", "most": "--colorMap magma"}}
-        with pytest.raises(ValueError, match="both set heatmap_colors.default"):
+        with pytest.raises(ValueError, match="both set heatmap_colors of every non-mC type"):
             legacy_plot_params(cfg, HEATMAPS)
+
+    def test_an_envs_own_entry_wins_over_most(self):
+        cfg = {"heatmaps_plot_params": {"most": "--colorMap viridis", "RNA": "--colorMap magma",
+                                        "mC": "--colorMap Oranges"}}
+        overrides, _ = legacy_plot_params(cfg, HEATMAPS)
+        assert overrides["heatmap_colors"]["RNA"] == "magma"
+        assert overrides["heatmap_colors"]["ChIP"] == "viridis"
+        assert "mC" not in overrides["heatmap_colors"]
+
+    def test_non_mc_types_match_the_theme(self):
+        # config_validation's list must name every non-mC entry plot_theme.R
+        # gives heatmap_colors and heatmap_interpolation.
+        from config_validation import _NON_MC_TYPES
+        text = THEME.read_text()
+        for key in ("heatmap_colors", "heatmap_interpolation"):
+            block = text[text.index(f"  {key} = list(") + len(f"  {key} = list("):]
+            block = block[:block.index("\n  )")]
+            entries = re.findall(r"^\s+(\w+) =", block, flags=re.M)
+            assert sorted(e for e in entries if e != "mC") == sorted(_NON_MC_TYPES), key
+
+    @needs_r
+    def test_most_flags_reach_the_chip_columns(self, tmp_path):
+        text, _ = plot_theme_spec({"heatmaps_plot_params": {"most": "--interpolationMethod nearest"}},
+                                  HEATMAPS)
+        out = _r('cat(epicc_heatmap_interpolation(th, "ChIP"), '
+                 'epicc_heatmap_interpolation(th, "mCG"))', json.loads(text), tmp_path)
+        assert out.stdout.split() == ["nearest", "nearest"]
 
     def test_interpolation(self):
         cfg = {"heatmaps_plot_params": {"ChIP": "--interpolationMethod nearest",

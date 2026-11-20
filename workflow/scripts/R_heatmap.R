@@ -10,8 +10,9 @@
 # columns.tsv: key, label, colour, track, series, type per matrix column, in
 # column order (matrix_sample_labels.py). params_heatmap.txt: the
 # "--zMin ... --zMax ..." computing_matrix_scales writes, one value per column
-# in column order; empty under heatmaps_scales: default, when one scale is
-# worked out here for the whole matrix (default_scales). The top profiles'
+# in column order; empty under heatmaps_scales: default, when the scales are
+# worked out here (default_heatmap_zlim: one for the mC columns, one for the
+# rest, as the old mC and most heatmaps each had their own). The top profiles'
 # y-limits come from the very curves drawn, as in Profile__.
 #
 # Rows sort within each region group (heatmaps_sort_options: mean/median =
@@ -48,18 +49,7 @@ display <- read_display_table(args[2])
 
 keys <- m$samples$label
 zlim <- read_heatmap_zlim(args[8], keys)
-if (is.null(zlim)) {
-  # heatmaps_scales: default -- one colour scale over the whole matrix, as
-  # plotHeatmap chose it with no --zMin/--zMax (default_scales), worked out
-  # column by column rather than from one vector of every value.
-  z <- default_zlim_columns(function(j) {
-    v <- m$table[[j]]
-    v[!is.finite(v)] <- NA_real_
-    v
-  }, ncol(m$table))
-  zlim <- data.frame(key = keys, zmin = z[1], zmax = z[2], ymin = NA_real_, ymax = NA_real_,
-                     stringsAsFactors = FALSE)
-}
+if (is.null(zlim)) zlim <- default_heatmap_zlim(m, display)
 
 prep <- prepare_heatmap(m, display, th, sort[1], sort[2], average, env)
 # The table is no longer needed: everything the figure draws is in `prep`.
