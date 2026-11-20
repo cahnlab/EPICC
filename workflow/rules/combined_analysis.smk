@@ -263,6 +263,19 @@ def _plot_columns(wildcards):
     if strand == "nostrand":
         strand = "plus"
 
+    def _data_type(row, mark):
+        # The display table's type: picks a heatmap column's colours and
+        # interpolation (theme, looked up type, then family before '_', then
+        # default) and, under heatmaps_scales: default, the columns that share a
+        # colour range. The env, the context for mC, and RNA_RAMPAGE for
+        # RAMPAGE: TSS-capture counts sit far below RNA-seq coverage, so a
+        # shared range would flatten them; the theme still finds it under RNA.
+        if row.env == "mC":
+            return mark
+        if row.Assay == "RAMPAGE":
+            return "RNA_RAMPAGE"
+        return row.env
+
     def add(group, row, sid, bw, mark, rep="", track=None, suffix=""):
         track = track or mark
         # The key names a column in every data file (matrix, browser scratch
@@ -273,7 +286,7 @@ def _plot_columns(wildcards):
                                "assay": row.Assay, "replicate": rep, "sid": sid,
                                "suffix": suffix, "track": track, "key": f"{sid}__{track}",
                                "type": row.levels_label,
-                               "dtype": mark if row.env == "mC" else row.env})
+                               "dtype": _data_type(row, mark)})
 
     def add_pair(group, row, sid, bw1, bw2, mark, rep=""):
         add(group, row, sid, bw1, mark, rep, f"{mark}_plus", "_plus")

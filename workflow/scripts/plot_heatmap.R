@@ -88,13 +88,13 @@ read_heatmap_zlim <- function(path, keys) {
   z
 }
 # heatmaps_scales: default -- the colour scale plotHeatmap chose with no
-# --zMin/--zMax (default_zlim: 1st/98th percentiles), from read_matrix_table's
-# table column by column. One scale for the mC columns and one for the rest,
-# not one over both: percentages and log2 ratios on one range would leave the
-# non-mC columns a single colour. (Before the all heatmap, the most and mC
-# heatmaps were separate plots and got one range each.)
+# --zMin/--zMax (default_zlim: 1st/98th percentiles, or the full range when a
+# value is missing), from read_matrix_table's table column by column. One
+# scale per data type (the display table's type: ChIP, RNA, RNA_RAMPAGE,
+# sRNA, ATAC, mCG, ...), not one over the matrix: percentages, log2 ratios and
+# read counts on one range would leave all but one kind a single colour.
 default_heatmap_zlim <- function(m, display) {
-  family <- ifelse(grepl("^mC", column_types(display)), "mC", "other")
+  family <- column_types(display)
   zlim <- data.frame(key = m$samples$label, zmin = NA_real_, zmax = NA_real_,
                      ymin = NA_real_, ymax = NA_real_, stringsAsFactors = FALSE)
   for (f in unique(family)) {

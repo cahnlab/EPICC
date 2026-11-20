@@ -127,6 +127,20 @@ def test_display_covers_both_strand_layouts(env):
             assert rows[key] == tuple(rest)
 
 
+def test_data_types_of_the_display_table():
+    # The type column picks heatmap colours (theme lookup falls back on the
+    # family before '_') and, under heatmaps_scales: default, the columns that
+    # share a range: RAMPAGE gets one apart from RNA-seq.
+    ns, genome = tpl._builders("test_samples_hg38_chr21.tsv", False)
+    wc = SimpleNamespace(ref_genome=genome, env="all", strand="unstranded")
+    fn = ns["define_key_for_plots"]
+    types = dict(zip(fn(wc, "tracks"), fn(wc, "dtypes")))
+    assert types["RAMPAGE_plus"] == types["RAMPAGE_minus"] == "RNA_RAMPAGE"
+    assert types["RNAseq_plus"] == "RNA"
+    assert types["CTCF"] == "ChIP"
+    assert types["mCG"] == "mCG"
+
+
 def test_keys_end_in_their_track():
     # computing_matrix_scales reads the mark back from the last '__' field, and
     # prep_browser_on_region negates keys ending in '_minus'.

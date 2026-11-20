@@ -291,17 +291,18 @@ class TestPrepare:
             cat(ok)""")
         assert out.strip() == "TRUE"
 
-    def test_default_scale_one_for_mc_one_for_the_rest(self, all_matrix):
-        # heatmaps_scales: default in the all env: mC percentages and the
-        # other marks' values each get a range of their own, not one shared.
+    def test_default_scale_per_data_type(self, all_matrix):
+        # heatmaps_scales: default in the all env: each data type (ChIP, RNA,
+        # mCG, mCHH here) gets a range of its own, not one shared.
         path, cols, rows = all_matrix
         out = run_r_ok(
             f'm <- read_matrix_table("{path}"); d <- read_display_table("{cols}"); '
             'z <- default_heatmap_zlim(m, d); '
             'v <- function(k) unlist(lapply(k, function(s) unlist(m$table[, sample_columns(m, s), with = FALSE]))); '
-            'other <- default_zlim(v(1:4)); mc <- default_zlim(v(5:7)); '
-            'cat(identical(z$zmin, c(rep(other[1], 4), rep(mc[1], 3))), '
-            'identical(z$zmax, c(rep(other[2], 4), rep(mc[2], 3))), other[2] < mc[1])')
+            'g <- list(1:2, 3:4, 5:6, 7); '
+            'want <- do.call(rbind, lapply(g, function(k) t(replicate(length(k), default_zlim(v(k)))))); '
+            'cat(identical(z$zmin, want[, 1]), identical(z$zmax, want[, 2]), '
+            'z$zmax[1] != z$zmax[3] && z$zmax[1] < z$zmin[5])')
         assert out.split() == ["TRUE", "TRUE", "TRUE"]
 
     def test_images_per_group_in_row_order(self, all_matrix):

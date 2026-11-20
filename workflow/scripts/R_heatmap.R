@@ -11,8 +11,7 @@
 # column order (matrix_sample_labels.py). params_heatmap.txt: the
 # "--zMin ... --zMax ..." computing_matrix_scales writes, one value per column
 # in column order; empty under heatmaps_scales: default, when the scales are
-# worked out here (default_heatmap_zlim: one for the mC columns, one for the
-# rest, as the old mC and most heatmaps each had their own). The top profiles'
+# worked out here (default_heatmap_zlim: one per data type). The top profiles'
 # y-limits come from the very curves drawn, as in Profile__.
 #
 # Rows sort within each region group (heatmaps_sort_options: mean/median =
