@@ -20,6 +20,10 @@ structural_rna_classes:
   filter: []  # no structural RNA depletion
 browser_TE_file: false
 
+# CpG only: human somatic non-CpG methylation is background, and the HG002 ONT
+# bedMethyl comes from a CpG-only (5mCG) model, so it has no CHG/CHH calls.
+methylation_contexts: ["CG"]
+
 # Reference genome
 genomes:
   hg38_chr21:

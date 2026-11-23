@@ -1315,7 +1315,9 @@ rule convert_bedmethyl_to_cx_report:
     and call_DMRs_pairwise.
 
     When methylation_contexts is a strict subset of {CG, CHG, CHH}, the
-    output is filtered to only those contexts.
+    output is filtered to only those contexts. A listed context with no
+    covered call (a CpG-only ONT model under CG/CHG/CHH) stops the rule with
+    an error naming methylation_contexts, before any per-context step runs.
     """
     input:
         bedmethyl = f"{RESULTS_DIR}/mC/dmc/pileup__{{sample_name}}.bedmethyl.gz",
@@ -1343,7 +1345,10 @@ rule convert_bedmethyl_to_cx_report:
         printf "Active methylation contexts: {params.context_filter}\n"
 
         # Convert bedMethyl to CX_report (context determined from reference)
-        python {params.script} {input.bedmethyl} {input.fasta} /dev/stdout > {config[output_dir]}/mC/dmc/tmp__{params.sample_name}.cx
+        # and stop if a context in methylation_contexts has no covered call
+        # (CpG-only ONT model) -- the earliest point the contexts are known.
+        python {params.script} {input.bedmethyl} {input.fasta} /dev/stdout "{params.context_filter}" "{params.sample_name}" > {config[output_dir]}/mC/dmc/tmp__{params.sample_name}.cx \
+            || {{ rm -f {config[output_dir]}/mC/dmc/tmp__{params.sample_name}.cx; exit 1; }}
 
         # Filter to active contexts if the user requested a strict subset.
         # The full set is "CG|CHG|CHH" — when that's what we got, skip the

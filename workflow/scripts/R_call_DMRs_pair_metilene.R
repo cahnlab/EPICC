@@ -143,10 +143,14 @@ if (any(usable == 0)) {
     paste0("no covered %s position in %d of %d replicate(s): %s\n",
            "  Cached from: %s\n",
            "  These samples have zero coverage in this context, so metilene has ",
-           "nothing to test. Check the mapping reports for them."),
+           "nothing to test. Check the mapping reports for them.\n",
+           "  A dmC (ONT/PacBio) sample from a CpG-only basecalling model has ",
+           "no %s calls at all: list only the contexts its calls cover in ",
+           "methylation_contexts (e.g. [\"CG\"]), or call the reads with an ",
+           "all-context model (Dorado's 5mC_5hmC models)."),
     context, length(dead), length(rates),
     paste(all_names[dead], collapse = ", "),
-    paste(all_paths[dead], collapse = ", ")))
+    paste(all_paths[dead], collapse = ", "), context))
 }
 
 # ---------------------------------------------------------------------------
