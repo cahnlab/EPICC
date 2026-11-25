@@ -47,11 +47,18 @@
 
 * [ ] Remove all functions/scripts used for backward compatibility with previous config. 
 
-### Plotting (from the review of cahnlab/EPICC#125)
+### Plotting (from the review of cahnlab/EPICC#125 and more)
 
 * [ ] Heatmap colour settings in `tools/epicc-builder.html`: in the plotting options, a colour for each data type the sheet produces, including each ChIP mark, each mC context and each selected sRNA size (writes `plot_theme_overrides.heatmap_colors`).
 * [ ] User-set heatmap ranges per type, e.g. `epicc output --heatmap-scales ATAC=0:1,RNA=-5:50`, accepted only by `epicc output` (heatmap, profile and browser).
 * [ ] An `epicc output` flag for a heatmap without the profiles above it, as `plotHeatmap --whatToShow` allowed.
+
+* [ ] The profile pergroup is currently using colors per sample and linetype cycling over all the available mark for each sample. This works for complete designs but does not work well when not all samples are present in all marks. Set color per sample and linetype per mark instead.
+* [ ] Profiles per regions are fixed to 4 plots per row. Could the optimal number of plots per row be adapted to the sample file instead? i.e. if 3 marks with 5 samples each, plot all the samples of the same mark on the same row (5 plots per row)
+* [ ] Create a per-mark profile plot which gather all samples per region but facet on the marks, as an intermediate between pergroup (all samples) and per region (single sample).
+* [ ] Are bedfiles with commented lines also accepted as different regions (same behavior than depptools)? If so, document it. In that case, the per-region profile (and per-mark) should show the different regions as different linetypes since the colors represent the samples. The same theme would be applied to all the marks.
+
+* [ ] Add an option (in epicc-builder and command-line) to keep the order of samples identical to there order in the samplefile, not reordered alphabetically or per mark, for heatmaps, profiles, and browsers. Having an option like "order by levels or order by assay type" could be nice, to group all the assay types for each sample together, or to group all the samples for each assay type instead. If there is a user-friendly way to customize the sort order of the levels or assay-type, that would be even better so I'm open to suggestions.
 
 * [ ] Test ColCEN datasets on different clusters (Elzar, Genotoul) to extract and compare performance (Jon to do).
 
